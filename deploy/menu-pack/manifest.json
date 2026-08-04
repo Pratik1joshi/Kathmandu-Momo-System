@@ -1,0 +1,47 @@
+{
+  "uploadsDir": "/home/thehairc/kathmandu-momo",
+  "imagesPath": "/uploads",
+  "itemCount": 91,
+  "categories": [
+    {
+      "name": "Snacks",
+      "count": 22
+    },
+    {
+      "name": "Breakfast",
+      "count": 7
+    },
+    {
+      "name": "Soups",
+      "count": 7
+    },
+    {
+      "name": "Rice & Noodles",
+      "count": 6
+    },
+    {
+      "name": "Chicken",
+      "count": 9
+    },
+    {
+      "name": "Mutton",
+      "count": 7
+    },
+    {
+      "name": "Traditional Choila",
+      "count": 6
+    },
+    {
+      "name": "Desserts & Ice Cream",
+      "count": 5
+    },
+    {
+      "name": "Drinks",
+      "count": 11
+    },
+    {
+      "name": "Cakes & Pastry",
+      "count": 11
+    }
+  ]
+}

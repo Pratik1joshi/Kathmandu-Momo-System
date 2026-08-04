@@ -1,0 +1,921 @@
+'use client'
+
+import { useEffect, useMemo, useState, useCallback, Suspense } from 'react'
+import { useAuth } from '@/lib/auth-context'
+import { useRouter, useSearchParams } from 'next/navigation'
+import {
+  Bell, Plus, Search, Users, Clock, Receipt, X, ChefHat, Banknote, Calendar,
+  LayoutGrid, AlertTriangle, UserCheck, Star, CheckCircle, Trash2, ClipboardList,
+} from 'lucide-react'
+import WastageModal from '@/components/inventory/wastage-modal'
+import WastageHistoryModal from '@/components/inventory/wastage-history-modal'
+import {
+  TABLE_STATUS_UI,
+  formatElapsed,
+  normalizeOrderStatus,
+} from '@/lib/restaurant-status'
+import LogoutButton from '@/components/ui/logout-button'
+import ConfirmDialog from '@/components/ui/confirm-dialog'
+import ReservationCard from '@/components/waiter/reservation-card'
+import AssignTableDialog from '@/components/waiter/assign-table-dialog'
+import ReservationDetailSheet from '@/components/waiter/reservation-detail-sheet'
+import {
+  groupReservationsForWaiter,
+  filterReservations,
+  filterTables,
+} from '@/lib/waiter-reservations'
+
+const SEEN_KEY = 'waiter_alerts_seen'
+
+function loadSeenIds() {
+  try {
+    const raw = sessionStorage.getItem(SEEN_KEY)
+    const arr = raw ? JSON.parse(raw) : []
+    return new Set(Array.isArray(arr) ? arr : [])
+  } catch {
+    return new Set()
+  }
+}
+
+function saveSeenIds(set) {
+  try {
+    sessionStorage.setItem(SEEN_KEY, JSON.stringify([...set]))
+  } catch {
+    /* ignore */
+  }
+}
+
+function alertKey(kind, id, status) {
+  return `${kind}:${id}:${status}`
+}
+
+function WaiterDashboardInner() {
+  const { user, apiCall, logout, loading: authLoading, token } = useAuth()
+  const [showWastageLog, setShowWastageLog] = useState(false)
+  const [showWastageHistory, setShowWastageHistory] = useState(false)
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const initialTab = searchParams.get('tab') === 'reservations' ? 'reservations' : 'floor'
+
+  const [tab, setTab] = useState(initialTab)
+  const [tables, setTables] = useState([])
+  const [reservations, setReservations] = useState([])
+  const [takeawayAlerts, setTakeawayAlerts] = useState([])
+  const [resAlerts, setResAlerts] = useState([])
+  const [graceMinutes, setGraceMinutes] = useState(20)
+  const [search, setSearch] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [now, setNow] = useState(Date.now())
+  const [showAlerts, setShowAlerts] = useState(false)
+  const [seenIds, setSeenIds] = useState(() => new Set())
+  const [floorFilter, setFloorFilter] = useState(null)
+  const [resSection, setResSection] = useState(null)
+
+  const [detailRes, setDetailRes] = useState(null)
+  const [assignRes, setAssignRes] = useState(null)
+  const [assignBusy, setAssignBusy] = useState(false)
+  const [assignError, setAssignError] = useState('')
+  const [assignAlts, setAssignAlts] = useState([])
+  const [customerHistory, setCustomerHistory] = useState(null)
+  const [confirmAction, setConfirmAction] = useState(null)
+  const [confirmBusy, setConfirmBusy] = useState(false)
+  const [actionBusy, setActionBusy] = useState(false)
+
+  useEffect(() => {
+    setSeenIds(loadSeenIds())
+  }, [])
+
+  useEffect(() => {
+    if (searchParams.get('tab') === 'reservations') setTab('reservations')
+  }, [searchParams])
+
+  const fetchAll = useCallback(async () => {
+    try {
+      const [tablesRes, ordersRes, resRes, alertsRes] = await Promise.all([
+        apiCall('/api/restaurant/tables'),
+        apiCall('/api/restaurant/orders'),
+        apiCall('/api/restaurant/reservations?board=ops'),
+        apiCall('/api/admin/reservations/alerts'),
+      ])
+      if (tablesRes.ok) {
+        const data = await tablesRes.json()
+        // Keep reserved_arrived distinct from reserved for floor badges
+        setTables(
+          (data.tables || []).map((t) => {
+            if (t.status === 'reserved' && t.reservation_status === 'arrived') {
+              return { ...t, status: 'reserved_arrived' }
+            }
+            return t
+          })
+        )
+      }
+      if (ordersRes.ok) {
+        const data = await ordersRes.json()
+        const takeaways = (data.orders || []).filter((o) => {
+          const type = String(o.order_type || '')
+          const isTake = type.includes('take')
+          const status = normalizeOrderStatus(o.status)
+          return isTake && !o.table_id && ['ready', 'awaiting_payment'].includes(status)
+        })
+        setTakeawayAlerts(takeaways)
+      }
+      if (resRes.ok) {
+        const data = await resRes.json()
+        setReservations(data.reservations || [])
+      }
+      if (alertsRes.ok) {
+        const data = await alertsRes.json()
+        setResAlerts(data.alerts || [])
+        if (data.settings?.reservation_grace_minutes != null) {
+          setGraceMinutes(data.settings.reservation_grace_minutes)
+        }
+      }
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setLoading(false)
+    }
+  }, [apiCall])
+
+  useEffect(() => {
+    if (authLoading) return
+    const hasToken = token || (typeof window !== 'undefined' && localStorage.getItem('pos_token'))
+    if (!hasToken) {
+      router.push('/login')
+      return
+    }
+    fetchAll()
+    const poll = setInterval(fetchAll, 5000)
+    const tick = setInterval(() => setNow(Date.now()), 30000)
+    return () => {
+      clearInterval(poll)
+      clearInterval(tick)
+    }
+  }, [authLoading, token, fetchAll, router])
+
+  const groups = useMemo(
+    () => groupReservationsForWaiter(reservations, { now: new Date(now), graceMinutes }),
+    [reservations, now, graceMinutes]
+  )
+
+  const filteredReservations = useMemo(
+    () => filterReservations(reservations, search),
+    [reservations, search]
+  )
+
+  const filteredGroups = useMemo(
+    () => groupReservationsForWaiter(filteredReservations, { now: new Date(now), graceMinutes }),
+    [filteredReservations, now, graceMinutes]
+  )
+
+  const filteredTables = useMemo(() => {
+    let list = filterTables(tables, search)
+    if (floorFilter === 'free') {
+      list = list.filter((t) => t.status === 'available')
+    } else if (floorFilter === 'dining') {
+      list = list.filter((t) => ['dining', 'occupied', 'cooking', 'ready'].includes(t.status))
+    } else if (floorFilter === 'pay') {
+      list = list.filter((t) => t.status === 'awaiting_payment')
+    } else if (floorFilter === 'reserved') {
+      list = list.filter((t) => ['reserved', 'reserved_arrived'].includes(t.status))
+    }
+    return list
+  }, [tables, search, floorFilter])
+
+  const summary = useMemo(() => {
+    const today = reservations.length
+    const arrivingSoon = (resAlerts || []).filter((a) => a.type === 'arriving_soon').length
+    const waiting = groups.waiting.length + groups.arrived.length
+    const dining = tables.filter((t) =>
+      ['dining', 'occupied', 'cooking', 'ready'].includes(t.status)
+    ).length
+    const pay = tables.filter((t) => t.status === 'awaiting_payment').length
+    const free = tables.filter((t) => t.status === 'available').length
+    const late = groups.late.length
+    return { today, arrivingSoon, waiting, dining, pay, free, late }
+  }, [reservations, resAlerts, groups, tables])
+
+  const alertItems = useMemo(() => {
+    void now
+    const items = []
+    for (const t of tables) {
+      const status = t.status || normalizeOrderStatus(t.order_status)
+      if (!['ready', 'awaiting_payment'].includes(status)) continue
+      const orderId = t.current_order_id || t.order_id || t.table_id || t.id
+      items.push({
+        key: alertKey('table', orderId, status),
+        kind: 'table',
+        status,
+        title: `Table ${t.table_number}`,
+        subtitle: status === 'ready' ? 'Food ready — serve guests' : 'Awaiting payment',
+        meta: t.order_number,
+        elapsed: formatElapsed(t.order_created_at),
+        table: t,
+      })
+    }
+    for (const o of takeawayAlerts) {
+      const status = normalizeOrderStatus(o.status)
+      const orderId = o.order_id || o.id
+      items.push({
+        key: alertKey('takeaway', orderId, status),
+        kind: 'takeaway',
+        status,
+        title: o.customer_name ? `Takeaway · ${o.customer_name}` : 'Takeaway',
+        subtitle: status === 'ready' ? 'Ready for pickup' : 'Awaiting payment',
+        meta: o.order_number,
+        elapsed: formatElapsed(o.created_at),
+        order: o,
+      })
+    }
+    for (const a of resAlerts || []) {
+      items.push({
+        key: alertKey('res', a.reservation_id, a.type),
+        kind: 'reservation',
+        status: a.type,
+        title: a.title,
+        subtitle: a.subtitle,
+        reservation: a.reservation,
+        alert: a,
+      })
+    }
+    return items
+  }, [tables, takeawayAlerts, resAlerts, now])
+
+  const unreadCount = useMemo(
+    () => alertItems.filter((a) => !seenIds.has(a.key)).length,
+    [alertItems, seenIds]
+  )
+
+  const openReservation = (r) => {
+    setCustomerHistory(null)
+    setDetailRes(r)
+  }
+
+  const openFromTable = (table) => {
+    const status = table.status || 'available'
+    const orderId = table.current_order_id || table.order_id
+    if (status === 'reserved' || status === 'reserved_arrived' || table.reservation_id) {
+      const fromList = reservations.find((x) => x.id === table.reservation_id)
+      openReservation(
+        fromList || {
+          id: table.reservation_id,
+          name: table.reservation_name,
+          phone: table.reservation_phone,
+          time: table.reservation_time,
+          date: table.reservation_date,
+          guests: table.reservation_guests,
+          party_size: table.reservation_party_size,
+          table_id: table.table_id || table.id,
+          table_number: table.table_number,
+          status: table.reservation_status || (status === 'reserved_arrived' ? 'arrived' : 'confirmed'),
+          occasion: table.reservation_occasion,
+          message: table.reservation_message,
+          is_vip: table.reservation_is_vip,
+          preferences: table.reservation_preferences,
+        }
+      )
+      return
+    }
+    if (status === 'available' || !orderId) {
+      router.push(`/waiter/new-order?table=${table.table_id || table.id}`)
+      return
+    }
+    router.push(`/waiter/order/${orderId}`)
+  }
+
+  const patchRes = async (id, body) => {
+    setActionBusy(true)
+    try {
+      const res = await apiCall(`/api/restaurant/reservations/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Update failed')
+      await fetchAll()
+      if (detailRes?.id === id) setDetailRes(data.reservation)
+      return data.reservation
+    } finally {
+      setActionBusy(false)
+    }
+  }
+
+  const seatGuest = async (r) => {
+    const tid = r.table_id
+    if (!tid) {
+      setAssignRes(r)
+      return
+    }
+    setActionBusy(true)
+    try {
+      const res = await apiCall(`/api/admin/reservations/${r.id}/seat`, {
+        method: 'POST',
+        body: JSON.stringify({ table_id: tid }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Could not seat')
+      setDetailRes(null)
+      router.push(`/waiter/order/${data.order_id}`)
+    } catch (e) {
+      alert(e.message || 'Could not seat')
+    } finally {
+      setActionBusy(false)
+    }
+  }
+
+  const assignConfirm = async (tableId) => {
+    if (!assignRes) return
+    setAssignBusy(true)
+    setAssignError('')
+    setAssignAlts([])
+    try {
+      const res = await apiCall(`/api/restaurant/reservations/${assignRes.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ action: 'assign_table', table_id: tableId }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (res.status === 409) {
+        setAssignError(data.error || 'Conflict')
+        setAssignAlts(data.alternatives || [])
+        return
+      }
+      if (!res.ok) throw new Error(data.error || 'Assign failed')
+      setAssignRes(null)
+      await fetchAll()
+      if (detailRes?.id === assignRes.id) setDetailRes(data.reservation)
+    } catch (e) {
+      setAssignError(e.message || 'Assign failed')
+    } finally {
+      setAssignBusy(false)
+    }
+  }
+
+  const callGuest = (r) => {
+    if (r?.phone) window.location.href = `tel:${r.phone}`
+  }
+
+  const loadHistory = async (r) => {
+    try {
+      const res = await apiCall(`/api/admin/customers?phone=${encodeURIComponent(r.phone || '')}`)
+      if (res.ok) {
+        const data = await res.json()
+        const c = data.customer || (data.customers || [])[0] || null
+        setCustomerHistory(c)
+      }
+    } catch {
+      setCustomerHistory(null)
+    }
+  }
+
+  const ask = (cfg) => setConfirmAction(cfg)
+  const runConfirm = async () => {
+    if (!confirmAction?.run) return
+    setConfirmBusy(true)
+    try {
+      await confirmAction.run()
+      setConfirmAction(null)
+    } finally {
+      setConfirmBusy(false)
+    }
+  }
+
+  const markAlertsSeen = () => {
+    setSeenIds((prev) => {
+      const next = new Set(prev)
+      for (const a of alertItems) next.add(a.key)
+      const active = new Set(alertItems.map((a) => a.key))
+      for (const k of [...next]) {
+        if (!active.has(k)) next.delete(k)
+      }
+      saveSeenIds(next)
+      return next
+    })
+  }
+
+  const chips = [
+    { id: 'today', label: 'Today', value: summary.today, go: () => { setTab('reservations'); setResSection(null) } },
+    { id: 'soon', label: 'Soon', value: summary.arrivingSoon, go: () => { setTab('reservations'); setResSection('upcoming') } },
+    { id: 'wait', label: 'To seat', value: summary.waiting, go: () => { setTab('reservations'); setResSection('waiting') } },
+    { id: 'dining', label: 'Dining', value: summary.dining, go: () => { setTab('floor'); setFloorFilter('dining') } },
+    { id: 'pay', label: 'Pay', value: summary.pay, go: () => { setTab('floor'); setFloorFilter('pay') } },
+    { id: 'free', label: 'Free', value: summary.free, go: () => { setTab('floor'); setFloorFilter('free') } },
+    { id: 'late', label: 'Late', value: summary.late, go: () => { setTab('reservations'); setResSection('late') } },
+  ]
+
+  const sectionList = [
+    { key: 'late', title: 'Late arrivals', rows: filteredGroups.late, icon: AlertTriangle },
+    { key: 'arrived', title: 'Arrived', rows: filteredGroups.arrived, icon: UserCheck },
+    { key: 'waiting', title: 'Waiting for table', rows: filteredGroups.waiting, icon: Clock },
+    { key: 'upcoming', title: 'Upcoming', rows: filteredGroups.upcoming, icon: Calendar },
+    { key: 'seated', title: 'Seated', rows: filteredGroups.seated, icon: Users },
+    { key: 'done', title: 'Completed / cancelled', rows: filteredGroups.done || [], icon: CheckCircle },
+  ].filter((s) => !resSection || resSection === s.key)
+
+  return (
+    <div className="min-h-screen bg-slate-50 pb-28">
+      <header className="sticky top-0 z-30 bg-white border-b border-slate-200">
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium text-slate-500">Waiter floor</p>
+            <h1 className="text-lg font-semibold text-slate-900 truncate">
+              {user?.full_name || 'Waiter'}
+            </h1>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setShowAlerts((o) => {
+                if (!o) markAlertsSeen()
+                return !o
+              })
+            }}
+            className={`relative h-11 w-11 rounded-xl flex items-center justify-center ${
+              showAlerts ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'
+            }`}
+            aria-label="Alerts"
+          >
+            <Bell className="w-5 h-5" />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-amber-500 text-white text-[11px] font-bold flex items-center justify-center">
+                {unreadCount}
+              </span>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => router.push('/waiter/dashboard')}
+            className="h-11 w-11 rounded-xl flex items-center justify-center bg-slate-100 text-slate-700"
+            aria-label="My dashboard"
+            title="My dashboard"
+          >
+            <LayoutGrid className="w-5 h-5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => router.push('/waiter/history')}
+            className="h-11 w-11 rounded-xl flex items-center justify-center bg-slate-100 text-slate-700"
+            aria-label="Order history"
+            title="Order history"
+          >
+            <Receipt className="w-5 h-5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowWastageHistory(true)}
+            className="h-11 w-11 rounded-xl flex items-center justify-center bg-slate-100 text-slate-700"
+            aria-label="View wastage"
+            title="View wastage"
+          >
+            <ClipboardList className="w-5 h-5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowWastageLog(true)}
+            className="h-11 w-11 rounded-xl flex items-center justify-center bg-rose-50 text-rose-700"
+            aria-label="Log wastage"
+            title="Log wastage"
+          >
+            <Trash2 className="w-5 h-5" />
+          </button>
+          <LogoutButton onLogout={logout} iconOnly />
+        </div>
+
+        <div className="max-w-6xl mx-auto px-4 flex gap-2 pb-2">
+          {[
+            { id: 'floor', label: 'Floor', icon: LayoutGrid },
+            { id: 'reservations', label: 'Reservations', icon: Calendar },
+          ].map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => {
+                setTab(t.id)
+                setFloorFilter(null)
+                setResSection(null)
+                router.replace(t.id === 'reservations' ? '/waiter?tab=reservations' : '/waiter', {
+                  scroll: false,
+                })
+              }}
+              className={`flex-1 h-10 rounded-xl text-sm font-semibold flex items-center justify-center gap-1.5 ${
+                tab === t.id ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'
+              }`}
+            >
+              <t.icon className="w-4 h-4" />
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="max-w-6xl mx-auto px-4 pb-2">
+          <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+            {chips.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={c.go}
+                className="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-left shadow-sm"
+              >
+                <p className="text-base font-bold text-slate-900 tabular-nums leading-none">{c.value}</p>
+                <p className="text-[10px] text-slate-500 mt-0.5">{c.label}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="max-w-6xl mx-auto px-4 pb-3">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search name, phone, table, booking #…"
+              className="w-full h-11 pl-10 pr-4 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300"
+            />
+          </div>
+        </div>
+      </header>
+
+      {showAlerts && (
+        <div className="fixed inset-0 z-[80]">
+          <button type="button" className="absolute inset-0 bg-slate-900/45" aria-label="Dismiss" onClick={() => setShowAlerts(false)} />
+          <div className="absolute inset-x-0 top-0 sm:top-16 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 sm:w-full sm:max-w-md p-0 sm:p-4 pointer-events-none">
+            <div className="pointer-events-auto bg-white sm:rounded-2xl shadow-2xl border border-slate-200 overflow-hidden max-h-[min(85vh,640px)] flex flex-col">
+              <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+                <p className="text-sm font-semibold text-slate-900">Needs attention</p>
+                <button type="button" onClick={() => setShowAlerts(false)} className="h-9 w-9 rounded-xl flex items-center justify-center hover:bg-slate-100">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="overflow-y-auto p-3 space-y-2">
+                {alertItems.length === 0 ? (
+                  <p className="text-sm text-slate-500 py-8 text-center">No alerts</p>
+                ) : (
+                  alertItems.map((item) => (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() => {
+                        markAlertsSeen()
+                        setShowAlerts(false)
+                        if (item.kind === 'table') openFromTable(item.table)
+                        else if (item.kind === 'takeaway') {
+                          router.push(`/waiter/order/${item.order.order_id || item.order.id}`)
+                        } else if (item.reservation) {
+                          setTab('reservations')
+                          openReservation(item.reservation)
+                        }
+                      }}
+                      className={`w-full text-left rounded-xl border px-3 py-2.5 flex items-center gap-3 ${
+                        !seenIds.has(item.key)
+                          ? 'border-amber-200 bg-amber-50'
+                          : 'border-slate-200 bg-slate-50'
+                      }`}
+                    >
+                      <span className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0 bg-slate-100 text-slate-700">
+                        {item.kind === 'reservation' ? (
+                          item.status === 'vip_arrived' || item.status === 'occasion_today' ? (
+                            <Star className="w-5 h-5 text-amber-600" />
+                          ) : (
+                            <Calendar className="w-5 h-5" />
+                          )
+                        ) : item.status === 'ready' ? (
+                          <ChefHat className="w-5 h-5" />
+                        ) : (
+                          <Banknote className="w-5 h-5" />
+                        )}
+                      </span>
+                      <span className="flex-1 min-w-0">
+                        <span className="block font-semibold text-slate-900 truncate">{item.title}</span>
+                        <span className="block text-xs text-slate-500 mt-0.5">
+                          {item.subtitle}
+                          {item.elapsed ? ` · ${item.elapsed}` : ''}
+                        </span>
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="max-w-6xl mx-auto px-4 pt-4">
+        {tab === 'floor' ? (
+          <>
+            <div className="flex gap-2 overflow-x-auto pb-3 -mx-1 px-1">
+              {Object.entries(TABLE_STATUS_UI).map(([key, meta]) => (
+                <span
+                  key={key}
+                  className={`shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${meta.badge}`}
+                >
+                  <span className={`w-2 h-2 rounded-full ${meta.bg}`} />
+                  {meta.label}
+                </span>
+              ))}
+            </div>
+
+            {loading ? (
+              <div className="py-20 text-center text-slate-500">Loading tables…</div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                {filteredTables.map((table) => {
+                  const status = table.status || 'available'
+                  const ui = TABLE_STATUS_UI[status] || TABLE_STATUS_UI.available
+                  const total = Number(table.current_amount || table.current_order_amount || 0)
+                  const elapsed = formatElapsed(table.order_created_at)
+                  return (
+                    <button
+                      key={table.table_id || table.id}
+                      type="button"
+                      onClick={() => openFromTable(table)}
+                      className={`text-left rounded-2xl border ${ui.soft} bg-white shadow-sm overflow-hidden active:scale-[0.98] transition-transform`}
+                    >
+                      <div className={`h-1.5 ${ui.bg}`} />
+                      <div className="p-3.5 space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="text-2xl font-bold text-slate-900 tracking-tight">
+                              {table.table_number}
+                            </p>
+                            <p className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
+                              <Users className="w-3 h-3" />
+                              {table.capacity || '—'} seats
+                            </p>
+                          </div>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${ui.badge}`}>
+                            {ui.short}
+                          </span>
+                        </div>
+
+                        {status === 'reserved' || status === 'reserved_arrived' ? (
+                          <div className="space-y-1 pt-1 border-t border-yellow-100">
+                            <p className="text-xs font-medium text-slate-900 truncate">
+                              {table.reservation_is_vip ? '★ ' : ''}
+                              {table.reservation_name || 'Reserved'}
+                            </p>
+                            <p className="text-[11px] text-slate-600">
+                              {table.reservation_time || 'Soon'}
+                              {table.reservation_guests ? ` · ${table.reservation_guests}` : ''}
+                            </p>
+                            <p className="text-xs font-semibold text-slate-800 pt-0.5">Tap for booking</p>
+                          </div>
+                        ) : status !== 'available' ? (
+                          <div className="space-y-1 pt-1 border-t border-slate-100">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-slate-500 flex items-center gap-1">
+                                <Clock className="w-3 h-3" />
+                                {elapsed}
+                              </span>
+                              <span className="font-semibold text-slate-900">Rs {total.toFixed(0)}</span>
+                            </div>
+                            {table.order_number && (
+                              <p className="text-[10px] text-slate-400 truncate">{table.order_number}</p>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-emerald-700 font-medium pt-1">Tap to seat guests</p>
+                        )}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="space-y-6 pb-4">
+            {loading ? (
+              <p className="py-16 text-center text-slate-500">Loading reservations…</p>
+            ) : filteredReservations.length === 0 ? (
+              <p className="py-16 text-center text-slate-500">No reservations match.</p>
+            ) : (
+              sectionList.map((section) =>
+                section.rows.length === 0 ? null : (
+                  <section key={section.key}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <section.icon className="w-4 h-4 text-slate-500" />
+                      <h2 className="text-sm font-semibold text-slate-800">
+                        {section.title}
+                        <span className="text-slate-400 font-medium ml-1.5">{section.rows.length}</span>
+                      </h2>
+                    </div>
+                    <div className="space-y-2.5">
+                      {section.rows.map((r) => (
+                        <ReservationCard
+                          key={r.id}
+                          reservation={r}
+                          tables={tables}
+                          graceMinutes={graceMinutes}
+                          now={now}
+                          onOpen={openReservation}
+                          onAssign={(row) => setAssignRes(row)}
+                          onSeat={(row) =>
+                            ask({
+                              title: 'Seat this guest?',
+                              description: `Open a dine-in order for ${row.name}.`,
+                              confirmLabel: 'Seat guest',
+                              variant: 'primary',
+                              icon: Users,
+                              run: () => seatGuest(row),
+                            })
+                          }
+                          onCheckIn={(row) =>
+                            ask({
+                              title: 'Customer arrived?',
+                              description: `Check in ${row.name}.`,
+                              confirmLabel: 'Check in',
+                              variant: 'warning',
+                              icon: UserCheck,
+                              run: () => patchRes(row.id, { action: 'check_in' }),
+                            })
+                          }
+                          onCall={callGuest}
+                          onEdit={openReservation}
+                          onCancel={(row) =>
+                            ask({
+                              title:
+                                row.status === 'seated'
+                                  ? 'Cancel seating / release table?'
+                                  : 'Cancel reservation?',
+                              description:
+                                row.status === 'seated'
+                                  ? `Cancel seating for ${row.name}, close the open order, and free the table.`
+                                  : `Cancel booking for ${row.name}.`,
+                              confirmLabel:
+                                row.status === 'seated' ? 'Cancel seating' : 'Cancel booking',
+                              variant: 'danger',
+                              run: () => patchRes(row.id, { action: 'cancel' }),
+                            })
+                          }
+                          onNoShow={(row) =>
+                            ask({
+                              title: 'Mark no-show?',
+                              description: `${row.name} did not arrive. Release the table hold.`,
+                              confirmLabel: 'Mark no-show',
+                              variant: 'warning',
+                              icon: AlertTriangle,
+                              run: () => patchRes(row.id, { action: 'no_show' }),
+                            })
+                          }
+                          onOpenOrder={(row) => router.push(`/waiter/order/${row.order_id}`)}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                )
+              )
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="fixed bottom-0 inset-x-0 z-30 p-4 bg-gradient-to-t from-slate-50 via-slate-50 to-transparent pointer-events-none">
+        <div className="max-w-6xl mx-auto flex gap-2 pointer-events-auto">
+          <button
+            type="button"
+            onClick={() => {
+              setTab('reservations')
+              router.replace('/waiter?tab=reservations', { scroll: false })
+            }}
+            className="h-12 px-4 rounded-2xl bg-amber-100 border border-amber-200 text-amber-950 font-semibold flex items-center gap-2 shadow-sm"
+          >
+            <Calendar className="w-5 h-5" />
+            Bookings
+          </button>
+          <button
+            type="button"
+            onClick={() => router.push('/waiter/new-order')}
+            className="flex-1 h-12 rounded-2xl bg-slate-900 text-white font-semibold flex items-center justify-center gap-2 shadow-lg"
+          >
+            <Plus className="w-5 h-5" />
+            New Takeaway
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const bill = tables.find((t) => t.status === 'awaiting_payment')
+              if (bill?.current_order_id || bill?.order_id) {
+                router.push(`/waiter/order/${bill.current_order_id || bill.order_id}`)
+              }
+            }}
+            className="h-12 px-4 rounded-2xl bg-white border border-slate-200 text-slate-800 font-semibold flex items-center gap-2 shadow-sm"
+          >
+            <Receipt className="w-5 h-5" />
+            Bills
+          </button>
+        </div>
+      </div>
+
+      <ReservationDetailSheet
+        open={!!detailRes}
+        reservation={detailRes}
+        tables={tables}
+        customerHistory={customerHistory}
+        graceMinutes={graceMinutes}
+        busy={actionBusy}
+        onClose={() => setDetailRes(null)}
+        onAssign={(r) => setAssignRes(r)}
+        onSeat={(r) =>
+          ask({
+            title: 'Seat this guest?',
+            description: `Open a dine-in order for ${r.name}.`,
+            confirmLabel: 'Seat guest',
+            variant: 'primary',
+            run: () => seatGuest(r),
+          })
+        }
+        onCheckIn={(r) =>
+          ask({
+            title: 'Customer arrived?',
+            description: `Check in ${r.name}.`,
+            confirmLabel: 'Check in',
+            variant: 'warning',
+            run: () => patchRes(r.id, { action: 'check_in' }),
+          })
+        }
+        onCall={callGuest}
+        onCancel={(r) =>
+          ask({
+            title:
+              r.status === 'seated' ? 'Cancel seating / release table?' : 'Cancel reservation?',
+            description:
+              r.status === 'seated'
+                ? `Cancel seating for ${r.name}, close the open order, and free the table.`
+                : `Cancel booking for ${r.name}.`,
+            confirmLabel: r.status === 'seated' ? 'Cancel seating' : 'Cancel booking',
+            variant: 'danger',
+            run: async () => {
+              await patchRes(r.id, { action: 'cancel' })
+              setDetailRes(null)
+            },
+          })
+        }
+        onNoShow={(r) =>
+          ask({
+            title: 'Mark no-show?',
+            description: `${r.name} did not arrive.`,
+            confirmLabel: 'Mark no-show',
+            variant: 'warning',
+            run: async () => {
+              await patchRes(r.id, { action: 'no_show' })
+              setDetailRes(null)
+            },
+          })
+        }
+        onEdit={async (r, fields) => {
+          await patchRes(r.id, { action: 'edit', ...fields })
+        }}
+        onOpenOrder={(r) => router.push(`/waiter/order/${r.order_id}`)}
+        onLoadHistory={loadHistory}
+      />
+
+      <AssignTableDialog
+        open={!!assignRes}
+        reservation={assignRes}
+        tables={tables}
+        busy={assignBusy}
+        error={assignError}
+        alternatives={assignAlts}
+        onClose={() => {
+          setAssignRes(null)
+          setAssignError('')
+          setAssignAlts([])
+        }}
+        onConfirm={assignConfirm}
+      />
+
+      <ConfirmDialog
+        open={!!confirmAction}
+        title={confirmAction?.title || ''}
+        description={confirmAction?.description}
+        confirmLabel={confirmAction?.confirmLabel}
+        cancelLabel={confirmAction?.cancelLabel || 'Back'}
+        variant={confirmAction?.variant || 'danger'}
+        icon={confirmAction?.icon}
+        busy={confirmBusy}
+        onCancel={() => {
+          if (!confirmBusy) setConfirmAction(null)
+        }}
+        onConfirm={runConfirm}
+      />
+
+      {showWastageLog && <WastageModal request={apiCall} onClose={() => setShowWastageLog(false)} />}
+      {showWastageHistory && <WastageHistoryModal request={apiCall} onClose={() => setShowWastageHistory(false)} />}
+    </div>
+  )
+}
+
+export default function WaiterDashboard() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center text-slate-500">
+          Loading…
+        </div>
+      }
+    >
+      <WaiterDashboardInner />
+    </Suspense>
+  )
+}
