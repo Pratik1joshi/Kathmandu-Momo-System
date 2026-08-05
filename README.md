@@ -71,6 +71,8 @@ Receipts, bills and KOTs read the business name, address, phone and footer from
 
 ## Tech
 
+Implementation and release handoff: **[docs/AI_HANDOFF_CONTEXT.md](docs/AI_HANDOFF_CONTEXT.md)**
+
 - **Framework**: Next.js 16 (App Router), React 19
 - **UI**: TailwindCSS 4, Radix UI, lucide-react
 - **Database**: PostgreSQL in production, SQLite locally
@@ -90,6 +92,9 @@ npm run build:icons     # regenerate the KM monogram icons
 
 ## Docs
 
+- [docs/README.md](docs/README.md) — complete documentation index
+- [docs/QA_CHECKLIST.md](docs/QA_CHECKLIST.md) — full production-readiness QA plan
+- [docs/LAUNCH_CHECKLIST.md](docs/LAUNCH_CHECKLIST.md) — final go/no-go sign-off
 - [deploy/INSTALL.md](deploy/INSTALL.md) — production install
 - [SYSTEM_OVERVIEW.md](SYSTEM_OVERVIEW.md) — modules and data flow
 - [docs/CPANEL_DEPLOYMENT.md](docs/CPANEL_DEPLOYMENT.md) — cPanel specifics

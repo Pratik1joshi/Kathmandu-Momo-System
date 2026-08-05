@@ -23,7 +23,7 @@ export async function GET(request) {
 }
 
 /**
- * POST — reopen a paid bill so more items can be added (void-and-rebill).
+ * POST - create a linked supplemental order for a paid bill.
  * Body: { bill_id | bill_number, reason }.
  * Returns the reactivated order so the client can jump straight to it.
  */
@@ -58,7 +58,7 @@ export async function POST(request) {
 
     return NextResponse.json({
       success: true,
-      message: `Bill ${result.bill_number} reopened. Add items and take a new bill.`,
+      message: `Supplemental order created for ${result.bill_number}. Only added items will be billed.`,
       ...result,
     });
   } catch (error) {

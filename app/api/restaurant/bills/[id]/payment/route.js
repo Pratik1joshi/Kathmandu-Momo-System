@@ -277,6 +277,23 @@ export async function POST(request, { params }) {
         ]
       );
 
+      if (order.online_request_id) {
+        await tx.run(`UPDATE orders SET payment_status='PAID' WHERE id=?`, [orderId]);
+        await tx.run(
+          `UPDATE online_order_requests
+           SET status='COMPLETED', payment_status='PAID', completed_at=CURRENT_TIMESTAMP,
+               updated_at=CURRENT_TIMESTAMP
+           WHERE id=? AND status IN ('ACCEPTED','READY')`,
+          [order.online_request_id]
+        );
+        await tx.run(
+          `INSERT INTO online_order_audit
+           (request_id, action, from_status, to_status, actor_id, metadata_json, created_at)
+           VALUES (?, 'COMPLETED_AND_PAID', NULL, 'COMPLETED', ?, ?, CURRENT_TIMESTAMP)`,
+          [order.online_request_id, user.id, JSON.stringify({ bill_id: bill.id, payment_id: payment.id })]
+        );
+      }
+
       if (order.table_id) {
         await tx.run(
           `UPDATE tables

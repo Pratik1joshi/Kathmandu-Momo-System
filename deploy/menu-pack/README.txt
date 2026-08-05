@@ -1,31 +1,19 @@
-Kathmandu Momo — menu upload pack
-=================================
+Kathmandu Momo - official Food Menu 2083 pack
+================================================
 
-Env (cPanel):
-  UPLOADS_DIR = /home/thehairc/kathmandu-momo
-  IMAGES_PATH = /uploads
+Source of truth: data/menu-2083.json
 
-Steps
------
-1. On the server, create the folder if needed:
-     mkdir -p /home/thehairc/kathmandu-momo/menu
-     chmod 750 /home/thehairc/kathmandu-momo
+Fresh database:
+  1. Upload deploy/menu-pack/menu/* to UPLOADS_DIR/menu when matching images exist.
+  2. Run deploy/menu-pack/seed_menu.sql after production_schema.sql and production_seed.sql.
 
-2. Upload EVERY .jpg from this pack's menu/ folder into:
-     /home/thehairc/kathmandu-momo/menu/
+Existing database:
+  1. Deploy the application release.
+  2. Run npm run db:migrate to apply migrations/026_menu_2083.sql.
 
-3. In phpPgAdmin, open your app database and run:
-     seed_menu.sql
+The upgrade migration retains old rows for historical order references and makes
+them unavailable. Official 2083 rows are updated/inserted and enabled. Items
+without an approved image use the application's image fallback; no stock image
+is downloaded automatically.
 
-4. Restart the Node.js app in cPanel.
-
-5. Check:
-     https://yoursite/menu
-     https://yoursite/uploads/menu/veg-boil.jpg
-
-Notes
------
-- Stock Unsplash photos (placeholders). Replace any file in menu/ with a
-  real photo using the SAME filename to keep SQL URLs working.
-- seed SQL deletes existing menu_categories / menu_items first.
-- Total items: 91
+Run npm run build:menu-2083 after reviewing any source-data change.

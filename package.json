@@ -19,8 +19,11 @@
     "check:table-ops": "node scripts/check-table-ops.mjs",
     "check:waiter": "node scripts/check-waiter-analytics.mjs",
     "check:permissions": "node scripts/check-permissions.mjs",
+    "check:api-errors": "node scripts/check-api-error-safety.mjs",
+    "check:online-orders": "node scripts/check-online-orders.mjs",
     "db:seed-images": "node scripts/seed-menu-images.mjs",
-    "build:menu-pack": "node scripts/build-menu-pack.mjs",
+    "build:menu-pack": "node scripts/build-menu-2083.mjs",
+    "build:menu-2083": "node scripts/build-menu-2083.mjs",
     "build:icons": "node scripts/build-brand-icons.mjs"
   },
   "dependencies": {

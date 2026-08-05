@@ -124,6 +124,13 @@ export async function POST(request) {
 
       const billId = billResult.lastInsertRowid;
 
+      await db.run(
+        `UPDATE bills SET parent_bill_id = (
+           SELECT reopened_from_bill_id FROM orders WHERE id = ?
+         ) WHERE id = ?`,
+        [orderId, billId]
+      );
+
       await db.run(`
         INSERT INTO bill_payments (bill_id, amount, payment_method, created_at)
         VALUES (?, ?, ?, CURRENT_TIMESTAMP)

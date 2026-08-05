@@ -7,9 +7,8 @@
  *
  *   <ReopenBillModal open onClose={...} redirectBase="/cashier/bill" />
  *
- * Reopen model is void-and-rebill (server-side, audited): the old paid bill is
- * reversed and marked 'reopened', the order comes back to life, and a fresh
- * final bill is taken once the extra items are added.
+ * The server creates an audited supplemental order. The paid bill, payment,
+ * journal, served items, and stock history remain unchanged.
  */
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -93,8 +92,8 @@ export default function ReopenBillModal({ open, onClose, redirectBase = '/cashie
 
         <div className="p-5">
           <p className="mb-3 text-sm text-gray-600">
-            Search a paid bill by bill no., table, order or customer. Reopening reverses it, brings the
-            order back, and lets you add items and take a fresh bill. The action is logged.
+            Search by bill number, table, order, or customer. A linked empty order is created for new
+            items only. The original paid invoice and accounting history stay unchanged.
           </p>
 
           <div className="relative mb-3">
@@ -166,7 +165,7 @@ export default function ReopenBillModal({ open, onClose, redirectBase = '/cashie
               className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-amber-600 py-2.5 font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
             >
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
-              Reopen &amp; add items
+              Create supplement
             </button>
           </div>
         </div>

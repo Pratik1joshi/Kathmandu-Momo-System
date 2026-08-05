@@ -3511,6 +3511,54 @@ CREATE INDEX IF NOT EXISTS idx_table_ops_order ON public.table_ops_log USING btr
 
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS merged_into_order_id integer;
 
+-- 027 admin enhancements: CMS, media metadata, audit trail, supplemental bills.
+CREATE TABLE IF NOT EXISTS public.cms_content (
+    content_key text PRIMARY KEY,
+    content_value text,
+    is_published integer NOT NULL DEFAULT 1,
+    updated_by integer REFERENCES public.users(id) ON DELETE SET NULL,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.cms_media (
+    id SERIAL PRIMARY KEY,
+    url text NOT NULL UNIQUE,
+    original_name text,
+    mime_type text,
+    size_bytes integer NOT NULL DEFAULT 0,
+    width integer,
+    height integer,
+    alt_text text,
+    is_archived integer NOT NULL DEFAULT 0,
+    uploaded_by integer REFERENCES public.users(id) ON DELETE SET NULL,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.audit_log (
+    id SERIAL PRIMARY KEY,
+    event_type text NOT NULL,
+    entity_type text NOT NULL,
+    entity_id text,
+    actor_id integer REFERENCES public.users(id) ON DELETE SET NULL,
+    actor_role text,
+    before_data text,
+    after_data text,
+    reason text,
+    metadata text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_log_entity ON public.audit_log(entity_type, entity_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_log_event ON public.audit_log(event_type, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_cms_media_active ON public.cms_media(is_archived, created_at DESC);
+ALTER TABLE public.bills ADD COLUMN IF NOT EXISTS parent_bill_id integer REFERENCES public.bills(id) ON DELETE SET NULL;
+ALTER TABLE public.bill_corrections ADD COLUMN IF NOT EXISTS related_order_id integer REFERENCES public.orders(id) ON DELETE SET NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_one_active_revision
+  ON public.orders(reopened_from_bill_id)
+  WHERE reopened_from_bill_id IS NOT NULL AND status NOT IN ('completed', 'cancelled');
+
 
 --
 -- PostgreSQL database dump complete

@@ -2,17 +2,17 @@
 export default function manifest() {
   return {
     name: 'Kathmandu Momo',
-    short_name: 'KM',
+    short_name: 'Kathmandu Momo',
     description:
       'Kathmandu Momo — momo, Nepali kitchen and café in Birendranagar, Surkhet.',
     start_url: '/',
     display: 'standalone',
-    background_color: '#0E0C0A',
-    theme_color: '#0E0C0A',
+    background_color: '#ffffff',
+    theme_color: '#e30613',
     icons: [
-      { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml' },
-      { src: '/apple-icon.png', sizes: '180x180', type: 'image/png' },
-      { src: '/icon-light-32x32.png', sizes: '32x32', type: 'image/png' },
+      { src: '/icon-192.png?v=2083', sizes: '192x192', type: 'image/png' },
+      { src: '/icon-512.png?v=2083', sizes: '512x512', type: 'image/png' },
+      { src: '/apple-icon.png?v=2083', sizes: '180x180', type: 'image/png' },
     ],
   };
 }

@@ -7,7 +7,7 @@
 <meta name="description" content="Kathmandu Momo — momo steamed to order, Nepali thali, chatamari and café classics in Birendranagar, Surkhet. Reserve a table or order at the counter.">
 <meta name="keywords" content="Kathmandu Momo, momo Surkhet, restaurant Birendranagar, Nepali thali Surkhet, chatamari, thukpa, café Surkhet">
 <meta name="author" content="Kathmandu Momo">
-<meta name="theme-color" content="#FBF6EC">
+<meta name="theme-color" content="#e30613">
 <link rel="canonical" href="https://kathmandumomo.com.np/">
 
 <!-- Open Graph -->
@@ -25,9 +25,9 @@
 <meta name="twitter:description" content="Momo steamed to order. Nepali thali, chatamari and café classics in Birendranagar, Surkhet.">
 <meta name="twitter:image" content="/images/kathmandu-momo/hero.jpg">
 
-<link rel="icon" href="/favicon.ico" sizes="any">
-<link rel="icon" href="/icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="/apple-icon.png">
+<link rel="icon" href="/favicon.ico?v=2083" sizes="any">
+<link rel="icon" href="/icon-light-32x32.png?v=2083" type="image/png">
+<link rel="apple-touch-icon" href="/apple-icon.png?v=2083">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -906,6 +906,62 @@ section p.eyebrow{color:var(--red);max-width:none;margin-bottom:0;font-size:11px
 (function () {
   'use strict';
   var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* Published CMS content. POS menu data remains separate and authoritative. */
+  fetch('/api/public/cms').then(function (response) { return response.json(); }).then(function (payload) {
+    var cms = payload.content || {};
+    function text(selector, value) {
+      if (!value) return;
+      var element = document.querySelector(selector);
+      if (element) element.textContent = value;
+    }
+    function href(selector, value) {
+      if (!value || !/^(\/|#|https?:|tel:|mailto:)/i.test(value)) return;
+      var element = document.querySelector(selector);
+      if (element) element.setAttribute('href', value);
+    }
+    document.querySelectorAll('.brand-name, .he-txt b').forEach(function (element) {
+      if (cms.brand_name) element.textContent = cms.brand_name;
+    });
+    text('#hero h1', cms.home_heading);
+    text('.hero-en', cms.home_description);
+    text('#story h2', cms.about_heading);
+    text('#story .dropcap', cms.about_description);
+    text('#reserve .form-note', cms.reservation_instructions);
+    href('.hero-cta a:first-child', cms.home_primary_url);
+    href('.hero-cta a:nth-child(2)', cms.home_secondary_url);
+    text('.hero-cta a:first-child', cms.home_primary_label);
+    text('.hero-cta a:nth-child(2)', cms.home_secondary_label);
+    if (cms.home_image_url && /^(\/|https?:)/i.test(cms.home_image_url)) {
+      var hero = document.getElementById('heroImg');
+      if (hero) hero.src = cms.home_image_url;
+    }
+    if (cms.about_image_url && /^(\/|https?:)/i.test(cms.about_image_url)) {
+      var about = document.querySelector('#story .im-a img');
+      if (about) about.src = cms.about_image_url;
+    }
+    if (cms.seo_title) document.title = cms.seo_title;
+    if (cms.seo_description) {
+      var description = document.querySelector('meta[name="description"]');
+      if (description) description.setAttribute('content', cms.seo_description);
+    }
+    if (cms.gallery_json) {
+      try {
+        var gallery = JSON.parse(cms.gallery_json).filter(function (item) { return item && item.visible !== false && item.url; }).sort(function (a, b) { return Number(a.order || 0) - Number(b.order || 0); });
+        var mosaic = document.querySelector('#gallery .mosaic');
+        if (mosaic && gallery.length) {
+          mosaic.textContent = '';
+          gallery.slice(0, 12).forEach(function (item, index) {
+            var figure = document.createElement('figure'); figure.className = 'tile t-' + ((index % 6) + 1);
+            var image = document.createElement('img'); image.src = item.url; image.alt = item.alt || ''; image.loading = 'lazy';
+            figure.appendChild(image);
+            if (item.title) { var caption = document.createElement('figcaption'); caption.textContent = item.title; figure.appendChild(caption); }
+            mosaic.appendChild(figure);
+          });
+        }
+      } catch { /* Keep the built-in gallery if CMS JSON is invalid. */ }
+    }
+  }).catch(function () { /* Built-in public content remains the safe fallback. */ });
 
   document.getElementById('yr').textContent = new Date().getFullYear();
 

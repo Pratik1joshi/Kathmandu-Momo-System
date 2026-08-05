@@ -5,8 +5,8 @@ import { useRouter, usePathname } from 'next/navigation';
 import {
   Users, Package, FileText, Settings, DollarSign, ShoppingCart,
   LayoutDashboard, Warehouse, LayoutGrid, FolderOpen, Menu, X, Inbox, ChefHat, Wallet, Truck, Trash,
-  Building2, ChevronDown, Ruler, Layers, TrendingUp, Activity,
-  BookOpen, ScrollText, Coins, Landmark, CreditCard, ArrowRightLeft, Undo2, Receipt, Gauge, ClipboardCheck
+  Building2, ChevronDown, Ruler, Layers, TrendingUp, Activity, BarChart3, Image,
+  BookOpen, ScrollText, Coins, Landmark, CreditCard, ArrowRightLeft, Undo2, Receipt, Gauge, ClipboardCheck, MessageCircle
 } from 'lucide-react';
 import LogoutButton from '@/components/ui/logout-button';
 
@@ -18,6 +18,7 @@ export default function AdminLayout({ children }) {
   const [isDesktop, setIsDesktop] = useState(false);
   const [backdropReady, setBackdropReady] = useState(false);
   const [leadsBadge, setLeadsBadge] = useState(0);
+  const [onlineOrdersBadge, setOnlineOrdersBadge] = useState(0);
   const [openGroups, setOpenGroups] = useState({});
   const openLockRef = useRef(false);
 
@@ -57,7 +58,10 @@ export default function AdminLayout({ children }) {
     };
     apply();
     mq.addEventListener('change', apply);
-    checkAuth();
+    const token = localStorage.getItem('pos_token');
+    const user = JSON.parse(localStorage.getItem('pos_user') || '{}');
+    if (!token || user.role !== 'admin') router.push('/login');
+    else setLoading(false);
     return () => mq.removeEventListener('change', apply);
   }, []);
 
@@ -108,6 +112,26 @@ export default function AdminLayout({ children }) {
     };
   }, [loading, pathname]);
 
+  useEffect(() => {
+    if (loading) return undefined;
+    let cancelled = false;
+    const fetchOnlineCount = async () => {
+      try {
+        const token = localStorage.getItem('pos_token');
+        if (!token) return;
+        const res = await fetch('/api/admin/online-orders?status=PENDING', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (!cancelled) setOnlineOrdersBadge(Number(data?.counts?.pending || 0));
+      } catch { /* badge polling is best-effort */ }
+    };
+    fetchOnlineCount();
+    const timer = setInterval(fetchOnlineCount, 20000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [loading, pathname]);
+
   // Delay backdrop so the opening tap does not immediately close the menu
   useEffect(() => {
     if (sidebarOpen && !isDesktop) {
@@ -147,17 +171,6 @@ export default function AdminLayout({ children }) {
     if (!isDesktop) setSidebarOpen(false);
   };
 
-  const checkAuth = () => {
-    const token = localStorage.getItem('pos_token');
-    const user = JSON.parse(localStorage.getItem('pos_user') || '{}');
-
-    if (!token || user.role !== 'admin') {
-      router.push('/login');
-      return;
-    }
-    setLoading(false);
-  };
-
   const handleLogout = () => {
     localStorage.removeItem('pos_token');
     localStorage.removeItem('pos_user');
@@ -168,12 +181,15 @@ export default function AdminLayout({ children }) {
   // Add new modules by dropping an entry into the relevant group — no layout rewrite.
   const navGroups = [
     { icon: LayoutDashboard, label: 'Dashboard', href: '/admin/dashboard', color: 'text-gray-600' },
+    { icon: BarChart3, label: 'Analytics', href: '/admin/analytics', color: 'text-blue-700' },
     {
       label: 'Operations',
       items: [
         { icon: Inbox, label: 'Host desk', href: '/admin/leads', color: 'text-amber-600', badge: leadsBadge },
         { icon: ShoppingCart, label: 'Orders', href: '/admin/orders', color: 'text-orange-600' },
+        { icon: MessageCircle, label: 'Website & WhatsApp', href: '/admin/orders/online', color: 'text-emerald-700', badge: onlineOrdersBadge },
         { icon: DollarSign, label: 'Billing', href: '/admin/billing', color: 'text-teal-600' },
+        { icon: Receipt, label: 'Bills', href: '/admin/bills', color: 'text-blue-600' },
         { icon: LayoutGrid, label: 'Tables', href: '/admin/tables', color: 'text-cyan-600' },
         { icon: Layers, label: 'Table Management', href: '/admin/table-management', color: 'text-sky-600' },
         { icon: Activity, label: 'Kitchen Analytics', href: '/admin/kitchen-analytics', color: 'text-orange-600' },
@@ -188,8 +204,16 @@ export default function AdminLayout({ children }) {
       ],
     },
     {
+      label: 'Website',
+      items: [
+        { icon: Image, label: 'Website CMS', href: '/admin/cms', color: 'text-rose-600' },
+        { icon: Image, label: 'Media Library', href: '/admin/cms?tab=media', color: 'text-fuchsia-600' },
+      ],
+    },
+    {
       label: 'Inventory',
       items: [
+        { icon: Gauge, label: 'Inventory Dashboard', href: '/admin/inventory/dashboard', color: 'text-indigo-700' },
         { icon: Warehouse, label: 'Inventory', href: '/admin/inventory', color: 'text-indigo-600' },
         { icon: FolderOpen, label: 'Inventory Categories', href: '/admin/inventory-categories', color: 'text-violet-600' },
         { icon: Ruler, label: 'Unit Conversion', href: '/admin/unit-conversion', color: 'text-sky-600' },

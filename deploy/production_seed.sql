@@ -84,5 +84,5 @@ INSERT INTO schema_migrations (version) VALUES
   ('013_table_floors_types'),('014_payroll'),('015_accounting'),('016_expense_categories'),
   ('017_accounting_hardening'),('018_accounting_numeric'),('019_supplier_ledger'),('020_bank_reconciliation'),
   ('021_table_qr_token'),('022_kitchen_timing'),('023_bill_corrections'),
-  ('024_reopen_bills'),('025_table_ops')
+  ('024_reopen_bills'),('025_table_ops'),('026_menu_2083'),('027_admin_enhancements')
 ON CONFLICT (version) DO NOTHING;

@@ -40,8 +40,10 @@ const TABS = [
 
 const PERIODS = [
   { id: 'today', label: 'Today' },
-  { id: 'week', label: 'Last 7 days' },
-  { id: 'month', label: 'This month' },
+  { id: 'yesterday', label: 'Yesterday' },
+  { id: 'week', label: 'This Week' },
+  { id: 'month', label: 'This Month' },
+  { id: 'year', label: 'This Year' },
   { id: 'custom', label: 'Custom' },
 ];
 
@@ -51,8 +53,8 @@ function selectClass() {
   return 'h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700';
 }
 
-export default function ReportsPage() {
-  const [tab, setTab] = useState('overview');
+export default function ReportsPage({ initialTab = 'overview', title = 'Reports', lockedTab = false }) {
+  const [tab, setTab] = useState(initialTab);
   const [period, setPeriod] = useState('week');
   const [custom, setCustom] = useState({ start: '', end: '' });
   const [filters, setFilters] = useState({ employeeId: '', categoryId: '', paymentMethod: '', orderType: '', search: '' });
@@ -162,7 +164,7 @@ export default function ReportsPage() {
       <header className="border-b border-gray-200 bg-white px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Reports</h1>
+            <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">{title}</h1>
             <p className="mt-1 flex items-center gap-2 text-sm text-gray-500">
               <Calendar className="h-4 w-4" />
               {data?.range?.label || 'Choose a date range to begin'}
@@ -254,7 +256,7 @@ export default function ReportsPage() {
         {/* Tab bar — horizontally scrollable on mobile */}
         <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
           <div className="flex w-max gap-1 rounded-xl border border-gray-200 bg-white p-1 shadow-sm sm:w-auto">
-            {TABS.map((t) => (
+            {TABS.filter((t) => !lockedTab || t.id === initialTab).map((t) => (
               <button
                 key={t.id}
                 type="button"

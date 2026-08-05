@@ -264,6 +264,13 @@ export default function CashierDashboard() {
                 <span className="hidden sm:inline">Walk-in Bill</span>
               </button>
               <button
+                onClick={() => router.push('/cashier/online-orders')}
+                className="px-2.5 py-2 sm:px-4 bg-slate-900 text-white rounded-lg hover:bg-slate-800 text-xs sm:text-base font-semibold"
+              >
+                <span className="sm:hidden">Online</span>
+                <span className="hidden sm:inline">Online Orders</span>
+              </button>
+              <button
                 onClick={() => setShowWastageHistory(true)}
                 className="p-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200"
                 aria-label="View wastage"

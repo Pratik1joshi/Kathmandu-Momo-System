@@ -119,6 +119,9 @@ export default function MenuBook({ categories }) {
             </span>
           </Link>
           <div className="flex items-center gap-4 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#6e675c]">
+            <Link href="/order-online" className="rounded-[6px] bg-[#d34b2c] px-3 py-2 text-white hover:bg-[#b93d22]">
+              Order online
+            </Link>
             <Link href="/" className="hover:text-[#1c1a16]">
               Home
             </Link>
