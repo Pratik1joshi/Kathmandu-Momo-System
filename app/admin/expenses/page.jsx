@@ -9,13 +9,15 @@
  * instead. That is the whole difference from the old page.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import AdminLayout from '@/components/admin/admin-layout';
 import { Paperclip, Pencil, Plus, Trash2, Truck, Trash } from 'lucide-react';
 import { useToast } from '@/components/ui/toast';
+import { useConfirm } from '@/components/ui/confirm';
 import { friendlyFromError, friendlyMessage } from '@/lib/friendly-message';
-import { apiJsonRaw } from '@/lib/authed-fetch';
+import { apiJson, apiJsonRaw } from '@/lib/authed-fetch';
 import DataGrid, { StatusBadge } from '@/components/admin/data-grid';
 import useServerList from '@/lib/use-server-list';
 import { KpiCards, ChartCard, ChartGrid, TrendChart, RankBars } from '@/components/admin/report-kit';
@@ -32,11 +34,13 @@ const SOURCE_META = {
   wastage: { label: 'Wastage', href: '/admin/wastage', Icon: Trash },
 };
 
-function categoryLabel(value) {
+function categoryLabel(value, categories = EXPENSE_CATEGORIES) {
+  const key = String(value ?? '').trim();
+  if (!key || ['none', 'null', 'undefined'].includes(key.toLowerCase())) return 'Uncategorised';
   return (
-    EXPENSE_CATEGORIES.find((c) => c.value === value)?.label ||
-    GENERATED_CATEGORY_LABELS[value] ||
-    String(value || '').replace(/_/g, ' ')
+    categories.find((c) => c.value === key || c.label === key)?.label ||
+    GENERATED_CATEGORY_LABELS[key] ||
+    key.replace(/_/g, ' ')
   );
 }
 
@@ -46,6 +50,12 @@ const fmt = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate(
 
 function rangeFor(preset) {
   const now = new Date();
+  if (preset === 'today') return { from: fmt(now), to: fmt(now) };
+  if (preset === 'last7') {
+    const start = new Date(now);
+    start.setDate(start.getDate() - 6);
+    return { from: fmt(start), to: fmt(now) };
+  }
   if (preset === 'this_month') return { from: fmt(new Date(now.getFullYear(), now.getMonth(), 1)), to: fmt(now) };
   if (preset === 'last_month')
     return {
@@ -60,13 +70,17 @@ function rangeFor(preset) {
 }
 
 export default function ExpensesPage() {
+  const pathname = usePathname();
+  const isCashier = pathname?.startsWith('/cashier');
   const { addToast } = useToast();
+  const { confirm } = useConfirm();
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [originFilter, setOriginFilter] = useState('all');
   const [datePreset, setDatePreset] = useState('this_month');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
   const [modal, setModal] = useState(null); // { expense?, payroll? }
+  const [managedCats, setManagedCats] = useState([]);
 
   const { from, to } = datePreset === 'custom' ? { from: customFrom, to: customTo } : rangeFor(datePreset);
 
@@ -93,9 +107,38 @@ export default function ExpensesPage() {
   // SQL — totalling the fifty rows on screen would understate the spend.
   const summary = extra.summary;
 
+  useEffect(() => {
+    apiJson('/api/admin/expense-categories')
+      .then((data) => setManagedCats(data.categories || []))
+      .catch(() => setManagedCats([]));
+  }, []);
+
+  const manualCategoryOptions = useMemo(() => {
+    const options = [...EXPENSE_CATEGORIES];
+    for (const cat of managedCats) {
+      const name = String(cat.name || '').trim();
+      if (!name) continue;
+      if (options.some((option) => option.value === name || option.label === name)) continue;
+      options.push({ value: name, label: name });
+    }
+    return options;
+  }, [managedCats]);
+
+  const allCategoryOptions = useMemo(
+    () => [
+      ...manualCategoryOptions,
+      ...Object.entries(GENERATED_CATEGORY_LABELS).map(([value, label]) => ({ value, label })),
+    ],
+    [manualCategoryOptions]
+  );
+
   async function handleDelete(expense) {
     if (expense.source_type) return; // never offered, but belt and braces
-    if (!confirm(`Delete “${expense.description}”?`)) return;
+    const confirmed = await confirm({
+      title: `Delete "${expense.description}"?`,
+      tone: 'delete',
+    });
+    if (!confirmed) return;
     const { ok, status, data } = await apiJsonRaw(`/api/admin/expenses?id=${expense.id}`, { method: 'DELETE' });
     if (ok) {
       addToast(friendlyMessage('delete_success'));
@@ -110,8 +153,8 @@ export default function ExpensesPage() {
   }
 
   const byCategory = useMemo(
-    () => (summary?.byCategory || []).map((r) => ({ label: categoryLabel(r.category), value: r.total })),
-    [summary]
+    () => (summary?.byCategory || []).map((r) => ({ label: categoryLabel(r.category, allCategoryOptions), value: r.total })),
+    [summary, allCategoryOptions]
   );
 
   const daily = useMemo(
@@ -150,8 +193,8 @@ export default function ExpensesPage() {
       {
         key: 'category',
         label: 'Category',
-        value: (e) => categoryLabel(e.category),
-        render: (e) => <StatusBadge tone={e.source_type ? 'blue' : 'gray'}>{categoryLabel(e.category)}</StatusBadge>,
+        value: (e) => categoryLabel(e.category, allCategoryOptions),
+        render: (e) => <StatusBadge tone={e.source_type ? 'blue' : 'gray'}>{categoryLabel(e.category, allCategoryOptions)}</StatusBadge>,
       },
       {
         key: 'amount',
@@ -186,7 +229,7 @@ export default function ExpensesPage() {
           ),
       },
     ],
-    []
+    [allCategoryOptions]
   );
 
   return (
@@ -200,9 +243,11 @@ export default function ExpensesPage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <button type="button" onClick={() => setModal({ payroll: true })} className="inline-flex items-center gap-1.5 rounded-xl border border-gray-300 px-3.5 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-              <Plus className="h-4 w-4" /> Payroll
-            </button>
+            {!isCashier && (
+              <button type="button" onClick={() => setModal({ payroll: true })} className="inline-flex items-center gap-1.5 rounded-xl border border-gray-300 px-3.5 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                <Plus className="h-4 w-4" /> Salary
+              </button>
+            )}
             <button type="button" onClick={() => setModal({})} className="inline-flex items-center gap-1.5 rounded-xl bg-gray-900 px-3.5 py-2.5 text-sm font-semibold text-white hover:bg-gray-800">
               <Plus className="h-4 w-4" /> Log expense
             </button>
@@ -221,7 +266,7 @@ export default function ExpensesPage() {
         />
 
         <div className="flex flex-wrap gap-2">
-          {['this_month', 'last_month', 'quarter', 'custom'].map((p) => (
+          {['today', 'last7', 'this_month', 'last_month', 'quarter', 'custom'].map((p) => (
             <button
               key={p}
               type="button"
@@ -230,7 +275,17 @@ export default function ExpensesPage() {
                 datePreset === p ? 'bg-gray-900 text-white' : 'border border-gray-300 bg-white text-gray-600 hover:bg-gray-50'
               }`}
             >
-              {p === 'this_month' ? 'This month' : p === 'last_month' ? 'Last month' : p === 'quarter' ? 'Quarter to date' : 'Custom'}
+              {p === 'today'
+                ? 'Today'
+                : p === 'last7'
+                  ? 'Last 7 days'
+                  : p === 'this_month'
+                    ? 'This month'
+                    : p === 'last_month'
+                      ? 'Last month'
+                      : p === 'quarter'
+                        ? 'Quarter to date'
+                        : 'Custom'}
             </button>
           ))}
           {datePreset === 'custom' && (
@@ -269,7 +324,7 @@ export default function ExpensesPage() {
               </select>
               <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className={SELECT}>
                 <option value="all">All categories</option>
-                {EXPENSE_CATEGORIES.map((c) => (
+                {manualCategoryOptions.map((c) => (
                   <option key={c.value} value={c.value}>{c.label}</option>
                 ))}
                 {Object.entries(GENERATED_CATEGORY_LABELS).map(([value, label]) => (
@@ -280,6 +335,7 @@ export default function ExpensesPage() {
           }
           renderActions={(e) => {
             const meta = SOURCE_META[e.source_type];
+            if (isCashier) return null;
             if (meta) {
               return (
                 <Link

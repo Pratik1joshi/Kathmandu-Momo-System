@@ -13,9 +13,16 @@ export default function DonutChart({
   const total = segments.reduce((s, x) => s + Number(x.value || 0), 0);
   const r = 40;
   const c = 2 * Math.PI * r;
-  let offset = 0;
 
   const colors = segments.map((s, i) => s.color || DEFAULT_COLORS[i % DEFAULT_COLORS.length]);
+  const arcs = segments.reduce((acc, seg, i) => {
+    const value = Number(seg.value || 0);
+    const len = value > 0 ? (value / total) * c : 0;
+    const strokeDashoffset = -acc.offset;
+    acc.offset += len;
+    acc.rows.push({ seg, i, value, len, strokeDashoffset });
+    return acc;
+  }, { offset: 0, rows: [] }).rows;
 
   if (total <= 0) {
     return (
@@ -34,12 +41,10 @@ export default function DonutChart({
     <div className="relative mx-auto" style={{ width: size, height: size }}>
       <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
         <circle cx="50" cy="50" r={r} fill="none" stroke="#f3f4f6" strokeWidth={thickness / 2.5} />
-        {segments.map((seg, i) => {
-          const value = Number(seg.value || 0);
+        {arcs.map(({ seg, i, value, len, strokeDashoffset }) => {
           if (value <= 0) return null;
-          const len = (value / total) * c;
           const dash = `${len} ${c - len}`;
-          const el = (
+          return (
             <circle
               key={i}
               cx="50"
@@ -49,12 +54,10 @@ export default function DonutChart({
               stroke={colors[i]}
               strokeWidth={thickness / 2.5}
               strokeDasharray={dash}
-              strokeDashoffset={-offset}
+              strokeDashoffset={strokeDashoffset}
               strokeLinecap="butt"
             />
           );
-          offset += len;
-          return el;
         })}
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center px-4 text-center">

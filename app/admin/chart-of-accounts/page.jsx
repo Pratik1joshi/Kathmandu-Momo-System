@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import AdminLayout from '@/components/admin/admin-layout';
 import { Plus, Pencil, Trash2, Lock } from 'lucide-react';
 import { useToast } from '@/components/ui/toast';
+import { useConfirm } from '@/components/ui/confirm';
 import { friendlyMessage, friendlyFromError } from '@/lib/friendly-message';
 import { apiJson } from '@/lib/authed-fetch';
 import { money } from '@/components/accounting/ledger-table';
@@ -19,6 +20,7 @@ const TYPE_TONE = {
 
 export default function ChartOfAccountsPage() {
   const { addToast } = useToast();
+  const { confirm } = useConfirm();
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [typeFilter, setTypeFilter] = useState('all');
@@ -42,7 +44,12 @@ export default function ChartOfAccountsPage() {
   );
 
   const remove = async (a) => {
-    if (!confirm(`Delete account ${a.code} ${a.name}?`)) return;
+    const ok = await confirm({
+      title: `Delete account ${a.code}?`,
+      message: `Delete account ${a.code} ${a.name}?`,
+      tone: 'delete',
+    });
+    if (!ok) return;
     try { await apiJson(`/api/admin/accounts?id=${a.id}`, { method: 'DELETE' }); load(); }
     catch (error) { addToast(friendlyFromError(error, 'delete_failed')); }
   };

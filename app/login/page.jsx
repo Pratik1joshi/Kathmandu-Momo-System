@@ -1,42 +1,67 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useState } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Delete, LogIn } from 'lucide-react'
+import { Delete, LogIn, RefreshCw, ShieldCheck, UserRound } from 'lucide-react'
+
+const BRAND_NAME = 'Kathmandu Momo'
 
 export default function LoginPage() {
+  const [users, setUsers] = useState([])
+  const [usersLoading, setUsersLoading] = useState(true)
+  const [selectedUser, setSelectedUser] = useState(null)
   const [username, setUsername] = useState('')
   const [pin, setPin] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const [users, setUsers] = useState([])
-  const [loadingUsers, setLoadingUsers] = useState(true)
   const { login } = useAuth()
-  const router = useRouter()
 
-  // Fetch active users from database
   useEffect(() => {
-    async function fetchUsers() {
+    let cancelled = false
+
+    async function loadUsers() {
+      setUsersLoading(true)
+
       try {
-        const response = await fetch('/api/users/active')
-        if (response.ok) {
-          const data = await response.json()
-          setUsers(data.users || [])
+        const response = await fetch('/api/users/active', { cache: 'no-store' })
+        const data = await response.json()
+        const activeUsers = Array.isArray(data.users) ? data.users : []
+
+        if (!cancelled) {
+          setUsers(activeUsers)
+          const firstUser = activeUsers[0] || null
+          setSelectedUser(firstUser)
+          setUsername(firstUser?.username || '')
         }
-      } catch (error) {
-        console.error('Failed to fetch users:', error)
+      } catch {
+        if (!cancelled) {
+          const fallbackUser = { username: 'admin', full_name: 'Administrator', role: 'admin' }
+          setUsers([fallbackUser])
+          setSelectedUser(fallbackUser)
+          setUsername(fallbackUser.username)
+        }
       } finally {
-        setLoadingUsers(false)
+        if (!cancelled) setUsersLoading(false)
       }
     }
-    fetchUsers()
+
+    loadUsers()
+    return () => {
+      cancelled = true
+    }
   }, [])
 
+  const handleUserSelect = (user) => {
+    setSelectedUser(user)
+    setUsername(user.username)
+    setPin('')
+    setError('')
+  }
+
   const handlePinClick = (num) => {
-    if (pin.length < 6) {
+    if (pin.length < 32) {
       setPin(pin + num)
       setError('')
     }
@@ -53,179 +78,183 @@ export default function LoginPage() {
   }
 
   const handleLogin = async () => {
-    if (!username) {
-      setError('Please select a user')
+    if (!username.trim()) {
+      setError('Select a user first')
       return
     }
-    
     if (pin.length < 4) {
-      setError('PIN must be at least 4 digits')
+      setError('Enter your PIN or password (at least 4 characters)')
       return
     }
 
     setLoading(true)
     setError('')
 
-    const result = await login(username, pin)
+    const result = await login(username.trim(), pin)
 
     if (!result.success) {
       setError(result.error || 'Invalid credentials')
       setPin('')
     }
-    
     setLoading(false)
   }
 
-  // Role color mapping
-  const getRoleColor = (role) => {
-    const colors = {
-      admin: 'bg-purple-500',
-      waiter: 'bg-blue-500',
-      cashier: 'bg-green-500',
-      kitchen: 'bg-orange-500',
-    }
-    return colors[role] || 'bg-gray-500'
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') handleLogin()
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-      <div className="w-full max-w-4xl grid md:grid-cols-2 gap-6">
-        {/* User Selection */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Kathmandu Momo</CardTitle>
-            <CardDescription>Select your profile to continue</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {loadingUsers ? (
-              <div className="text-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-                <p className="mt-2 text-sm text-gray-600">Loading users...</p>
+    <div
+      className="min-h-screen flex items-center justify-center p-4"
+      style={{ background: 'linear-gradient(135deg, #F7F3EC 0%, #efe6d8 100%)' }}
+      onKeyDown={handleKeyDown}
+    >
+      <Card className="w-full max-w-5xl shadow-2xl border" style={{ borderColor: '#E6DED5' }}>
+        <CardHeader className="text-center space-y-2">
+          <div
+            className="mx-auto w-14 h-14 rounded-2xl flex items-center justify-center text-white shadow-md"
+            style={{ background: '#8F3F2D' }}
+          >
+            <ShieldCheck className="w-7 h-7" />
+          </div>
+          <CardTitle className="text-xl" style={{ color: '#211A17' }}>{BRAND_NAME}</CardTitle>
+          <CardDescription>Select your user and enter your PIN</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
+            <section className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-semibold uppercase text-stone-500">Users</h2>
+                  <p className="text-sm text-stone-600">Choose your username from the list.</p>
+                </div>
+                {usersLoading && (
+                  <RefreshCw className="h-4 w-4 animate-spin text-stone-400" aria-label="Loading users" />
+                )}
               </div>
-            ) : users.length === 0 ? (
-              <div className="text-center py-8">
-                <p className="text-gray-600">No active users found</p>
-              </div>
-            ) : (
-              users.map((u) => (
-                <button
-                  key={u.username}
-                  onClick={() => {
-                    setUsername(u.username)
-                    setPin('')
-                    setError('')
-                  }}
-                  className={`w-full p-4 rounded-xl border-2 transition-all text-left shadow-md hover:shadow-lg ${
-                    username === u.username
-                      ? 'border-blue-600 bg-blue-50 ring-2 ring-blue-200'
-                      : 'border-gray-300 hover:border-blue-400 bg-white'
-                  }`}
-                >
-                  <div className="flex items-center space-x-3">
-                    <div className={`w-12 h-12 rounded-full ${getRoleColor(u.role)} flex items-center justify-center text-white font-bold text-lg shadow-md`}>
-                      {u.full_name.charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <div className="font-bold text-gray-900">{u.full_name}</div>
-                      <div className="text-sm text-gray-800 capitalize font-semibold">{u.role}</div>
-                    </div>
+
+              <div className="max-h-[480px] space-y-2 overflow-y-auto pr-1">
+                {users.map((user) => {
+                  const isSelected = selectedUser?.username === user.username
+                  return (
+                    <button
+                      key={user.username}
+                      type="button"
+                      onClick={() => handleUserSelect(user)}
+                      disabled={loading}
+                      className={`flex w-full items-center gap-3 rounded-lg border-2 px-4 py-3 text-left transition ${
+                        isSelected
+                          ? 'bg-stone-900 text-white shadow-sm'
+                          : 'bg-white text-stone-900 hover:bg-stone-50'
+                      } disabled:opacity-60`}
+                      style={{ borderColor: isSelected ? '#211A17' : '#E6DED5' }}
+                      aria-pressed={isSelected}
+                    >
+                      <span
+                        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
+                          isSelected ? 'bg-white/15' : 'bg-stone-100'
+                        }`}
+                      >
+                        <UserRound className="h-5 w-5" />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-base font-semibold">{user.username}</span>
+                        <span className={`block truncate text-xs capitalize ${isSelected ? 'text-stone-200' : 'text-stone-500'}`}>
+                          {user.full_name || user.role || 'Staff'}
+                        </span>
+                      </span>
+                    </button>
+                  )
+                })}
+
+                {!usersLoading && users.length === 0 && (
+                  <div className="rounded-lg border border-stone-200 bg-white px-4 py-6 text-center text-sm text-stone-600">
+                    No active users found.
                   </div>
-                </button>
-              ))
-            )}
-          </CardContent>
-        </Card>
-
-        {/* PIN Entry */}
-        <Card className="shadow-2xl border-4 border-white/10">
-          <CardHeader className="bg-gradient-to-r from-green-50 to-blue-50">
-            <CardTitle>Enter PIN</CardTitle>
-            <CardDescription className="text-base font-medium">
-              {username ? `Login as ${users.find(u => u.username === username)?.full_name}` : 'Select a user first'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* PIN Display */}
-            <div className="bg-gray-100 rounded-lg p-4 text-center">
-              <div className="flex justify-center space-x-2">
-                {[...Array(6)].map((_, i) => (
-                  <div
-                    key={i}
-                    className={`w-3 h-3 rounded-full ${
-                      i < pin.length ? 'bg-blue-500' : 'bg-gray-300'
-                    }`}
-                  />
-                ))}
+                )}
               </div>
-              <div className="mt-2 text-2xl font-mono text-gray-700 tracking-widest">
-                {pin.replace(/./g, '•') || '______'}
+            </section>
+
+            <section className="space-y-4">
+              <div>
+                <label htmlFor="admin-pin" className="block text-sm font-medium mb-1 text-stone-700">
+                  PIN or password
+                </label>
+                <input
+                  id="admin-pin"
+                  type="password"
+                  autoComplete="current-password"
+                  value={pin}
+                  onChange={(e) => { setPin(e.target.value); setError('') }}
+                  className="w-full px-3 py-3 border-2 rounded-xl text-stone-900 text-center text-xl font-mono focus:outline-none focus:ring-2"
+                  style={{ borderColor: '#E6DED5' }}
+                  placeholder="PIN"
+                />
+                <p className="mt-2 text-sm text-stone-600">
+                  Signing in as <span className="font-semibold text-stone-900">{username || 'no user selected'}</span>
+                </p>
               </div>
-            </div>
 
-            {/* Error Message */}
-            {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
-                {error}
-              </div>
-            )}
-
-            {/* PIN Pad */}
-            <div className="grid grid-cols-3 gap-3">
-              {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
-                <button
-                  key={num}
-                  onClick={() => handlePinClick(num.toString())}
-                  disabled={!username || loading}
-                  className="h-14 text-xl font-semibold bg-white border-2 border-gray-200 rounded-lg hover:bg-gray-50 hover:border-blue-300 active:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  {num}
-                </button>
-              ))}
-              
-              <button
-                onClick={handleClear}
-                disabled={!username || loading}
-                className="h-14 bg-gray-200 border-2 border-gray-300 rounded-lg hover:bg-gray-300 active:bg-gray-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
-              >
-                Clear
-              </button>
-              
-              <button
-                onClick={() => handlePinClick('0')}
-                disabled={!username || loading}
-                className="h-14 text-xl font-semibold bg-white border-2 border-gray-200 rounded-lg hover:bg-gray-50 hover:border-blue-300 active:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                0
-              </button>
-              
-              <button
-                onClick={handleBackspace}
-                disabled={!username || loading}
-                className="h-14 bg-gray-200 border-2 border-gray-300 rounded-lg hover:bg-gray-300 active:bg-gray-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
-              >
-                <Delete className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Login Button */}
-            <Button
-              onClick={handleLogin}
-              disabled={!username || pin.length < 4 || loading}
-              className="w-full h-12 text-lg"
-              size="lg"
-            >
-              {loading ? (
-                <span>Logging in...</span>
-              ) : (
-                <>
-                  <LogIn className="w-5 h-5 mr-2" />
-                  Login
-                </>
+              {error && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm" role="alert">
+                  {error}
+                </div>
               )}
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
+                  <button
+                    key={num}
+                    type="button"
+                    onClick={() => handlePinClick(num.toString())}
+                    disabled={loading || !username}
+                    className="h-14 text-xl font-semibold bg-white border-2 rounded-xl hover:bg-stone-50 active:scale-95 disabled:opacity-50 transition-transform"
+                    style={{ borderColor: '#E6DED5' }}
+                  >
+                    {num}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={handleClear}
+                  disabled={loading || !username}
+                  className="h-14 bg-stone-200 border-2 border-stone-300 rounded-xl hover:bg-stone-300 active:scale-95 disabled:opacity-50 text-sm font-medium transition-transform"
+                >
+                  Clear
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handlePinClick('0')}
+                  disabled={loading || !username}
+                  className="h-14 text-xl font-semibold bg-white border-2 rounded-xl hover:bg-stone-50 active:scale-95 disabled:opacity-50 transition-transform"
+                  style={{ borderColor: '#E6DED5' }}
+                >
+                  0
+                </button>
+                <button
+                  type="button"
+                  onClick={handleBackspace}
+                  disabled={loading || !username}
+                  className="h-14 bg-stone-200 border-2 border-stone-300 rounded-xl hover:bg-stone-300 active:scale-95 disabled:opacity-50 flex items-center justify-center transition-transform"
+                  aria-label="Delete last digit"
+                >
+                  <Delete className="w-5 h-5" />
+                </button>
+              </div>
+
+              <Button
+                onClick={handleLogin}
+                disabled={!username.trim() || pin.length < 4 || loading}
+                className="w-full h-12 text-lg"
+                size="lg"
+                style={{ background: '#8F3F2D' }}
+              >
+                {loading ? <span>Signing in...</span> : (<><LogIn className="w-5 h-5 mr-2" /> Sign in</>)}
+              </Button>
+            </section>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }

@@ -2,6 +2,7 @@
 
 import { Printer, Check, X } from 'lucide-react';
 import { formatCurrency } from '@/lib/currency';
+import { compactBillNumber, compactOrderNumber } from '@/lib/document-display.js';
 
 /**
  * Pre-complete bill confirmation sheet.
@@ -30,8 +31,10 @@ export default function BillConfirmModal({
     tax = 0,
     tax_percent = 13,
     service_charge = 0,
+    delivery_fee = 0,
     total = 0,
     payment_method = 'cash',
+    allocations = [],
     amount_paid,
     change = 0,
     date,
@@ -66,8 +69,8 @@ export default function BillConfirmModal({
             </div>
 
             <div className="border-t border-b border-stone-300 py-2 space-y-0.5 text-xs mb-3">
-              {bill_number && <p>Bill: {bill_number}</p>}
-              {order_number && <p>Order: {order_number}</p>}
+              {bill_number && <p>Bill: {compactBillNumber(bill_number)}</p>}
+              {order_number && <p>Order: {compactOrderNumber(order_number)}</p>}
               <p>
                 Customer:{' '}
                 <span className="font-bold">
@@ -75,7 +78,7 @@ export default function BillConfirmModal({
                 </span>
               </p>
               {customer_phone && <p>Phone: {customer_phone}</p>}
-              <p>Payment: {String(payment_method).toUpperCase()}</p>
+              <p>Payment: {allocations.length > 1 ? 'SPLIT' : String(payment_method).toUpperCase()}</p>
             </div>
 
             <div className="space-y-1.5 mb-3">
@@ -108,6 +111,12 @@ export default function BillConfirmModal({
                   <span>{formatCurrency(service_charge)}</span>
                 </div>
               )}
+              {delivery_fee > 0 && (
+                <div className="flex justify-between">
+                  <span>Delivery</span>
+                  <span>{formatCurrency(delivery_fee)}</span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span>Tax ({tax_percent}%)</span>
                 <span>{formatCurrency(tax)}</span>
@@ -116,12 +125,28 @@ export default function BillConfirmModal({
                 <span>Total</span>
                 <span>{formatCurrency(total)}</span>
               </div>
-              {amount_paid != null && payment_method === 'cash' && (
+              {allocations.map((allocation, index) => (
+                <div key={`${allocation.method}-${index}`} className="pt-1">
+                  <div className="flex justify-between">
+                    <span className="capitalize">{allocation.method === 'credit' ? 'Credit / Due' : allocation.method}</span>
+                    <span>{formatCurrency(allocation.amount)}</span>
+                  </div>
+                  {allocation.method === 'qr' && allocation.reference && <p className="text-[11px] text-stone-500">QR reference: {allocation.reference}</p>}
+                  {allocation.method === 'credit' && allocation.due_date && <p className="text-[11px] text-stone-500">Due date: {allocation.due_date}</p>}
+                </div>
+              ))}
+              {amount_paid != null && (
                 <>
                   <div className="flex justify-between pt-1">
-                    <span>Paid</span>
+                    <span>Amount received</span>
                     <span>{formatCurrency(amount_paid)}</span>
                   </div>
+                  {total - amount_paid > 0 && (
+                    <div className="flex justify-between font-semibold text-amber-700">
+                      <span>Outstanding</span>
+                      <span>{formatCurrency(total - amount_paid)}</span>
+                    </div>
+                  )}
                   {change >= 0 && (
                     <div className="flex justify-between">
                       <span>Change</span>

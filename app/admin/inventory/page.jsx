@@ -16,6 +16,7 @@ import {
   Scale, Truck, Upload, Users, Trash2,
 } from 'lucide-react';
 import { useToast } from '@/components/ui/toast';
+import { formatNepalDate } from '@/lib/time-utils';
 import { friendlyFromError, friendlyMessage } from '@/lib/friendly-message';
 import { apiJson, authedRequest } from '@/lib/authed-fetch';
 import DataGrid, { InlineEdit, StatusBadge } from '@/components/admin/data-grid';
@@ -216,14 +217,19 @@ export default function InventoryPage() {
           </button>
         ),
       },
-      { key: 'purchase_unit', label: 'Purchase unit', render: (r) => r.purchase_unit || '—' },
-      { key: 'consumption_unit', label: 'Consumption unit', render: (r) => r.consumption_unit || r.unit || '—' },
       {
-        key: 'conversion_factor',
-        label: 'Factor',
-        align: 'right',
-        numeric: true,
-        render: (r) => Number(r.conversion_factor || 1),
+        key: 'unit',
+        label: 'Unit',
+        render: (row) => {
+          const unit = row.consumption_unit || row.unit || '—';
+          const differentPurchaseUnit = row.purchase_unit && row.purchase_unit !== unit;
+          return (
+            <div>
+              <p className="text-gray-900">{unit}</p>
+              {differentPurchaseUnit && <p className="text-xs text-gray-400">Bought as {row.purchase_unit} · 1 = {Number(row.conversion_factor || 1)} {unit}</p>}
+            </div>
+          );
+        },
       },
       {
         key: 'cost_per_unit',
@@ -279,7 +285,7 @@ export default function InventoryPage() {
         key: 'updated_at',
         label: 'Last updated',
         value: (row) => row.updated_at || '',
-        render: (row) => (row.updated_at ? new Date(row.updated_at).toLocaleDateString() : '—'),
+        render: (row) => (row.updated_at ? formatNepalDate(row.updated_at) : '—'),
       },
     ],
     [patchItem]

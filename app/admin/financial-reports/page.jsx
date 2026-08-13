@@ -11,6 +11,7 @@ const TABS = [
   { id: 'pnl', label: 'Profit & Loss' },
   { id: 'balance-sheet', label: 'Balance Sheet' },
   { id: 'trial-balance', label: 'Trial Balance' },
+  { id: 'cash-flow', label: 'Cash Flow' },
 ];
 
 export default function FinancialReportsPage() {
@@ -23,7 +24,7 @@ export default function FinancialReportsPage() {
   useEffect(() => {
     setLoading(true);
     const q = new URLSearchParams({ report: tab });
-    if (tab === 'pnl' && range.from) q.set('from', range.from);
+    if ((tab === 'pnl' || tab === 'cash-flow') && range.from) q.set('from', range.from);
     if (range.to) q.set('to', range.to);
     apiJson(`/api/admin/financial-reports?${q}`)
       .then((d) => setData(d.report))
@@ -36,20 +37,21 @@ export default function FinancialReportsPage() {
     <AdminLayout>
       <header className="border-b border-gray-200 bg-white px-4 py-5 sm:px-6 lg:px-8">
         <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Financial Reports</h1>
-        <p className="mt-1 text-sm text-gray-500">P&amp;L, Balance Sheet and Trial Balance — all derived live from the journals.</p>
+        <p className="mt-1 text-sm text-gray-500">P&amp;L, Balance Sheet, Trial Balance and Cash Flow — live from the journals.</p>
       </header>
 
       <div className="space-y-5 bg-gray-50 p-4 sm:p-6 lg:p-8">
         <div className="flex flex-wrap items-end gap-3">
-          <div className="flex rounded-lg border border-gray-300 bg-white p-0.5">
+          <div className="flex flex-wrap rounded-lg border border-gray-300 bg-white p-0.5">
             {TABS.map((t) => (
               <button key={t.id} onClick={() => setTab(t.id)} className={`rounded-md px-4 py-1.5 text-sm font-medium ${tab === t.id ? 'bg-gray-900 text-white' : 'text-gray-600'}`}>{t.label}</button>
             ))}
           </div>
-          {tab === 'pnl' && (
+          {(tab === 'pnl' || tab === 'cash-flow') && (
             <label className="block"><span className="mb-1 block text-xs font-medium text-gray-500">From</span><input type="date" value={range.from} onChange={(e) => setRange((r) => ({ ...r, from: e.target.value }))} className="h-10 rounded-lg border border-gray-300 px-3 text-sm" /></label>
           )}
-          <label className="block"><span className="mb-1 block text-xs font-medium text-gray-500">{tab === 'pnl' ? 'To' : 'As of'}</span><input type="date" value={range.to} onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))} className="h-10 rounded-lg border border-gray-300 px-3 text-sm" /></label>
+          <label className="block"><span className="mb-1 block text-xs font-medium text-gray-500">{tab === 'pnl' || tab === 'cash-flow' ? 'To' : 'As of'}</span><input type="date" value={range.to} onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))} className="h-10 rounded-lg border border-gray-300 px-3 text-sm" /></label>
+          <button type="button" onClick={() => window.print()} className="ml-auto h-10 rounded-lg border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Print / PDF</button>
         </div>
 
         {loading ? (
@@ -58,6 +60,8 @@ export default function FinancialReportsPage() {
           <PnL data={data} />
         ) : tab === 'balance-sheet' ? (
           <BalanceSheet data={data} />
+        ) : tab === 'cash-flow' ? (
+          <CashFlow data={data} />
         ) : (
           <TrialBalance data={data} />
         )}
@@ -144,6 +148,50 @@ function TrialBalance({ data }) {
             <tr><td className="px-5 py-3" colSpan={2}>Totals {data.balanced ? '(balanced)' : '(OUT OF BALANCE)'}</td><td className="px-5 py-3 text-right tabular-nums">{money(data.totalDebit)}</td><td className="px-5 py-3 text-right tabular-nums">{money(data.totalCredit)}</td></tr>
           </tfoot>
         </table>
+      </div>
+    </div>
+  );
+}
+
+function CashFlowBucket({ title, bucket }) {
+  if (!bucket) return null;
+  return (
+    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
+      <div className="border-b border-gray-200 bg-gray-50 px-5 py-3 text-sm font-semibold text-gray-900">{title}</div>
+      <div className="grid gap-4 p-5 md:grid-cols-2">
+        <div>
+          <p className="mb-2 text-xs font-semibold uppercase text-emerald-700">Inflows</p>
+          {(bucket.inflows || []).length === 0 ? <p className="text-sm text-gray-400">None</p> : bucket.inflows.map((r, i) => (
+            <div key={i} className="flex justify-between py-1 text-sm"><span className="text-gray-700">{r.name}</span><span className="tabular-nums">{money(r.amount)}</span></div>
+          ))}
+        </div>
+        <div>
+          <p className="mb-2 text-xs font-semibold uppercase text-rose-700">Outflows</p>
+          {(bucket.outflows || []).length === 0 ? <p className="text-sm text-gray-400">None</p> : bucket.outflows.map((r, i) => (
+            <div key={i} className="flex justify-between py-1 text-sm"><span className="text-gray-700">{r.name}</span><span className="tabular-nums">{money(r.amount)}</span></div>
+          ))}
+        </div>
+      </div>
+      <div className="border-t border-gray-100 px-5 py-3 text-sm font-semibold flex justify-between">
+        <span>Net {title}</span>
+        <span className="tabular-nums">{money(bucket.net)}</span>
+      </div>
+    </div>
+  );
+}
+
+function CashFlow({ data }) {
+  if (!data) return null;
+  return (
+    <div className="space-y-5">
+      <CashFlowBucket title="Operating activities" bucket={data.operating} />
+      <CashFlowBucket title="Investing activities" bucket={data.investing} />
+      <CashFlowBucket title="Financing activities" bucket={data.financing} />
+      <div className="rounded-2xl border border-gray-900 bg-gray-900 px-5 py-4 text-white">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium">Net change in cash &amp; bank</span>
+          <span className="text-xl font-bold tabular-nums">{money(data.netChange)}</span>
+        </div>
       </div>
     </div>
   );

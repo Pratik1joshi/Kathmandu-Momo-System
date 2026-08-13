@@ -6,13 +6,9 @@ const nextConfig = {
   },
   async rewrites() {
     return [
-      // Landing page: Kathmandu Momo marketing site at /
-      {
-        source: '/',
-        destination: '/kathmandu-momo.html',
-      },
-      // Serve uploaded images (stored in UPLOADS_DIR, outside /public) through
-      // the media route. Without this, /uploads/menu/*.jpg 404s in production.
+      // Static Kathmandu Momo landing (public/kathmandu-momo.html).
+      { source: '/', destination: '/kathmandu-momo.html' },
+      // Uploaded images (UPLOADS_DIR) via media route — /uploads/menu/*.jpg in prod.
       {
         source: '/uploads/:path*',
         destination: '/api/media/:path*',

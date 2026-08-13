@@ -10,6 +10,7 @@
 import { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { WASTAGE_REASON_LABELS } from '@/components/inventory/wastage-modal';
+import { formatNepalDate } from '@/lib/time-utils';
 
 const reasonLabel = (r) => WASTAGE_REASON_LABELS[r] || String(r || 'other').replace(/_/g, ' ');
 
@@ -56,7 +57,7 @@ export default function WastageHistoryModal({ request, onClose }) {
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-medium text-gray-900">Rs {Number(e.total_cost || 0).toFixed(2)}</p>
-                    <p className="text-xs text-gray-400">{new Date(e.created_at).toLocaleDateString()}</p>
+                    <p className="text-xs text-gray-400">{formatNepalDate(e.created_at)}</p>
                   </div>
                 </div>
               ))}

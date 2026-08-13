@@ -13,6 +13,7 @@ import { useToast } from '@/components/ui/toast';
 import { friendlyFromError } from '@/lib/friendly-message';
 import { apiJson } from '@/lib/authed-fetch';
 import { KpiCards } from '@/components/admin/report-kit';
+import { formatNepalDate } from '@/lib/time-utils';
 
 const money = (n) => `Rs ${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 const ROLE_TONE = {
@@ -125,7 +126,7 @@ export default function EmployeePerformancePage() {
                     <td className="px-5 py-3 text-right tabular-nums text-gray-600">
                       {r.wastage_entries ? <span className="text-rose-700">{money(r.wastage_cost)}</span> : '—'}
                     </td>
-                    <td className="px-5 py-3 text-gray-500">{r.last_order_at ? new Date(r.last_order_at).toLocaleDateString() : '—'}</td>
+                    <td className="px-5 py-3 text-gray-500">{r.last_order_at ? formatNepalDate(r.last_order_at) : '—'}</td>
                   </tr>
                 ))}
                 {!loading && filtered.length === 0 && (

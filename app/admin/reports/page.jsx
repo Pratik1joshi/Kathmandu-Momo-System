@@ -3,11 +3,40 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import AdminLayout from '@/components/admin/admin-layout';
 import { Calendar, Download, RotateCcw, Search } from 'lucide-react';
-import { toCsv } from '@/lib/csv';
 import {
   QuickChips, KpiCards, ChartCard, ChartGrid, BarChart, TrendChart, RankBars,
-  ScatterChart, BusinessInsights, DataTable, DataNotes,
+  ScatterChart, BusinessInsights, DataTable, DataNotes, formatValue,
 } from '@/components/admin/report-kit';
+import DonutChart from '@/components/admin/donut-chart';
+
+const DONUT_COLORS = ['#0f172a', '#2563eb', '#059669', '#d97706', '#db2777', '#7c3aed', '#0891b2', '#ea580c'];
+
+function DonutBlock({ rows, centerLabel = 'Total', format = 'currency' }) {
+  const segments = (rows || [])
+    .filter((r) => Number(r.value) > 0)
+    .map((r, i) => ({ label: r.label, value: Number(r.value), color: DONUT_COLORS[i % DONUT_COLORS.length] }));
+  const total = segments.reduce((s, x) => s + x.value, 0);
+  if (!segments.length) return null;
+  return (
+    <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-center sm:gap-8">
+      <DonutChart
+        segments={segments}
+        centerLabel={centerLabel}
+        centerValue={formatValue(total, format)}
+        size={170}
+      />
+      <div className="space-y-1.5 text-sm">
+        {segments.map((seg) => (
+          <div key={seg.label} className="flex items-center gap-2">
+            <span className="h-2.5 w-2.5 rounded-full" style={{ background: seg.color }} />
+            <span className="text-gray-600">{seg.label}</span>
+            <span className="font-semibold tabular-nums text-gray-900">{formatValue(seg.value, format)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 /**
  * Reports analytics centre.
@@ -40,10 +69,8 @@ const TABS = [
 
 const PERIODS = [
   { id: 'today', label: 'Today' },
-  { id: 'yesterday', label: 'Yesterday' },
-  { id: 'week', label: 'This Week' },
-  { id: 'month', label: 'This Month' },
-  { id: 'year', label: 'This Year' },
+  { id: 'week', label: 'Last 7 days' },
+  { id: 'month', label: 'This month' },
   { id: 'custom', label: 'Custom' },
 ];
 
@@ -53,11 +80,11 @@ function selectClass() {
   return 'h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700';
 }
 
-export default function ReportsPage({ initialTab = 'overview', title = 'Reports', lockedTab = false }) {
-  const [tab, setTab] = useState(initialTab);
+export default function ReportsPage() {
+  const [tab, setTab] = useState('overview');
   const [period, setPeriod] = useState('week');
   const [custom, setCustom] = useState({ start: '', end: '' });
-  const [filters, setFilters] = useState({ employeeId: '', categoryId: '', paymentMethod: '', orderType: '', search: '' });
+  const [filters, setFilters] = useState({ businessDayId: '', employeeId: '', categoryId: '', foodGroup: '', paymentMethod: '', orderType: '', search: '' });
   const [searchDraft, setSearchDraft] = useState('');
   const [options, setOptions] = useState(null);
   const [data, setData] = useState(null);
@@ -99,7 +126,7 @@ export default function ReportsPage({ initialTab = 'overview', title = 'Reports'
   useEffect(() => { load(); }, [load]);
 
   const resetFilters = () => {
-    setFilters({ employeeId: '', categoryId: '', paymentMethod: '', orderType: '', search: '' });
+    setFilters({ businessDayId: '', employeeId: '', categoryId: '', foodGroup: '', paymentMethod: '', orderType: '', search: '' });
     setSearchDraft('');
   };
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
@@ -135,26 +162,17 @@ export default function ReportsPage({ initialTab = 'overview', title = 'Reports'
     } catch {
       // Fall back to what is on screen rather than failing the download.
     }
-    const sections = [];
-    sections.push(`Report,${TABS.find((t) => t.id === tab)?.label}`);
-    sections.push(`Period,${data.range?.label || period}`);
-    sections.push('');
-    sections.push(toCsv(['Metric', 'Value'], (full.kpis || []).map((k) => ({ Metric: k.label, Value: k.value ?? '' }))));
-    Object.entries(full.charts || {}).forEach(([name, series]) => {
-      sections.push('');
-      sections.push(name);
-      sections.push(toCsv(['Label', 'Value', 'Detail'], series.map((d) => ({ Label: d.sub || d.label, Value: d.value, Detail: d.meta || '' }))));
-    });
-    for (const t of full.tables || (full.table ? [{ ...full.table, title: 'Detail' }] : [])) {
-      sections.push('');
-      sections.push(t.title || 'Detail');
-      sections.push(toCsv(t.columns.map((c) => c.label), t.rows.map((r) => Object.fromEntries(t.columns.map((c) => [c.label, r[c.key] ?? ''])))));
-    }
-    const blob = new Blob([sections.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob([buildReportWorkbook({
+      tab,
+      tabLabel: TABS.find((t) => t.id === tab)?.label || tab,
+      period,
+      filters,
+      data: full,
+    })], { type: 'application/vnd.ms-excel;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `${tab}-report-${data.range?.start || 'export'}.csv`;
+    link.download = `${tab}-report-${data.range?.start || 'export'}.xls`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -164,7 +182,7 @@ export default function ReportsPage({ initialTab = 'overview', title = 'Reports'
       <header className="border-b border-gray-200 bg-white px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">{title}</h1>
+            <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Reports</h1>
             <p className="mt-1 flex items-center gap-2 text-sm text-gray-500">
               <Calendar className="h-4 w-4" />
               {data?.range?.label || 'Choose a date range to begin'}
@@ -207,10 +225,20 @@ export default function ReportsPage({ initialTab = 'overview', title = 'Reports'
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-4">
+            <select value={filters.businessDayId} onChange={(e) => setFilters({ ...filters, businessDayId: e.target.value })} className={selectClass()}>
+              <option value="">Calendar date range</option>
+              {(options?.businessDays || []).map((day) => <option key={day.id} value={day.id}>Business Day {String(day.business_date).slice(0, 10)} · {day.status}</option>)}
+            </select>
             <select value={filters.employeeId} onChange={(e) => setFilters({ ...filters, employeeId: e.target.value })} className={selectClass()}>
               <option value="">All employees</option>
               {(options?.employees || []).map((e) => (
                 <option key={e.id} value={e.id}>{e.name} · {e.role}</option>
+              ))}
+            </select>
+            <select value={filters.foodGroup} onChange={(e) => setFilters({ ...filters, foodGroup: e.target.value })} className={selectClass()}>
+              <option value="">All master categories</option>
+              {(options?.foodGroups || []).map((g) => (
+                <option key={g.id} value={g.id}>{g.label}</option>
               ))}
             </select>
             <select value={filters.categoryId} onChange={(e) => setFilters({ ...filters, categoryId: e.target.value })} className={selectClass()}>
@@ -256,7 +284,7 @@ export default function ReportsPage({ initialTab = 'overview', title = 'Reports'
         {/* Tab bar — horizontally scrollable on mobile */}
         <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
           <div className="flex w-max gap-1 rounded-xl border border-gray-200 bg-white p-1 shadow-sm sm:w-auto">
-            {TABS.filter((t) => !lockedTab || t.id === initialTab).map((t) => (
+            {TABS.map((t) => (
               <button
                 key={t.id}
                 type="button"
@@ -289,6 +317,7 @@ export default function ReportsPage({ initialTab = 'overview', title = 'Reports'
           <div className={`space-y-6 ${loading ? 'opacity-60' : ''}`}>
             <QuickChips chips={data.chips} />
             <KpiCards kpis={data.kpis} />
+            <ReportContents data={data} />
             <TabCharts tab={tab} data={data} />
             <BusinessInsights insights={data.insights} />
             {(data.tables || (data.table ? [{ id: 'detail', ...data.table }] : [])).map((t) => (
@@ -309,6 +338,116 @@ export default function ReportsPage({ initialTab = 'overview', title = 'Reports'
         )}
       </div>
     </AdminLayout>
+  );
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+}
+
+function humanKey(value) {
+  return String(value || '')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/[_-]/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function formatExportCell(value, type) {
+  if (type === 'datetime' && value) return new Date(value).toLocaleString('en-US', { timeZone: 'Asia/Kathmandu' });
+  return value ?? '';
+}
+
+function tableHtml({ title, headers, rows }) {
+  return `
+    <tr></tr>
+    <tr><td colspan="${Math.max(1, headers.length)}" style="font-weight:bold;background:#d9eaf7">${escapeHtml(title)}</td></tr>
+    <tr>${headers.map((header) => `<th style="font-weight:bold;background:#eeeeee">${escapeHtml(header)}</th>`).join('')}</tr>
+    ${rows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join('')}</tr>`).join('')}
+  `;
+}
+
+function flattenObjectRows(object, prefix = '') {
+  return Object.entries(object || {}).flatMap(([key, value]) => {
+    const label = prefix ? `${prefix} ${humanKey(key)}` : humanKey(key);
+    if (value && typeof value === 'object' && !Array.isArray(value)) return flattenObjectRows(value, label);
+    return [[label, value]];
+  });
+}
+
+function buildReportWorkbook({ tabLabel, period, filters, data }) {
+  const range = data.range || {};
+  const activeFilters = Object.entries(filters || {}).filter(([, value]) => value);
+  const tables = data.tables || (data.table ? [{ id: 'detail', ...data.table }] : []);
+  const sections = [];
+
+  sections.push(`<tr><td colspan="12" style="font-size:20px;font-weight:bold">${escapeHtml(tabLabel)} Report</td></tr>`);
+  sections.push(`<tr><td style="font-weight:bold">Report</td><td>${escapeHtml(tabLabel)}</td></tr>`);
+  sections.push(`<tr><td style="font-weight:bold">Period</td><td>${escapeHtml(range.label || period)}</td></tr>`);
+  sections.push(`<tr><td style="font-weight:bold">Date Range</td><td>${escapeHtml(range.start || '')}</td><td>${escapeHtml(range.end || '')}</td></tr>`);
+  sections.push(`<tr><td style="font-weight:bold">Exported At</td><td>${escapeHtml(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kathmandu' }))}</td></tr>`);
+
+  if (activeFilters.length) {
+    sections.push(tableHtml({ title: 'Active Filters', headers: ['Filter', 'Value'], rows: activeFilters.map(([key, value]) => [humanKey(key), value]) }));
+  }
+  sections.push(tableHtml({
+    title: 'KPI Summary',
+    headers: ['Metric', 'Value', 'Format', 'Detail'],
+    rows: (data.kpis || []).map((kpi) => [kpi.label, kpi.value ?? '', kpi.format || '', kpi.sub || '']),
+  }));
+  Object.entries(data.charts || {}).forEach(([name, series]) => {
+    sections.push(tableHtml({
+      title: `${humanKey(name)} Data`,
+      headers: ['Label', 'Value', 'Detail'],
+      rows: (series || []).map((row) => [row.sub || row.label, row.value ?? '', row.meta || '']),
+    }));
+  });
+  if (data.insights?.length) {
+    sections.push(tableHtml({
+      title: 'Business Insights',
+      headers: ['Title', 'Insight', 'Tone'],
+      rows: data.insights.map((row) => [row.title, row.body, row.tone || '']),
+    }));
+  }
+  if (data.reconciliation) {
+    sections.push(tableHtml({ title: 'Reconciliation', headers: ['Metric', 'Value'], rows: flattenObjectRows(data.reconciliation) }));
+  }
+  tables.forEach((table) => {
+    const columns = table.columns || [];
+    sections.push(tableHtml({
+      title: table.title || humanKey(table.id || 'Detail'),
+      headers: columns.map((column) => column.label),
+      rows: (table.rows || []).map((row) => columns.map((column) => formatExportCell(row[column.key], column.type))),
+    }));
+  });
+  if (data.notes?.length) {
+    sections.push(tableHtml({ title: 'Data Notes', headers: ['Note'], rows: data.notes.map((note) => [note]) }));
+  }
+
+  return `<!doctype html><html><head><meta charset="utf-8" /></head><body><table>${sections.join('')}</table></body></html>`;
+}
+
+function ReportContents({ data }) {
+  const tables = data.tables || (data.table ? [data.table] : []);
+  const chartCount = Object.keys(data.charts || {}).length;
+  const rowCount = tables.reduce((sum, table) => sum + (table.rows?.length || 0), 0);
+  const capped = tables.filter((table) => table.truncated).length;
+  const items = [
+    ['KPIs', data.kpis?.length || 0],
+    ['Charts', chartCount],
+    ['Tables', tables.length],
+    ['Rows shown', rowCount],
+    ['Capped tables', capped],
+  ];
+
+  return (
+    <div className="grid gap-px overflow-hidden rounded-2xl border border-gray-200 bg-gray-200 shadow-sm sm:grid-cols-5">
+      {items.map(([label, value]) => (
+        <div key={label} className="bg-white px-4 py-3">
+          <p className="text-xs text-gray-500">{label}</p>
+          <p className="mt-0.5 text-lg font-semibold tabular-nums text-gray-900">{value}</p>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -369,19 +508,24 @@ function TabCharts({ tab, data }) {
           </ChartCard>
         </ChartGrid>
         <ChartGrid>
-          <ChartCard title="Sales by Category" isEmpty={!c.byCategory?.length} empty="No categorised items were sold in this period.">
-            <RankBars data={c.byCategory} color="slate" />
+          <ChartCard title="Sales by Master Category" hint="Food, Beverages, Tobacco…" isEmpty={!c.byGroup?.length} empty="No items were sold in this period.">
+            <DonutBlock rows={c.byGroup} centerLabel="Sales" />
           </ChartCard>
-          <ChartCard title="Sales by Payment Method" isEmpty={!c.byPayment?.length} empty="No payments were recorded against bills in this period.">
-            <RankBars data={c.byPayment} color="blue" />
+          <ChartCard title="Sales by Category" isEmpty={!c.byCategory?.length} empty="No categorised items were sold in this period.">
+            <RankBars data={c.byCategory} color="blue" />
           </ChartCard>
         </ChartGrid>
         <ChartGrid>
+          <ChartCard title="Sales by Payment Method" isEmpty={!c.byPayment?.length} empty="No payments were recorded against bills in this period.">
+            <DonutBlock rows={c.byPayment} centerLabel="Paid" />
+          </ChartCard>
           <ChartCard title="Sales by Waiter" isEmpty={!c.byWaiter?.length} empty="No orders in this period were assigned to a waiter.">
             <RankBars data={c.byWaiter} color="emerald" />
           </ChartCard>
+        </ChartGrid>
+        <ChartGrid>
           <ChartCard title="Sales by Order Type" isEmpty={!c.byOrderType?.length} empty="No orders were placed in this period.">
-            <RankBars data={c.byOrderType} color="amber" />
+            <DonutBlock rows={c.byOrderType} centerLabel="Sales" />
           </ChartCard>
         </ChartGrid>
       </>
@@ -393,7 +537,7 @@ function TabCharts({ tab, data }) {
       <>
         <ChartGrid>
           <ChartCard title="Expense Breakdown" hint="By category" isEmpty={!c.expenseBreakdown?.length} empty="No expenses were logged during the selected period.">
-            <RankBars data={c.expenseBreakdown} color="amber" />
+            <DonutBlock rows={c.expenseBreakdown} centerLabel="Spend" />
           </ChartCard>
           <ChartCard title="Profit Trend" hint="Revenue less expenses, per day" isEmpty={allZero(c.profitTrend)} empty="There is no revenue or expense activity to plot.">
             <TrendChart data={c.profitTrend} color="emerald" />
@@ -441,13 +585,16 @@ function TabCharts({ tab, data }) {
           <RankBars data={c.topItems} color="slate" />
         </ChartCard>
         <ChartGrid>
+          <ChartCard title="Master Category Performance" hint="Food, Beverages, Tobacco…" isEmpty={!c.groupPerformance?.length} empty="No items were sold in this period.">
+            <RankBars data={c.groupPerformance} color="slate" />
+          </ChartCard>
           <ChartCard title="Menu Category Performance" isEmpty={!c.categoryPerformance?.length} empty="No categorised items were sold in this period.">
             <RankBars data={c.categoryPerformance} color="blue" />
           </ChartCard>
-          <ChartCard title="Average Selling Price" hint="Realised price per item, by category" isEmpty={!c.avgPrice?.length} empty="Nothing was sold, so there is no realised price to average.">
-            <RankBars data={c.avgPrice} color="teal" />
-          </ChartCard>
         </ChartGrid>
+        <ChartCard title="Average Selling Price" hint="Realised price per item, by category" isEmpty={!c.avgPrice?.length} empty="Nothing was sold, so there is no realised price to average.">
+          <RankBars data={c.avgPrice} color="teal" />
+        </ChartCard>
         <ChartCard title="Popularity vs Profit" hint="Each dot is a menu item — top right sells well and earns well" isEmpty={!c.matrix?.length} empty="No menu items were sold, so there is nothing to plot.">
           <ScatterChart data={c.matrix} xLabel="Quantity sold" yLabel="Margin %" />
         </ChartCard>

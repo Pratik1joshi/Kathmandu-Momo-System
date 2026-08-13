@@ -1,5 +1,5 @@
 {
-  "name": "kathmandu-momo-pos",
+  "name": "pos-system",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -15,16 +15,11 @@
     "db:seed": "node scripts/seed-postgres.mjs",
     "db:pg:init": "node scripts/migrate.mjs && node scripts/seed-postgres.mjs",
     "health": "node scripts/healthcheck.mjs",
-    "check:reopen": "node scripts/check-bill-reopen.mjs",
-    "check:table-ops": "node scripts/check-table-ops.mjs",
-    "check:waiter": "node scripts/check-waiter-analytics.mjs",
-    "check:permissions": "node scripts/check-permissions.mjs",
-    "check:api-errors": "node scripts/check-api-error-safety.mjs",
-    "check:online-orders": "node scripts/check-online-orders.mjs",
+    "test:e2e": "playwright test",
+    "test:unit": "node --import ./tests/unit/loader-register.mjs --test tests/unit/*.test.js",
+    "import:menu": "node scripts/import-menu.mjs",
     "db:seed-images": "node scripts/seed-menu-images.mjs",
-    "build:menu-pack": "node scripts/build-menu-2083.mjs",
-    "build:menu-2083": "node scripts/build-menu-2083.mjs",
-    "build:icons": "node scripts/build-brand-icons.mjs"
+    "map:menu-images": "node scripts/map-menu-images.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -87,6 +82,7 @@
     "better-sqlite3": "^12.4.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^24.10.1",
     "@types/pg": "^8.20.0",

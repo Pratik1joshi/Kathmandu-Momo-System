@@ -5,6 +5,7 @@ import AdminLayout from '@/components/admin/admin-layout';
 import MenuItemImage from '@/components/menu-item-image';
 import { Plus, Edit, Trash2, Search, Package, Upload } from 'lucide-react';
 import { useToast } from '@/components/ui/toast';
+import { useConfirm } from '@/components/ui/confirm';
 import { friendlyMessage, friendlyFromError } from '@/lib/friendly-message';
 import FieldError, { inputErrorClass } from '@/components/ui/field-error';
 import { numbersOnlyInput, validateName, validatePositiveNumber, firstError } from '@/lib/form-validation';
@@ -22,6 +23,7 @@ const emptyForm = {
 
 export default function ProductsPage() {
   const { addToast } = useToast();
+  const { confirm } = useConfirm();
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -175,7 +177,12 @@ export default function ProductsPage() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Are you sure you want to delete this menu item?')) return;
+    const ok = await confirm({
+      title: 'Delete menu item?',
+      message: 'Are you sure you want to delete this menu item?',
+      tone: 'delete',
+    });
+    if (!ok) return;
     
     try {
       const token = localStorage.getItem('pos_token');
@@ -376,7 +383,7 @@ export default function ProductsPage() {
                   </div>
                 </div>
 
-                <div className="flex items-center space-x-6">
+                <div className="flex flex-wrap items-center gap-4">
                   <label className="flex items-center space-x-2">
                     <input
                       type="checkbox"
@@ -386,15 +393,31 @@ export default function ProductsPage() {
                     />
                     <span className="text-sm text-gray-700">Available</span>
                   </label>
-                  <label className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      checked={formData.is_vegetarian}
-                      onChange={(e) => setFormData({...formData, is_vegetarian: e.target.checked})}
-                      className="w-4 h-4 text-gray-900 border-gray-300 rounded focus:ring-gray-400"
-                    />
-                    <span className="text-sm text-gray-700">Vegetarian</span>
-                  </label>
+                  <fieldset className="flex items-center gap-2">
+                    <legend className="sr-only">Food type</legend>
+                    {[
+                      { label: 'Veg', value: true },
+                      { label: 'Non-Veg', value: false },
+                    ].map((option) => (
+                      <label
+                        key={option.label}
+                        className={`inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium ${
+                          formData.is_vegetarian === option.value
+                            ? 'border-gray-900 bg-gray-900 text-white'
+                            : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="food_type"
+                          checked={formData.is_vegetarian === option.value}
+                          onChange={() => setFormData({ ...formData, is_vegetarian: option.value })}
+                          className="sr-only"
+                        />
+                        {option.label}
+                      </label>
+                    ))}
+                  </fieldset>
                 </div>
 
                 <div className="flex space-x-4 pt-4">

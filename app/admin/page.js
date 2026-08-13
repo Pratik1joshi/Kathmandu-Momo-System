@@ -2,13 +2,13 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { PRIMARY_ROUTE } from '@/lib/deployment'
 
 export default function AdminPage() {
   const router = useRouter()
 
   useEffect(() => {
-    // Redirect to dashboard
-    router.push('/admin/dashboard')
+    router.replace(PRIMARY_ROUTE)
   }, [router])
 
   return (

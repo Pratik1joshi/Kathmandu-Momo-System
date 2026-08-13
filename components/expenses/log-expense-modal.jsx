@@ -3,6 +3,15 @@
 import { useState, useEffect } from 'react';
 import { Paperclip, X } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import {
+  AdminField,
+  adminInputClass,
+  adminTextareaClass,
+  adminDialogMd,
+  adminBtnPrimary,
+  adminBtnSecondary,
+  adminFieldStackClass,
+} from '@/components/ui/admin-form';
 import { useToast } from '@/components/ui/toast';
 import { friendlyMessage, friendlyFromError } from '@/lib/friendly-message';
 
@@ -15,7 +24,7 @@ function authedRequest(url, options = {}) {
 }
 
 export const EXPENSE_CATEGORIES = [
-  { value: 'salaries', label: 'Salaries & Payroll' },
+  { value: 'salaries', label: 'Salary' },
   { value: 'infrastructure', label: 'Infrastructure & Assets' },
   { value: 'deposits', label: 'Deposits & Advances' },
   { value: 'utilities', label: 'Utilities & Operating' },
@@ -107,129 +116,74 @@ export default function LogExpenseModal({ editingExpense, initialCategory, payro
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent onClose={onClose}>
+      <DialogContent onClose={onClose} className={adminDialogMd}>
         <DialogHeader>
-          <DialogTitle>{payrollMode ? 'Add Payroll / Salary' : editingExpense ? 'Edit Expense' : 'Log New Expense'}</DialogTitle>
+          <DialogTitle>{payrollMode ? 'Add Salary' : editingExpense ? 'Edit Expense' : 'Log New Expense'}</DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4 mt-4">
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">
-              {payrollMode ? 'Payroll Title (e.g. "October salary — Bikash")' : 'Expense Title'}
-            </label>
+        <form onSubmit={handleSubmit} className={`mt-6 ${adminFieldStackClass}`}>
+          <AdminField label={payrollMode ? 'Salary Title (e.g. "October salary - Bikash")' : 'Expense Title'}>
             <input
               type="text"
               autoFocus
-              className="w-full h-10 rounded-md border border-gray-300 px-3 text-sm"
+              className={adminInputClass}
               value={form.description}
               onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
             />
-          </div>
+          </AdminField>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">Category</label>
-              <select
-                className="w-full h-10 rounded-md border border-gray-300 px-3 text-sm"
-                value={form.category}
-                onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
-              >
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+            <AdminField label="Category">
+              <select className={adminInputClass} value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}>
                 {EXPENSE_CATEGORIES.map((c) => (
-                  <option key={c.value} value={c.value}>
-                    {c.label}
-                  </option>
+                  <option key={c.value} value={c.value}>{c.label}</option>
                 ))}
                 {extraCats.map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
+                  <option key={n} value={n}>{n}</option>
                 ))}
               </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">Amount</label>
-              <input
-                type="number"
-                step="any"
-                className="w-full h-10 rounded-md border border-gray-300 px-3 text-sm"
-                value={form.amount}
-                onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
-              />
-            </div>
+            </AdminField>
+            <AdminField label="Amount">
+              <input type="number" step="any" className={adminInputClass} value={form.amount} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))} />
+            </AdminField>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">Date</label>
-              <input
-                type="date"
-                className="w-full h-10 rounded-md border border-gray-300 px-3 text-sm"
-                value={form.purchase_date}
-                onChange={(e) => setForm((f) => ({ ...f, purchase_date: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">Payment Method</label>
-              <select
-                className="w-full h-10 rounded-md border border-gray-300 px-3 text-sm"
-                value={form.payment_method}
-                onChange={(e) => setForm((f) => ({ ...f, payment_method: e.target.value }))}
-              >
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+            <AdminField label="Date">
+              <input type="date" className={adminInputClass} value={form.purchase_date} onChange={(e) => setForm((f) => ({ ...f, purchase_date: e.target.value }))} />
+            </AdminField>
+            <AdminField label="Payment Method">
+              <select className={adminInputClass} value={form.payment_method} onChange={(e) => setForm((f) => ({ ...f, payment_method: e.target.value }))}>
                 {PAYMENT_METHODS.map((m) => (
-                  <option key={m} value={m}>
-                    {m === 'bank_transfer' ? 'Bank Transfer' : m[0].toUpperCase() + m.slice(1)}
-                  </option>
+                  <option key={m} value={m}>{m === 'bank_transfer' ? 'Bank Transfer' : m[0].toUpperCase() + m.slice(1)}</option>
                 ))}
               </select>
-            </div>
+            </AdminField>
           </div>
 
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">
-              {payrollMode ? 'Employee Name' : 'Paid To / Vendor Name'}
-            </label>
-            <input
-              type="text"
-              className="w-full h-10 rounded-md border border-gray-300 px-3 text-sm"
-              value={form.supplier}
-              onChange={(e) => setForm((f) => ({ ...f, supplier: e.target.value }))}
-            />
-          </div>
+          <AdminField label={payrollMode ? 'Employee Name' : 'Paid To / Vendor Name'}>
+            <input type="text" className={adminInputClass} value={form.supplier} onChange={(e) => setForm((f) => ({ ...f, supplier: e.target.value }))} />
+          </AdminField>
 
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">Notes / Reference No</label>
-            <textarea
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-              rows={2}
-              value={form.notes}
-              onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-            />
-          </div>
+          <AdminField label="Notes / Reference No">
+            <textarea className={adminTextareaClass} rows={3} value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} />
+          </AdminField>
 
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">Upload Receipt / Attachment (optional)</label>
+          <AdminField label="Upload Receipt / Attachment (optional)">
             {form.receipt_url ? (
-              <div className="flex items-center gap-2 text-sm text-gray-600">
+              <div className="flex min-h-11 items-center gap-2 text-sm text-gray-600">
                 <Paperclip className="h-4 w-4" />
-                <a href={form.receipt_url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">
-                  Receipt attached
-                </a>
-                <button type="button" onClick={() => setForm((f) => ({ ...f, receipt_url: '' }))} className="text-gray-400 hover:text-red-600">
-                  <X className="h-3.5 w-3.5" />
-                </button>
+                <a href={form.receipt_url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">Receipt attached</a>
+                <button type="button" onClick={() => setForm((f) => ({ ...f, receipt_url: '' }))} className="text-gray-400 hover:text-red-600"><X className="h-3.5 w-3.5" /></button>
               </div>
             ) : (
-              <input type="file" accept=".jpg,.jpeg,.png,.pdf" onChange={handleFileChange} disabled={uploading} className="text-sm" />
+              <input type="file" accept=".jpg,.jpeg,.png,.pdf" onChange={handleFileChange} disabled={uploading} className="min-h-11 w-full text-sm" />
             )}
-            {uploading && <p className="mt-1 text-xs text-gray-400">Uploading…</p>}
-          </div>
+            {uploading && <p className="mt-2 text-xs text-gray-400">Uploading…</p>}
+          </AdminField>
         </form>
         <DialogFooter>
-          <button type="button" onClick={onClose} className="rounded-md border border-gray-300 px-4 py-2 text-sm">
-            Cancel
-          </button>
-          <button type="button" disabled={saving || uploading} onClick={handleSubmit} className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
-            {saving ? 'Saving…' : 'Save'}
-          </button>
+          <button type="button" onClick={onClose} className={adminBtnSecondary}>Cancel</button>
+          <button type="button" disabled={saving || uploading} onClick={handleSubmit} className={adminBtnPrimary}>{saving ? 'Saving…' : 'Save'}</button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

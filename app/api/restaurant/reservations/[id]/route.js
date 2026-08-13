@@ -15,7 +15,7 @@ async function requireFloorStaff(request) {
   const token = request.headers.get('authorization')?.replace('Bearer ', '');
   if (!token) return null;
   const user = await authService.verifySession(token);
-  if (!user || !['admin', 'waiter'].includes(user.role)) return null;
+  if (!user || !['admin', 'waiter', 'cashier'].includes(user.role)) return null;
   return user;
 }
 

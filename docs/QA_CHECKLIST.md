@@ -1,455 +1,659 @@
-# Full Website QA and Production-Readiness Guide
+# QA Production Readiness Guide
 
-This is the executable QA plan for the whole Kathmandu Momo System. It covers public pages, every staff role, all functional modules, APIs, data, security, accounting, deployment, recovery, performance, accessibility, printing, and launch sign-off.
+This is the executable QA guide for approving Dim Sum Puri for production. It covers the public website, online ordering, counter POS, administration, inventory, purchasing, accounting, security, deployment, recovery, and operational readiness.
 
-## Website and WhatsApp ordering production gate
+Do not mark the release production-ready because pages merely load. QA must prove that business transactions create the correct order, payment, stock, and accounting effects, that retries do not duplicate them, and that protected data cannot be reached without authorization.
 
-- [ ] Cart add/update/remove works on desktop and mobile; estimate matches live POS prices.
-- [ ] Website submit creates one `PENDING`/`UNPAID` request and no KOT, invoice, journal, or stock movement.
-- [ ] Double-click/retry returns the stable reference without duplication.
-- [ ] WhatsApp request saves before the encoded message opens; closing WhatsApp leaves it pending.
-- [ ] The message includes reference, customer, fulfillment, items, notes, and server total.
-- [ ] Accepting rapidly twice creates exactly one operational order and one KOT.
-- [ ] Price/availability changes between submit and accept stop acceptance safely.
-- [ ] Reject/cancel without a reason fails; rejection creates no KOT.
-- [ ] Kitchen cannot access the queue or customer/payment details; accepted KOT appears once.
-- [ ] Existing cashier payment changes the linked request to `COMPLETED`/`PAID` exactly once.
-- [ ] Status token is non-guessable and exposes no phone/address/payment secrets.
-- [ ] Admin and Cashier queues work at 360px, tablet, and desktop widths.
+## 1. Test-run record
 
-## 1. How QA should use this guide
+Complete this block for every release candidate.
 
-Run the checklist on a production-like **staging PostgreSQL database**, then repeat the P0 smoke set on production after deployment. Do not test destructive cases using live restaurant data.
-
-For every case record:
-
-| Field | Required evidence |
+| Field | Value |
 |---|---|
-| Case ID/result | Pass, Fail, Blocked, or Not Applicable |
-| Build/environment | Commit/tag, URL, browser/device, DB snapshot |
-| Actor/data | Role, test user, source IDs/numbers, relevant settings |
-| Actual result | UI/API status and persisted result |
-| Evidence | Screenshot/video, request/response, safe log excerpt, DB query |
-| Defect | Ticket, severity, owner, retest result |
+| Release/version/commit | |
+| Test environment and URL | |
+| Database type and schema version | |
+| Test start/end time | |
+| QA owner | |
+| Technical contact | |
+| Browser/device matrix | |
+| Test account(s) | |
+| Backup identifier | |
+| Result | PASS / FAIL / BLOCKED |
 
-Never paste secrets, session tokens, real passwords, sensitive customer data, or unsanitized production dumps into evidence.
+Attach evidence to each failed case and every critical financial/security case. Evidence should include the test ID, timestamp, URL, inputs, expected result, actual result, screenshot/video, console/network error, and relevant sanitized server log entry. Never include passwords, cookies, tokens, database credentials, or real customer data.
 
-### Severity and release policy
+## 2. Scope and release model
 
-| Severity | Definition | Release rule |
+### Active production scope
+
+- Public home, menu, about, gallery, and contact pages.
+- Public menu search/filter, cart, WhatsApp ordering, and online order submission.
+- Admin login, the single-admin counter POS at `/admin/pos` (table board, KOT, bill, payment), and bill management at `/admin/bills`.
+- Products/categories, orders/bills, customers, CMS, settings, tables/reservations.
+- Inventory, units, recipes, purchases, suppliers, wastage, and expenses.
+- Employees, payroll, operational analytics, and reports.
+- Double-entry accounting, cash/bank operations, corrections, settlements, payables, reconciliation, and financial reports.
+- Menu/receipt uploads, persistent media, health check, PostgreSQL deployment, backup, and restore.
+
+### Intentionally disabled scope
+
+The legacy `/waiter`, `/kitchen`, and `/cashier` page families are disabled in the current single-admin deployment. They must redirect to `/admin/pos`. A successful redirect is a pass; exposing those role surfaces is a release-blocking failure. Their underlying shared order/billing logic is covered through the admin counter and API/integrity tests.
+
+## 3. Severity and release decision
+
+| Severity | Meaning | Release rule |
 |---|---|---|
-| S1 Critical | Data loss/corruption, security compromise, wrong/duplicate payment, unbalanced accounts, system unavailable | No-go |
-| S2 High | Core order/KOT/billing/stock/role flow unavailable or materially incorrect; no safe workaround | No-go |
-| S3 Medium | Non-core failure or safe workaround; limited user/business impact | Written risk acceptance |
-| S4 Low | Cosmetic/content/minor usability issue | May defer with owner/date |
+| S0 Blocker | Data loss/corruption, security bypass, incorrect charge/refund, unbalanced journal, duplicate payment/stock effect, site or checkout unavailable | Must be fixed and fully retested |
+| S1 Critical | Major feature unusable with no safe workaround, wrong report/stock balance, failed backup/restore, serious privacy/accessibility issue | Must be fixed or launch explicitly cancelled |
+| S2 Major | Important defect with a safe temporary workaround and no integrity/security risk | Requires owner, accepted risk, and scheduled fix |
+| S3 Minor | Cosmetic/copy issue with no task, data, security, or accessibility impact | May ship if recorded |
 
-All P0 and required P1 cases must pass. No open S1/S2 is allowed.
+Production approval requires:
 
-## 2. Environment, accounts, and test data
+- No open S0 or S1 defects.
+- All critical-path and automated tests pass.
+- Financial and inventory reconciliation passes exactly.
+- Security, backup/restore, and rollback checks pass.
+- Every S2 has written business/technical approval, owner, workaround, and target date.
+- QA, technical owner, and business owner sign the go/no-go record.
 
-### QA-ENV
+## 4. Environment and test data preparation
 
-- [ ] QA-ENV-01 — Staging matches production Node 22, Next production build, proxy/HTTPS, PostgreSQL version/config, environment variables, and uploads behavior.
-- [ ] QA-ENV-02 — Release build came from `npm ci` and `npm run build`; commit/tag is recorded.
-- [ ] QA-ENV-03 — `npm run db:migrate` succeeds; rerunning does not reapply migrations; all `001`–`025` records exist.
-- [ ] QA-ENV-04 — `/api/health` returns 200/database up and no secret, host path, SQL, or unnecessary version detail.
-- [ ] QA-ENV-05 — Database is confirmed PostgreSQL, not SQLite fallback.
-- [ ] QA-ENV-06 — `UPLOADS_DIR` is persistent/writable and survives restart/redeploy.
-- [ ] QA-ENV-07 — Logs, timezone (`Asia/Katmandu` behavior), clock/NTP, and business date are correct.
-- [ ] QA-ENV-08 — Four active accounts exist (admin, waiter, kitchen, cashier), plus an inactive and a permission-restricted account.
-- [ ] QA-ENV-09 — Test data includes multiple floors/types/tables; valid/rotated QR tokens; available/unavailable menu items; variants; inventory with low/zero stock; conversions; recipes; suppliers; customers; reservations; open/closed drawer; cash/bank accounts.
-- [ ] QA-ENV-10 — Browser/device matrix: current Chrome and Edge desktop; current Android Chrome; current iPhone Safari or responsive-equivalent plus at least one real iPhone pass; actual POS printer.
+### Production-like environment
 
-## 3. P0 release smoke journey
+- [ ] Use Node.js 22 and PostgreSQL 14+ with the same build and environment shape as production.
+- [ ] Run in production mode over HTTPS with `FORCE_SECURE_COOKIES=1`.
+- [ ] Use an isolated QA database; never perform destructive testing on live production data.
+- [ ] Apply the same production schema/migrations and a known seed.
+- [ ] Configure a writable persistent `UPLOADS_DIR` and realistic tax/service/receipt settings.
+- [ ] Enable access to application logs, database verification queries/scripts, and browser developer tools.
+- [ ] Record time zone, system time, currency display, and schema migration version.
 
-Execute in order after each deployment. Stop and declare no-go on data corruption or security leakage.
+### Required test data
 
-- [ ] QA-P0-01 — Open `/`, `/menu`, `/login`, and `/api/health` over HTTPS; no broken critical asset or console-blocking error.
-- [ ] QA-P0-02 — Log in once as admin, waiter, kitchen, and cashier; each reaches the correct surface and cannot open a forbidden admin page/API.
-- [ ] QA-P0-03 — Waiter selects a table, creates an order with two items and notes, sends KOT; one order/KOT and correct lines exist.
-- [ ] QA-P0-04 — Kitchen sees that KOT, starts it, marks items/order ready; waiter observes correct state and non-negative timing.
-- [ ] QA-P0-05 — Cashier bills it with configured VAT/service and a controlled discount; totals match independent calculation.
-- [ ] QA-P0-06 — Complete a split payment; payment sum, change/reference, bill/order state, receipt, table release, and payment history agree.
-- [ ] QA-P0-07 — Verify only one paid bill, one sale accounting source, balanced journal, intended recipe stock deduction, and matching reports.
-- [ ] QA-P0-08 — Submit a public reservation and process it at host/waiter; scan a valid table QR and submit an order.
-- [ ] QA-P0-09 — Upload one menu image, view it publicly, restart app, and view it again.
-- [ ] QA-P0-10 — Trigger a safe validation error and a controlled server error; response/log must not expose stack, SQL, path, cookie, or token.
+Create clearly labeled QA records:
 
-## 4. Public website and customer experience
+- One active administrator and one disabled/inactive account.
+- Products in at least two categories: simple item, item with variants, unavailable item, zero-price-invalid attempt, long name, and an item with a recipe.
+- Inventory items in different base units, one low-stock item, one out-of-stock item, and at least one unit conversion.
+- Supplier, customer, employee, table/floor/type, bank account, and cash drawer.
+- Tax/service settings, 58 mm and 80 mm receipt configurations, and payment QR where supported.
+- Opening stock/cash/bank balances whose expected results can be calculated independently.
 
-### QA-PUB — Landing page `/`
+Use distinctive names such as `QA-<date>-<case-id>` so created records can be found and corrected through approved application workflows.
 
-- [ ] QA-PUB-01 — Correct Kathmandu Momo name, logo, address, phone, hours, map/contact links, navigation, and calls to action.
-- [ ] QA-PUB-02 — All sections, gallery/dish images, icons, fonts, favicon, title, meta description, canonical/social preview values are correct.
-- [ ] QA-PUB-03 — Internal anchors and links work; phone/email/map/external links use correct targets and safe new-tab behavior.
-- [ ] QA-PUB-04 — Inquiry form validates required/format/length bounds, prevents accidental duplicate submit, gives success/error feedback, and creates one admin inquiry.
-- [ ] QA-PUB-05 — Reservation entry validates past date, minimum lead, party size, phone, whitespace, Unicode/Nepali text, and creates one reservation.
-- [ ] QA-PUB-06 — Forms fail gracefully under offline/timeout/429/500 and preserve safe user input for retry.
-- [ ] QA-PUB-07 — Responsive at 320, 375, 768, 1024, and 1440px with no horizontal overflow or hidden control.
-- [ ] QA-PUB-08 — No mixed content, broken resource, unexpected third-party request, serious console error, or layout shift.
+### Browser/device coverage
 
-### QA-MENU — Public menu `/menu`
+- [ ] Current Chrome/Chromium desktop at 1366×768 and 1920×1080.
+- [ ] Current Edge desktop.
+- [ ] Android-sized mobile viewport (approximately 360×800).
+- [ ] iPhone-sized mobile viewport (approximately 390×844) using Safari/WebKit where available.
+- [ ] Keyboard-only navigation at least on login, public order, and counter checkout.
+- [ ] 200% browser zoom on public order and key admin workflows.
 
-- [ ] QA-MENU-01 — Categories/order/counts and available items match admin/database; unavailable/deleted items are absent.
-- [ ] QA-MENU-02 — Name, description, price/currency, diet marker, image/fallback, and variants display correctly.
-- [ ] QA-MENU-03 — Search/filter/navigation and empty/no-image/long-text/many-items states work.
-- [ ] QA-MENU-04 — Admin availability/price/image update appears after intended refresh/cache behavior.
-- [ ] QA-MENU-05 — Mobile touch/scroll and slow-image behavior remain usable and accessible.
+## 5. Automated release gates
 
-### QA-QR — Table QR `/order/[token]`
-
-- [ ] QA-QR-01 — Valid token identifies only the correct table and returns current allowed menu/order state.
-- [ ] QA-QR-02 — Unknown, malformed, missing, old rotated, and other-table token fail safely without data disclosure.
-- [ ] QA-QR-03 — Turning `qr_ordering_enabled` off blocks order placement with useful UX; re-enable restores it.
-- [ ] QA-QR-04 — Add/update/remove cart lines, quantities, notes, totals, refresh/back navigation, and empty cart work.
-- [ ] QA-QR-05 — Server ignores forged client price, rejects unavailable/deleted item and invalid quantity, and charges current price.
-- [ ] QA-QR-06 — Submit creates/appends exactly once to correct table/order and creates the expected kitchen delta.
-- [ ] QA-QR-07 — Double tap, retry, concurrent customers, stale menu, network interruption, and rate limit leave no duplicate/corrupt lines.
-- [ ] QA-QR-08 — Customer sees accurate live status without staff/customer/other-table sensitive detail.
-
-## 5. Authentication, session, navigation, and RBAC
-
-### QA-AUTH
-
-- [ ] QA-AUTH-01 — Correct credentials for every active role succeed and route correctly; wrong username/PIN and inactive user fail generically.
-- [ ] QA-AUTH-02 — Leading/trailing input, case rules, Unicode, empty, very long, malformed JSON, and injection strings fail safely.
-- [ ] QA-AUTH-03 — Login rate limit returns 429 at configured threshold and recovers after window without locking legitimate users permanently.
-- [ ] QA-AUTH-04 — Cookie flags are HttpOnly/Secure/SameSite=Strict as appropriate; CSRF cookie/header behavior is correct.
-- [ ] QA-AUTH-05 — Logout invalidates server session; back button/reuse of cookie or bearer cannot reopen protected data.
-- [ ] QA-AUTH-06 — Expired, random, truncated, and revoked tokens return 401; multiple supported sessions follow policy.
-- [ ] QA-AUTH-07 — Missing/mismatched CSRF on every representative cookie-authenticated POST/PUT/PATCH/DELETE returns 403/no write.
-- [ ] QA-AUTH-08 — Admin has all actions. Default waiter/cashier permissions match `BUSINESS_LOGIC.md`; kitchen scope is restricted.
-- [ ] QA-AUTH-09 — Change waiter/cashier permission in settings; UI updates and direct API enforcement changes on the next request.
-- [ ] QA-AUTH-10 — Direct URL, crafted API, ID substitution, and hidden-control attempts cannot bypass role/action checks.
-- [ ] QA-AUTH-11 — Login picker exposes only intended active-user fields; no credential hash, salary, phone, token, or inactive account.
-
-## 6. Tables, reservations, customers, and leads
-
-### QA-TBL — `/admin/tables`, `/admin/table-management`
-
-- [ ] QA-TBL-01 — Create/edit/deactivate/delete floor and type with unique/required validation and correct dependency handling.
-- [ ] QA-TBL-02 — Create/edit table name/number, capacity, floor, type, status; boundary/duplicate values fail safely.
-- [ ] QA-TBL-03 — Live floor board status/counts match active orders/reservations after refresh and concurrent terminal changes.
-- [ ] QA-TBL-04 — Opening an order occupies table; final payment releases it according to reservation/cleaning state.
-- [ ] QA-TBL-05 — Transfer preserves order, items, totals, KOT, customer/waiter, source/destination state, and audit record.
-- [ ] QA-TBL-06 — Merge preserves all lines/totals and rejects same table, incompatible/terminal/conflicting/stale operations.
-- [ ] QA-TBL-07 — Repeat/concurrent transfer/merge does not duplicate order/items or leave two occupied claims.
-- [ ] QA-TBL-08 — Generate/print QR resolves correctly; rotate token invalidates prior QR and new token remains unique.
-
-### QA-RES — `/admin/leads`, `/waiter/reservations`
-
-- [ ] QA-RES-01 — Public/admin reservation create and list/search/date/status filters agree.
-- [ ] QA-RES-02 — Confirm/check-in/seat/change-table/complete/cancel/no-show paths set coherent status/timestamps/reason.
-- [ ] QA-RES-03 — Hold, grace, dining, cleaning, auto-cancel, alert, and minimum-lead settings behave at before/exactly/after boundaries.
-- [ ] QA-RES-04 — Capacity, overlap, occupied table, concurrent seat, and stale change-table conflicts are blocked with no partial update.
-- [ ] QA-RES-05 — Seating links customer/table/order once; paying linked order completes reservation and correct table lifecycle.
-- [ ] QA-RES-06 — VIP, deposit flags/amount, preferences, occasion, notes, source, and Unicode survive edits.
-- [ ] QA-RES-07 — Inquiry list/count, read/update notes/status, pagination/filter, and unauthorized access work correctly.
-
-### QA-CUS — `/admin/customers`
-
-- [ ] QA-CUS-01 — Create/edit/search/delete customer with name/phone/email normalization, duplicate phone behavior, and validation.
-- [ ] QA-CUS-02 — Link customer to reservation/order/bill; visit/spend/history values reconcile to sources.
-- [ ] QA-CUS-03 — Dependency-aware delete and data privacy prevent orphan or public exposure.
-
-## 7. Menu, order entry, kitchen, and billing
-
-### QA-PROD — `/admin/products`, `/admin/categories`
-
-- [ ] QA-PROD-01 — Category CRUD, ordering, counts, duplicate/blank/long names, and delete-with-items behavior.
-- [ ] QA-PROD-02 — Product create/edit/delete validates category, name, finite non-negative price, availability, veg flag, description, barcode/variant where shown.
-- [ ] QA-PROD-03 — Availability, price, category, and deletion propagate consistently to staff/public ordering without changing historical billed lines.
-- [ ] QA-PROD-04 — Image upload accepts supported real images, rejects oversize/wrong MIME/extension/polyglot/traversal, and handles replace/orphan policy.
-
-### QA-ORD — waiter/admin/cashier new-order and order detail/history routes
-
-- [ ] QA-ORD-01 — Create dine-in/walk-in order as supported with correct table/customer/waiter/channel/number/time.
-- [ ] QA-ORD-02 — Add multiple items, variant, quantity boundaries, duplicate item behavior, line/order instructions, and current server price.
-- [ ] QA-ORD-03 — Edit/remove/add-after-KOT rules preserve history and create only the intended KOT delta.
-- [ ] QA-ORD-04 — Order totals and item status agree across waiter, admin, cashier, kitchen, API, and database.
-- [ ] QA-ORD-05 — Search/filter/date/status/pagination/history/detail and refresh work with empty and large datasets.
-- [ ] QA-ORD-06 — Unauthorized delete/status/discount/payment actions return 403 and no write.
-- [ ] QA-ORD-07 — Concurrent edits, double click, stale screen, item unavailable mid-order, and network retry do not duplicate/corrupt.
-- [ ] QA-ORD-08 — Cancel/delete/terminal behavior has required reason/authorization and intended table/stock/KOT/accounting impact.
-
-### QA-KOT — `/kitchen`, `/admin/kitchen-analytics`
-
-- [ ] QA-KOT-01 — New KOT appears once with order/table, items, quantities, notes, waiter/time, and correct urgency.
-- [ ] QA-KOT-02 — Pending → preparing → ready/completed transitions work at item/ticket/order level and reject invalid reversals.
-- [ ] QA-KOT-03 — Multiple KOTs/add-on items, simultaneous cooks, refresh/polling, stale update, and completed-ticket removal work.
-- [ ] QA-KOT-04 — Timing fields and average prep/hour/chef analytics reconcile to controlled test tickets and date boundaries.
-- [ ] QA-KOT-05 — Empty/loading/error/reconnect/audio/visual alert behavior is usable; polling creates no request storm.
-- [ ] QA-KOT-06 — Kitchen role cannot access price-sensitive admin/accounting data or forbidden mutations.
-
-### QA-BILL — cashier/admin billing, bill detail, console, payment history/reports
-
-- [ ] QA-BILL-01 — Independent calculation matches subtotal, configured VAT, service charge, authorized discount, grand total, due, tendered, and change.
-- [ ] QA-BILL-02 — Test 0, 1, fractional/rounding, large quantity/amount, maximum discount, zero bill with reason, and invalid negative/non-finite values.
-- [ ] QA-BILL-03 — Cash, card, QR, eSewa, Khalti, credit, and other displayed methods store correct amount/reference and show correctly in history/reports.
-- [ ] QA-BILL-04 — Split payment across two/three tenders rejects under/over/zero/negative invalid split and totals exactly to due.
-- [ ] QA-BILL-05 — Double click, two cashiers, repeated request, browser retry, and mid-request interruption create at most one paid bill/accounting post.
-- [ ] QA-BILL-06 — Payment atomically updates bill/order/table/reservation, payment rows, journal, and expected stock; forced failure rolls everything back.
-- [ ] QA-BILL-07 — Receipt shows unique bill/order, business/VAT/PAN, date/time, cashier/table/customer, lines, taxes/service/discount, tenders/change, footer.
-- [ ] QA-BILL-08 — Reprint does not repay or repost. 58mm/80mm preview and actual printer are legible, aligned, and page-efficient.
-- [ ] QA-BILL-09 — Reopen requires allowed permission/reason, preserves audit trail, restores intended state, and supports a correct later repayment without duplicate effects.
-- [ ] QA-BILL-10 — Void/full/partial refund enforce bounds/reason/role and create correct correction, payment, stock policy, and balanced reversal journal.
-
-## 8. Inventory, recipes, purchasing, suppliers, wastage
-
-### QA-INV — inventory, detail, stock, imports, categories, conversions
-
-- [ ] QA-INV-01 — Inventory category CRUD and dependency behavior.
-- [ ] QA-INV-02 — Item CRUD validates name/category/base unit, finite quantity/cost/minimum, menu link, supplier/notes, duplicates.
-- [ ] QA-INV-03 — Restock and positive/negative adjustment produce exact on-hand, movement type/source/reference/user/time/reason.
-- [ ] QA-INV-04 — Low/out-of-stock indicators behave at below/equal/above threshold; negative stock follows configured rule.
-- [ ] QA-INV-05 — Unit conversion create/edit/delete rejects zero/negative factor and preserves physical quantity/cost across base/purchase/recipe units.
-- [ ] QA-INV-06 — Moving-average cost matches hand calculation after multiple receipts at different costs.
-- [ ] QA-INV-07 — History filters/pagination/balance sequence reconcile to on-hand; concurrent adjustments do not lose updates.
-- [ ] QA-INV-08 — CSV import validates headers, preview/mapping, Unicode, duplicates, mixed-validity rollback policy, large file, and exact created/updated counts.
-
-### QA-REC — `/admin/recipes`, `/admin/recipes/[id]`
-
-- [ ] QA-REC-01 — Create/edit/delete recipe, yield, menu link, ingredient/sub-recipe lines, quantities/units, duplicate/cycle prevention.
-- [ ] QA-REC-02 — Recipe cost is sum of normalized ingredients; margin updates after cost or menu-price change.
-- [ ] QA-REC-03 — Controlled order deducts exact recipe quantity once; add/cancel/reopen/refund paths follow documented policy without double movement.
-- [ ] QA-REC-04 — Insufficient/missing ingredient behavior is clear and consistent with the business rule.
-
-### QA-PUR — purchases/import, suppliers, accounts payable
-
-- [ ] QA-PUR-01 — Supplier CRUD/search/merge validates identity/contact and preserves purchase/payable history.
-- [ ] QA-PUR-02 — Receive multi-line purchase; normalized quantity, line/total cost, date/reference/supplier/payment method are exact.
-- [ ] QA-PUR-03 — Receipt increases inventory once, updates moving cost, creates traceable movements, and posts balanced cash/bank/AP journal.
-- [ ] QA-PUR-04 — Credit purchase appears under correct supplier AP/ageing; partial/full payment reduces only that supplier balance and selected cash/bank.
-- [ ] QA-PUR-05 — Edit/delete posted purchase correctly reverses/replaces stock and journal or is safely prohibited.
-- [ ] QA-PUR-06 — Import covers valid, duplicate, unknown item/unit/supplier, malformed row, Unicode, rounding, large file, and atomicity policy.
-
-### QA-WST — `/admin/wastage` and staff wastage modal
-
-- [ ] QA-WST-01 — Allowed roles log inventory/prepared-food wastage with valid quantity/unit/reason/notes/employee/shift/photo.
-- [ ] QA-WST-02 — Standard reason vocabulary and custom/required reason behavior are correct.
-- [ ] QA-WST-03 — Stock decreases exactly once and Dr Wastage / Cr Inventory journal balances; no cash movement.
-- [ ] QA-WST-04 — History/filter/analytics totals reconcile; invalid, excessive, repeated, and concurrent submission are safe.
-
-## 9. Employees, settings, permissions, and expenses
-
-### QA-EMP — `/admin/employees`, `/admin/employee-performance`
-
-- [ ] QA-EMP-01 — Employee create/edit/deactivate/delete validates unique username, full name, role, salary, hire date, position, and credential rules.
-- [ ] QA-EMP-02 — Reset/change PIN invalidates or preserves sessions according to policy; old credential fails and new succeeds.
-- [ ] QA-EMP-03 — Admin cannot accidentally remove/deactivate the last usable admin where protected; dependency behavior is safe.
-- [ ] QA-EMP-04 — Payroll partial/full/duplicate-period/payment/delete correction updates history and balanced cash/bank journal.
-- [ ] QA-EMP-05 — Orders/sales/bills/wastage/performance metrics reconcile to controlled employee source records and date filters.
-
-### QA-SET — `/admin/settings`
-
-- [ ] QA-SET-01 — Business identity, contact, website, VAT/PAN/registration save/reload and appear only where intended.
-- [ ] QA-SET-02 — VAT/service percentage accepts valid boundaries/decimal and rejects negative, excessive, blank/non-finite invalid values.
-- [ ] QA-SET-03 — Reservation timer fields validate and immediately affect new calculations at boundaries.
-- [ ] QA-SET-04 — Receipt footer and 58/80 size affect preview/print; hostile markup is escaped.
-- [ ] QA-SET-05 — QR ordering toggle and payment QR/settings affect customer/cashier views correctly.
-- [ ] QA-SET-06 — Permission changes follow server behavior described in QA-AUTH; admin remains full.
-- [ ] QA-SET-07 — Non-admin GET/PUT and direct crafted keys are rejected; unknown/sensitive setting keys cannot be overwritten.
-
-### QA-EXP — `/admin/expenses`, `/admin/expense-categories`
-
-- [ ] QA-EXP-01 — Category CRUD validates duplicate/name/dependency and mapping.
-- [ ] QA-EXP-02 — Expense CRUD validates category, positive finite amount, business date, method/source, supplier, notes, and receipt upload.
-- [ ] QA-EXP-03 — Cash/bank/credit expense posts correct balanced accounts and source reference once.
-- [ ] QA-EXP-04 — Edit/delete creates correct reversal/replacement or is prohibited; reports/ledger remain reconciled.
-- [ ] QA-EXP-05 — Purchase/wastage-linked records are clearly distinguished and cannot be double-counted or unsafely edited.
-
-## 10. Accounting and reporting
-
-Use finance-approved expected entries for each controlled scenario. Never accept visual plausibility without reconciliation.
-
-### QA-ACC — chart, ledger, cash/bank, AP, reports, corrections
-
-- [ ] QA-ACC-01 — Chart of accounts create/edit/deactivate/delete obeys unique code/type/system-account and referenced-account rules.
-- [ ] QA-ACC-02 — Every sale/payment method posts the approved debit/credit, amount, business date, description, and unique source reference.
-- [ ] QA-ACC-03 — Purchase, expense, wastage, payroll, supplier payment, settlement, deposit, withdrawal, transfer, and exchange each post approved balanced lines once.
-- [ ] QA-ACC-04 — General ledger filters/account/date/pagination/opening/running balance reconcile to raw journal lines.
-- [ ] QA-ACC-05 — Open drawer with float, cash movements, expected balance, counted close, variance, repeat close, and next session are correct.
-- [ ] QA-ACC-06 — Cash book and bank book totals reconcile to selected accounts; transfer debits/credits the right endpoints once.
-- [ ] QA-ACC-07 — Payment settlement moves the correct method clearing balance to bank/cash without changing sales revenue.
-- [ ] QA-ACC-08 — AP supplier totals and ageing buckets reconcile to credit purchases/payments at exact cutoff boundaries.
-- [ ] QA-ACC-09 — Bank reconciliation lists correct lines, match/unmatch is auditable, statement balance/difference is correct, and no transaction amount changes.
-- [ ] QA-ACC-10 — Void/refund/reversal/reopen retains original record, requires reason/role, is bounded/idempotent, and creates approved compensating entry.
-- [ ] QA-ACC-11 — Trial balance debit-credit totals match and net to zero for every tested cutoff.
-- [ ] QA-ACC-12 — P&L revenue/COGS/expenses/net income reconcile to ledger; balance sheet assets = liabilities + equity with retained/current result policy.
-- [ ] QA-ACC-13 — Finance dashboard widgets reconcile to reports/ledger and handle empty/large/negative periods.
-- [ ] QA-ACC-14 — Date-from/to, same day, month/year boundary, leap day, midnight Kathmandu/UTC, future date, invalid range, and export if shown are consistent.
-- [ ] QA-ACC-15 — SQL invariant query returns zero unbalanced journals and zero duplicate paid bills after the full suite.
-
-### QA-RPT — operational `/admin/dashboard`, `/admin/reports`, `/cashier/reports`
-
-- [ ] QA-RPT-01 — Sales/orders/items/payment/customer/staff summaries reconcile to controlled source bills and exclude voided/unpaid records correctly.
-- [ ] QA-RPT-02 — Filters, comparison, chart/table, pagination, empty state, large range, and refresh work without per-day/per-record request storms.
-- [ ] QA-RPT-03 — Currency rounding, labels, timezone/date cutoff, and any CSV/print output match screen/source totals.
-- [ ] QA-RPT-04 — Cashier/report permission allows intended range/data only; waiter/kitchen/unauthorized direct API is rejected.
-
-## 11. Complete route/page coverage sweep
-
-In addition to detailed cases, open every route below with the correct role, verify title/navigation, initial data, primary create/read/update/delete action where applicable, loading/empty/error/permission states, refresh/deep-link, and mobile/desktop layout.
-
-| Area | Routes to sweep |
-|---|---|
-| Public/auth | `/`, `/menu`, `/order/[token]`, `/login` |
-| Waiter | `/waiter`, `/waiter/dashboard`, `/waiter/new-order`, `/waiter/order/[id]`, `/waiter/history`, `/waiter/reservations` |
-| Kitchen | `/kitchen` |
-| Cashier | `/cashier`, `/cashier/console`, `/cashier/new-order`, `/cashier/order/[id]`, `/cashier/billing`, `/cashier/bill/[id]`, `/cashier/payment-history`, `/cashier/reports` |
-| Admin orders/menu | `/admin`, `/admin/dashboard`, `/admin/new-order`, `/admin/orders`, `/admin/orders/[id]`, `/admin/order/[id]`, `/admin/billing`, `/admin/bill/[id]`, `/admin/products`, `/admin/categories` |
-| Admin tables/customers | `/admin/tables`, `/admin/table-management`, `/admin/leads`, `/admin/customers` |
-| Admin stock/procurement | `/admin/inventory`, `/admin/inventory/[id]`, `/admin/inventory-categories`, `/admin/unit-conversion`, `/admin/stock`, `/admin/stock/import`, `/admin/recipes`, `/admin/recipes/[id]`, `/admin/purchases`, `/admin/purchases/import`, `/admin/suppliers`, `/admin/wastage` |
-| Admin people/expenses | `/admin/employees`, `/admin/employee-performance`, `/admin/expenses`, `/admin/expense-categories`, `/admin/settings`, `/admin/kitchen-analytics`, `/admin/reports` |
-| Admin accounting | `/admin/finance-dashboard`, `/admin/chart-of-accounts`, `/admin/general-ledger`, `/admin/cash-book`, `/admin/bank-book`, `/admin/cash-drawer`, `/admin/bank`, `/admin/bank-reconciliation`, `/admin/settlements`, `/admin/cash-exchange`, `/admin/corrections`, `/admin/accounts-payable`, `/admin/financial-reports` |
-
-Also verify unknown route renders `not-found`, forced page/API failures render safe error UI, and slow navigation shows loading feedback.
-
-## 12. API, validation, and data integrity
-
-### QA-API
-
-- [ ] QA-API-01 — Compare all 100 `app/api/**/route.js` files to `API_DOCUMENTATION.md`; record method/auth/status coverage and any drift.
-- [ ] QA-API-02 — Every protected API sample: no auth 401, wrong role/permission 403, valid role success, expired token 401.
-- [ ] QA-API-03 — Every unsafe cookie-auth API sample: missing/bad CSRF 403/no write; correct CSRF success.
-- [ ] QA-API-04 — Invalid JSON/content type, missing/extra fields, strings for numbers, null, booleans, huge/negative/non-finite values, unknown enums/IDs return safe 4xx.
-- [ ] QA-API-05 — Pagination/date/search bounds prevent unbounded/slow access and return stable ordering/no duplicate pages.
-- [ ] QA-API-06 — Legacy endpoints and all methods return 410/no state change.
-- [ ] QA-API-07 — Errors never expose `debugStack`, `debugMessage` internals, SQL, schema, disk path, env, secret, or token. This is a launch blocker.
-- [ ] QA-API-08 — Database outage, timeout, constraint, and upload disk failure return safe error and roll back the transaction.
-
-### QA-DATA
-
-- [ ] QA-DATA-01 — Run duplicate-paid-bill, journal-balance, foreign-key/orphan, stock-ledger, migration, and expired-session checks from `DATABASE_SCHEMA.md`.
-- [ ] QA-DATA-02 — All IDs/numbers expected unique remain unique under concurrency.
-- [ ] QA-DATA-03 — Delete/update cascades or restrictions retain required financial/audit history and create no orphan.
-- [ ] QA-DATA-04 — Reload/restart after each critical mutation yields the same state; no client-only success.
-- [ ] QA-DATA-05 — Unicode Nepali/English, punctuation, long text boundaries, and timezone timestamps persist and render without corruption.
-
-## 13. Security testing
-
-- [ ] QA-SEC-01 — TLS/certificate/HTTPS redirect, HSTS, CSP, nosniff, frame policy, referrer policy, permissions policy, cookie flags, and no mixed content.
-- [ ] QA-SEC-02 — Stored/reflected XSS probes across customer, reservation, inquiry, notes/instructions, menu, supplier, expense, settings, receipt, and reports render as text.
-- [ ] QA-SEC-03 — SQL injection probes in login, IDs, search/filter, public forms, and mutations do not alter query semantics or disclose errors.
-- [ ] QA-SEC-04 — Raw and encoded path traversal/null-byte/absolute-path/dotfile requests to upload/media cannot read outside allowed directory.
-- [ ] QA-SEC-05 — Disguised executable/SVG/script/polyglot/oversize upload is rejected and cannot execute under the application origin.
-- [ ] QA-SEC-06 — ID enumeration and mass-assignment cannot expose/modify another user/table/customer/order/bill or protected setting/account field.
-- [ ] QA-SEC-07 — Login/public/order rate limits resist repeat and basic forwarded-IP spoof attempts in the deployed proxy configuration.
-- [ ] QA-SEC-08 — Secret scan of repository/build and dependency audit have no unaccepted high/critical result.
-- [ ] QA-SEC-09 — Browser storage, cache, history, logs, analytics, URLs, receipts, and error screens do not leak credentials/session/sensitive records.
-- [ ] QA-SEC-10 — Concurrent payment/refund/reopen/purchase/table/stock actions cannot bypass uniqueness or authorization.
-
-## 14. Accessibility, responsive UX, and compatibility
-
-- [ ] QA-A11Y-01 — Complete public reservation, login, waiter order, cashier payment, and main admin form by keyboard only; logical focus and visible focus.
-- [ ] QA-A11Y-02 — Inputs have programmatic labels/instructions; errors are associated/announced; dialogs trap and restore focus; Escape behavior is safe.
-- [ ] QA-A11Y-03 — Heading/order/landmark/button/link semantics are meaningful; icon-only controls have accessible names.
-- [ ] QA-A11Y-04 — Text/control/status contrast, non-color status cues, 200% zoom, text resize, and reduced motion are usable.
-- [ ] QA-A11Y-05 — Screen-reader smoke on public menu/reservation, login, order cart, payment modal, and data table.
-- [ ] QA-UX-01 — At 320/375/768/1024/1440px no clipped primary action, overlapping modal, inaccessible table, or accidental horizontal page scroll.
-- [ ] QA-UX-02 — Touch targets, numeric keyboard/input, scanner/camera denial fallback, orientation change, and mobile back behavior.
-- [ ] QA-UX-03 — Chrome/Edge desktop and Chrome Android/Safari iOS produce consistent core results; print tested on supported desktop browser.
-- [ ] QA-UX-04 — Loading, empty, validation, success, 401/403/404/409/429/500, offline, timeout, retry, and unsaved-change states use clear language.
-
-## 15. Performance, reliability, and recovery
-
-- [ ] QA-PERF-01 — Measure public/menu p50/p95, staff read p50/p95, mutation p95, largest reports, and build asset sizes on production-like volume; meet PRD targets or record acceptance.
-- [ ] QA-PERF-02 — Kitchen/waiter polling has bounded frequency, cancels on unmount/background as designed, and no N+1/per-order request storm.
-- [ ] QA-PERF-03 — Large menu/order history/ledger/report/import remains responsive, paginated, and does not exhaust DB pool/memory.
-- [ ] QA-REL-01 — Restart during idle and active use recovers cleanly; submitted transaction is either fully committed once or fully rolled back.
-- [ ] QA-REL-02 — Database outage/recovery, connection exhaustion, slow query, upload disk full/read-only, and printer unavailable fail safely with actionable UX.
-- [ ] QA-REL-03 — Two terminals concurrently operate different tables without interference; same-resource conflicts preserve invariants.
-- [ ] QA-REL-04 — Daily DB and upload backup succeeds, is encrypted/access-controlled, retained off-host, and monitored.
-- [ ] QA-REL-05 — Restore to empty staging recovers schema, rows, images, login, order/payment, stock, journal, reports; record time-to-restore and data-loss window.
-- [ ] QA-REL-06 — Previous compatible application release can be redeployed and health/P0 tests pass; incompatible schema rollback procedure is rehearsed/documented.
-
-## 16. Automated/static checks
-
-Run in a clean checkout and attach complete output. DB scripts use an isolated QA database.
+Run from the repository root and attach full output.
 
 ```bash
 npm run lint
 npm run build
+npm run test:e2e
+npm run health
+npm run db:migrate
 node scripts/check-accounting.mjs
 node scripts/check-entry-math.mjs
 node scripts/check-inventory-ledger.mjs
 node scripts/check-unit-conversions.mjs
 node scripts/check-units.mjs
-npm run check:permissions
-npm run check:table-ops
-npm run check:reopen
-npm run check:waiter
 ```
 
-- [ ] QA-AUTO-01 — Every command passes or each failure has accepted defect/risk evidence.
-- [ ] QA-AUTO-02 — Clean build emits no unexpected deprecation, route, hydration, or security warning.
-- [ ] QA-AUTO-03 — No focused/skipped test, unreviewed snapshot, or environment-dependent false pass hides coverage.
+- [ ] Every applicable command exits successfully.
+- [ ] Build has no missing environment, route, or database error.
+- [ ] Playwright desktop and mobile projects pass without unexplained retries.
+- [ ] Re-running migrations makes no unintended schema/data change.
+- [ ] Any skipped test has a documented reason and manual replacement case.
 
-## 17. Final reconciliation and sign-off
+## 6. Public website
 
-- [ ] QA-END-01 — Count controlled test orders, paid/unpaid/void/refund bills, payments by method, purchases, expenses, payroll, wastage, stock movements, and journal entries; all reconcile.
-- [ ] QA-END-02 — Duplicate paid bill and unbalanced journal queries return zero; no unexplained negative stock or stuck occupied table/reservation.
-- [ ] QA-END-03 — Clear/archive test data using an approved method or deploy a clean restored production baseline; never manually delete linked rows ad hoc.
-- [ ] QA-END-04 — All P0/P1 outcomes and defects are reviewed; no S1/S2 remains.
-- [ ] QA-END-05 — QA, engineering, finance, operations, and owner complete `LAUNCH_CHECKLIST.md` with GO/NO-GO decision.
+### PUB-01 Navigation and branding
 
-## 18. Production post-deploy smoke
+Test `/`, `/menu`, `/about`, `/gallery`, and `/contact`.
 
-Use designated non-customer test records and reverse them through supported workflows.
+- [ ] Correct Dim Sum Puri name, logo, favicon, address, phone, opening hours, and calls to action appear.
+- [ ] Header/footer links, logo-home link, browser back/forward, and direct URL entry work.
+- [ ] No legacy Sundar/Bagaicha branding or reservation CTA appears where removed.
+- [ ] Unknown URL returns the intended 404 experience without server details.
+- [ ] Page title, description, canonical/metadata, and social/share image are correct where configured.
 
-- [ ] Site/menu/login/health and security headers/cookies.
-- [ ] One account per role and forbidden-access sample.
-- [ ] One table order → KOT → ready → bill → payment → receipt → released table.
-- [ ] One public reservation and one valid/invalid QR check.
-- [ ] One image read from persistent uploads.
-- [ ] Payment/report/ledger/journal reconciliation and log review.
-- [ ] Backup job next-run visibility and monitoring alerts active.
+### PUB-02 Responsive and visual quality
 
-## 19. Enhancement release checks (2026-08-05)
+- [ ] No horizontal overflow, clipped text, overlapping controls, unreadable contrast, or layout jump on required viewports.
+- [ ] Images keep aspect ratio, load sharp enough, have useful alternative text where informative, and do not show broken placeholders.
+- [ ] Long content, empty content, and missing optional image degrade gracefully.
+- [ ] Focus is visible; dialogs/drawers trap and restore focus; Escape closes dismissible overlays.
 
-### QA-BRAND - browser and PWA branding
+### PUB-03 Menu
 
-- [ ] QA-BRAND-01 - Clean browser loads favicon, 32px, Apple, 192px, and 512px icons without 404/MIME error; cache version is 2083.
-- [ ] QA-BRAND-02 - Root/page titles, login, public site, manifest, installed PWA, social preview, receipts, and admin shell use only Kathmandu Momo branding.
-- [ ] QA-BRAND-03 - Favicon remains recognizable at 16px/32px and is not a squeezed wordmark.
+- [ ] Published categories, items, descriptions, variants, prices, availability, and images match admin data.
+- [ ] Search is case-insensitive and handles partial match, spaces, no results, long text, and special characters.
+- [ ] Category filters and reset/all state work; counts are accurate if shown.
+- [ ] Unavailable/archived items cannot be ordered.
+- [ ] Each stored image loads, and the same photo is not unintentionally assigned to multiple products.
+- [ ] Currency is consistently rendered as Nepalese rupees with correct rounding.
 
-### QA-ANX - analytics and inventory dashboards
+### PUB-04 Contact and external actions
 
-- [ ] QA-ANX-01 - Analytics presets and Custom use consistent Nepal-local inclusive/exclusive boundaries; This Week starts Monday.
-- [ ] QA-ANX-02 - Sales, discounts, refunds, payments, purchases, expenses, COGS, profit, count, and AOV reconcile to controlled invoices and ledger.
-- [ ] QA-ANX-03 - Pending/cancelled/void add no revenue; refunds and split payments are counted exactly once; unsupported metrics say Unavailable.
-- [ ] QA-ANX-04 - Inventory value, SKU status counts, movements, wastage, and recipe consumption reconcile; mixed physical units are never summed.
+- [ ] Telephone links call the configured number.
+- [ ] WhatsApp opens the correct number and correctly encoded message.
+- [ ] Map/directions links point to the intended location.
+- [ ] Inquiry form validates required fields, email/phone formats, whitespace, maximum lengths, repeated clicks, and rate limiting.
+- [ ] Successful inquiry appears once in the admin inquiry/lead view with correct timestamp/content.
 
-### QA-CMS - website CMS and persistent media
+## 7. Cart and public online ordering
 
-- [ ] QA-CMS-01 - Admin can read/save approved Brand, Home, About, Gallery, Contact, Reservation, and SEO fields; every other role/direct unauthenticated request is denied.
-- [ ] QA-CMS-02 - Public landing reflects published content within cache policy and retains usable fallback during CMS failure; POS menu remains the sole menu/price source.
-- [ ] QA-CMS-03 - Valid image types succeed; empty, executable, oversized, excessive-dimension, extension mismatch, disguised, and polyglot files fail safely.
-- [ ] QA-CMS-04 - Upload path traversal/collision/concurrency is safe; responses expose no stack/path; metadata and upload audit are correct.
-- [ ] QA-CMS-05 - Referenced media cannot archive; unreferenced archive is audited; uploaded media survives restart and rehearsed cPanel deploy via persistent `UPLOADS_DIR`.
-- [ ] QA-CMS-06 - Gallery title/url/alt/order/visibility behavior is correct; malformed JSON/unsafe URL cannot break or compromise the public page.
-- [ ] QA-CMS-07 - CMS controls are labeled and keyboard accessible with clear loading/empty/error/success states at 360/768/1280/1536px.
+### ORD-01 Cart behavior
 
-### QA-BM - central bills and supplements
+- [ ] Add a simple item and a variant item; chosen variant and price are correct.
+- [ ] Increase/decrease quantity, enter boundary quantities, remove one item, and clear the cart.
+- [ ] Subtotal and item count update exactly; zero/negative/non-numeric quantities are impossible or rejected.
+- [ ] Cart remains usable after navigation/refresh according to intended persistence behavior.
+- [ ] Empty cart cannot be submitted.
 
-- [ ] QA-BM-01 - Bill tabs are explicit, mutually exclusive, accurately counted, and cover all supported states/channels.
-- [ ] QA-BM-02 - Search/date/channel/reopened filters, pagination, and order execute server-side and remain stable during writes.
-- [ ] QA-BM-03 - Desktop rows/mobile cards and details reconcile identifiers, channel, table, customer, staff, totals, paid/balance, states, KOT, payments, corrections, revisions, and times.
-- [ ] QA-BM-04 - View/reopen/void/refund/payment/reprint permissions are enforced by API; significant actions require confirmation/reason and append audit.
-- [ ] QA-BM-05 - Reopen creates a different empty supplemental order and never modifies original paid bill, completed order, items, payment, stock, KOT, or journal.
-- [ ] QA-BM-06 - Higher supplement bills only new items and posts incremental payment/revenue/tax/COGS/stock once; original payment remains.
-- [ ] QA-BM-07 - Empty/unchanged supplement creates no duplicate financial/stock/KOT record; lower outcome requires established refund/credit/void.
-- [ ] QA-BM-08 - One active supplement survives double-click, retry, two sessions, and PostgreSQL concurrency; table/stock/item/closed-period restrictions roll back cleanly.
-- [ ] QA-BM-09 - Only new preparation items create KOT lines; settlement uses existing services, is idempotent, links parent bill, and prints clear 58mm/80mm references.
+### ORD-02 Order submission
 
-### QA-ERR - unexpected API responses
+- [ ] Submit a valid order with minimum required customer and fulfillment data.
+- [ ] Validate blank/whitespace name, invalid/short/long phone, overly long notes/address, and unsupported values.
+- [ ] Confirmation clearly shows success and an order reference/status without exposing internal data.
+- [ ] One public submission creates exactly one order with correct lines, customer data, totals, source/type, status, and timestamp.
+- [ ] The order appears in `/admin/orders/online` and the main order view as intended.
 
-- [ ] QA-ERR-01 - Production unexpected 500s across auth/CMS/upload/analytics/inventory/billing/payment/KOT return only safe message/status/correlation ID.
-- [ ] QA-ERR-02 - Bodies contain no debug fields, stack, SQL/schema, credential, absolute path, environment value, or dependency frame; diagnostics remain server-side.
+### ORD-03 Server authority and abuse cases
 
-### QA-ENH-REL - release evidence
+Using browser/network tools or API testing:
 
-- [ ] QA-ENH-REL-01 - Install, generator, invariant checks, lint, dependency audit, and production build pass on the release commit with no unaccepted high/critical result.
-- [ ] QA-ENH-REL-02 - Migrations 026/027 apply on isolated PostgreSQL, backup restore succeeds, and constraints/indexes/counts are recorded.
-- [ ] QA-ENH-REL-03 - Analytics-ledger, inventory-movement, and original-supplement reconciliation examples are attached.
-- [ ] QA-ENH-REL-04 - Full role/public/QR/reservation/KOT/payment/printing/refund/accounting regressions, responsive screenshots, accessibility evidence, defect list, and approvals are attached.
+- [ ] Tamper with item price, total, product name, variant price, status, and stock flags; server ignores/rejects unauthorized values.
+- [ ] Submit nonexistent, unavailable, or deleted product/variant; request fails safely and creates no partial order.
+- [ ] Double-click submit, refresh response, repeat the request, and simulate timeout/retry; no duplicate financial/stock effect occurs.
+- [ ] Trigger public rate limit; receive 429 without impacting other normal users indefinitely.
+- [ ] Send malformed JSON, wrong content type, unexpected fields, oversized body, and script/HTML strings; receive sanitized validation errors and no stored executable markup.
+
+### ORD-04 Online order transitions
+
+- [ ] Exercise pending/submitted → accepted → preparing → ready → completed.
+- [ ] Cancel from every allowed state with a required reason.
+- [ ] Invalid backward/skip/repeated transitions are rejected.
+- [ ] Accepted/completed/cancelled timestamps and operator attribution are correct.
+- [ ] Stock reservation/consumption occurs once at the intended transition and reverses once when applicable.
+- [ ] Payment status/method and refunded amount remain consistent with bill/payment records.
+
+### ORD-05 Table-token/QR ordering
+
+- [ ] Generate/print a QR for an active table and open `/order/[token]` on mobile.
+- [ ] Valid token shows only the intended table/menu/status; invalid, missing, or altered token is denied.
+- [ ] Place a new order and append to the correct allowed active table order.
+- [ ] Server revalidates prices/availability and prevents access to another table by changing token/ID.
+- [ ] Turning `qr_ordering_enabled` off blocks ordering cleanly without breaking the public menu.
+
+## 8. Authentication, sessions, and access control
+
+### AUTH-01 Login
+
+- [ ] Correct admin credentials create a session and land at `/admin/pos`.
+- [ ] Wrong password/PIN, unknown user, inactive user, blank fields, spaces, and excessive length fail generically.
+- [ ] Repeated failed login triggers configured throttling and later recovers as designed.
+- [ ] Credential values are masked, not in the URL, browser console, analytics, or server logs.
+- [ ] Seed/default credential must be changed and must not work after change.
+
+### AUTH-02 Session lifecycle
+
+- [ ] Refresh and a new tab retain a valid session.
+- [ ] Logout revokes the server session, clears cookie, and prevents back-button access to protected data.
+- [ ] Expired, altered, deleted, or revoked session is rejected by pages and APIs.
+- [ ] Cookie has `HttpOnly`, production `Secure`, and intended `SameSite`, path, and expiry attributes.
+- [ ] Concurrent sessions/device behavior matches policy.
+
+### AUTH-03 Authorization matrix
+
+- [ ] Direct unauthenticated access to every `/admin/**` page and `/api/admin/**` group is denied/redirected.
+- [ ] Direct calls cannot change role, user ID, account, price, payment, stock, or journal ownership.
+- [ ] `/waiter`, `/kitchen`, `/cashier`, and their child pages redirect to `/admin/pos` in current deployment.
+- [ ] Hidden/disabled UI functions are also denied at API level.
+- [ ] Cross-site mutating request, missing/invalid CSRF/origin, and framed UI attempt are blocked.
+
+## 9. Counter POS, bills, and payments
+
+### POS-01 New sale and held bill
+
+- [ ] Search/filter products, select category, add simple/variant products, edit quantity, add notes, and remove lines.
+- [ ] Hold a sale, create another, resume the original, and verify lines/customer/totals were preserved once.
+- [ ] Empty, unavailable, deleted, and concurrently changed items are handled safely.
+- [ ] Very large basket and long notes remain usable and within configured limits.
+
+### POS-02 Calculation matrix
+
+Independently calculate and compare UI, API, bill, receipt, reports, and journal for:
+
+- [ ] One item × one quantity, multiple items, and quantities greater than one.
+- [ ] Decimal/odd prices that exercise rounding.
+- [ ] No discount, permitted fixed/percentage discount, boundary discount, and invalid excessive discount.
+- [ ] Tax off/on, service charge off/on, and both enabled.
+- [ ] Exact payment, underpayment, overpayment with change, and split payments.
+- [ ] Zero/negative/NaN/very large values submitted through UI and API are rejected.
+
+Record expected formula and values:
+
+| Value | Expected | Actual |
+|---|---:|---:|
+| Subtotal | | |
+| Discount | | |
+| Taxable/service base | | |
+| Tax | | |
+| Service charge | | |
+| Grand total | | |
+| Paid | | |
+| Change/refund | | |
+
+### POS-03 Payment and idempotency
+
+- [ ] Test every enabled method: cash, card, QR, eSewa, Khalti, credit, or configured subset.
+- [ ] Split payment sum and individual records equal the bill's paid amount.
+- [ ] Bill becomes paid only when payment requirement is satisfied.
+- [ ] Double click, slow response, reload, network retry, and repeated API call do not double-charge or double-post.
+- [ ] Payment method flows to payment history, cash/bank book/settlement, reports, and receipt correctly.
+- [ ] Credit payment links to the correct customer/supplier/account and later settlement reduces the correct balance.
+
+### POS-04 Receipt and bill history
+
+- [ ] Receipt shows business name, address/contact, PAN/VAT, bill/order number, date/time, operator, items/variants, quantities, prices, discount, tax, service, total, payment, change, and footer correctly.
+- [ ] Test 58 mm and 80 mm layouts, print preview, real printer if in scope, page breaks, long names, and reprint.
+- [ ] Reprint is identical and creates no new payment, stock movement, bill, or journal.
+- [ ] Bills/order detail, search, filters, date ranges, pagination, and empty results are accurate.
+
+### POS-05 Corrections, voids, refunds, and reopen
+
+- [ ] Authorized action requires reason and records actor/time/original reference.
+- [ ] Partial and full refund values cannot exceed eligible paid amount.
+- [ ] Void/refund/reopen status is consistent across order, bill, payments, reports, customer history, inventory, and accounting.
+- [ ] Correct compensating/reversal journal is created; original journal remains unchanged.
+- [ ] Repeating the correction is rejected or idempotent.
+- [ ] Closed/reconciled periods/accounts cannot be silently altered.
+
+### POS-06 Combined POS counter (`/admin/pos`)
+
+- [ ] POS opens directly into the sale/billing screen (not a separate table board page).
+- [ ] **Select Table** opens an in-page table picker; choosing a table resumes or starts that table's order in the same cart UI.
+- [ ] **Bills** opens active orders; selecting one loads that order back into the POS cart for add items / Print KOT / Complete Sale.
+- [ ] Menu items load with images; search and category filter return the correct items.
+- [ ] Cart actions are exactly: **Print KOT**, **Clear**, **Complete Sale**.
+- [ ] **Print KOT** prints a kitchen-readable ticket, moves the order to Bills as active, and clears the POS for a fresh sale.
+- [ ] **Clear** removes unsent cart lines (or starts fresh when empty).
+- [ ] **Complete Sale** opens payment and completes the bill; double-click/reload does not double-charge.
+- [ ] Resuming from `/admin/bills` via `?order=` loads the same order in POS.
+
+### BIL-01 Bill management (`/admin/bills`)
+
+- [ ] Active tab lists open/live orders that have no finalized bill yet, alongside pending and completed bills; timestamps show Kathmandu (NPT) time.
+- [ ] Selecting an open/live order opens the counter POS with that order loaded (`/admin/pos?order=<id>`) so items can be added and the bill generated and paid.
+- [ ] Complete payment on a pending bill collects only the outstanding balance and marks the bill paid exactly once (retry/idempotent).
+- [ ] Reopening a completed bill unlocks the same order in POS with previous items loaded for editing; Complete Sale settles only the difference vs the original paid total.
+- [ ] After reopen, qty/add/remove work on previous lines; extra due is collected (or a refund is issued if the total drops); the original invoice history stays intact.
+- [ ] Void and refund from the bill detail behave per POS-05 and cannot exceed eligible amounts.
+
+## 10. Catalog, CMS, customers, tables, and reservations
+
+### CAT-01 Products and categories
+
+- [ ] Create, view, edit, archive/delete, search, filter, paginate, and restore where supported.
+- [ ] Validate required name/category/price, duplicate names/SKU rules, negative price, very large value, long text, and special characters.
+- [ ] Create/edit variants and confirm public/counter prices and availability update correctly.
+- [ ] Category counts/order and deletion with linked products behave safely.
+- [ ] Historical order lines remain unchanged after product/price/category edits.
+
+### CMS-01 Public content and media
+
+- [ ] Edit each supported public content section and verify published output.
+- [ ] Empty, long, multilingual, punctuation, and HTML/script input render safely.
+- [ ] Upload valid image formats at boundaries; reject wrong MIME, renamed executable, oversized, corrupted, and path-like filenames.
+- [ ] Replace/delete media only when permitted; linked pages handle missing media gracefully.
+- [ ] Media URL cannot traverse outside `UPLOADS_DIR` and persists across restart/redeploy.
+
+### CUS-01 Customers and inquiries
+
+- [ ] Create/edit/search customer and normalize Nepal/local phone formats correctly.
+- [ ] Duplicate phone/customer behavior is predictable and does not merge unrelated people.
+- [ ] Customer order/billing history and totals match source records.
+- [ ] Inquiry list/counts/status/notes update correctly; unauthorized public/admin fields cannot be set by submitter.
+- [ ] Export/delete/privacy behavior follows the agreed business policy.
+
+### TAB-01 Tables, floors, types, and QR
+
+- [ ] CRUD floors/types/tables; validate name/number, min/max capacity, shape/color, notes, and duplicates.
+- [ ] Table availability/occupancy changes with active orders and returns correctly after completion/cancellation.
+- [ ] Prevent conflicting active assignment or require the intended authorized override.
+- [ ] QR generation is unique, scannable, maps to correct table, and old/rotated token behavior is correct.
+
+### RES-01 Reservations
+
+- [ ] Create through public/admin/restaurant paths with valid customer, date/time, party size, preferences, VIP/deposit fields where supported.
+- [ ] Validate past/invalid time, capacity, overlap/conflict, missing contact, long notes, and duplicate submit.
+- [ ] Exercise confirmed/arrived/seated/completed/cancelled/no-show states and allowed transitions.
+- [ ] Change table, seat, link order/customer, and verify table/reservation/order synchronization.
+- [ ] Hold, grace, dining, cleaning, lead, alert, and auto-cancel timings honor settings and time zone.
+
+## 11. Inventory, recipes, purchasing, and wastage
+
+### INV-01 Inventory master and units
+
+- [ ] CRUD item/category with base unit, supplier, minimum stock, cost, menu link, and archive behavior.
+- [ ] Reject negative opening stock/cost where not allowed, unknown units, duplicate identifiers, and invalid conversions.
+- [ ] Test kg↔g, l↔ml, and custom pack conversions in both directions with rounding boundaries.
+- [ ] Low-stock/out-of-stock dashboard and filters reflect current movement-derived balance.
+- [ ] Item history shows correct chronological quantity, unit, reference, actor, reason, and running result.
+
+### INV-02 Restock, adjustment, import
+
+- [ ] Restock increases exact normalized quantity and creates one movement/accounting effect as designed.
+- [ ] Positive/negative adjustment requires reason and cannot create prohibited stock state.
+- [ ] Repeat/retry does not create duplicate movements.
+- [ ] Import valid, duplicate, partial-invalid, missing-column, wrong-unit, large, and malicious-formula CSV/spreadsheet rows.
+- [ ] Import preview/error report is accurate and failed atomic import leaves no partial unintended data.
+
+### REC-01 Recipes and food cost
+
+- [ ] Create/edit recipe with yield, ingredient quantities, units, and component/sub-recipe where supported.
+- [ ] Reject missing ingredient, zero/negative quantity/yield, invalid conversion, and circular sub-recipe.
+- [ ] Food cost and margin match independently calculated normalized ingredient cost.
+- [ ] Completing an order deducts exact recipe quantities once; cancellation/correction restores only when designed.
+- [ ] Later recipe/cost edits do not rewrite historical order or journal facts.
+
+### PUR-01 Suppliers and purchases
+
+- [ ] CRUD/search/archive supplier; linked history and duplicate/merge behavior are correct.
+- [ ] Create purchase with multiple items, quantities, units, costs, invoice date/number, tax/discount if supported, and notes.
+- [ ] Cash, bank, and credit purchase produce correct inventory increase, expense/COGS or inventory accounting, cash/bank decrease or payable increase.
+- [ ] Purchase edit/cancel/delete rules protect received stock and posted journals; correction uses audit/reversal flow.
+- [ ] Import valid/invalid purchase files and verify totals, supplier, item matching, units, duplicate invoice handling, and atomicity.
+
+### WAS-01 Wastage
+
+- [ ] Log raw-material and prepared/recipe wastage with quantity, unit, reason, employee/shift, note, and photo where supported.
+- [ ] Required reason vocabulary, quantity limits, conversion, and available-stock rules are enforced.
+- [ ] Exact stock deduction and Dr Wastage / Cr Inventory journal occur once.
+- [ ] History filters, totals, analytics, image, actor, and timestamp are correct.
+- [ ] Edit/delete/correction cannot erase posted history without an auditable reversal.
+
+## 12. Employees, payroll, and expenses
+
+### EMP-01 Employees and performance
+
+- [ ] Create/edit/deactivate employee with username, role, position, salary, hire date, and PIN/password.
+- [ ] Validate duplicates, weak/invalid credentials per policy, salary/date boundaries, and self-lockout behavior.
+- [ ] Reset/change PIN works; old credential stops working; no plaintext credential appears in UI/API/log/database.
+- [ ] Performance orders, sales, bills, wastage, date filters, and attribution match source records.
+
+### PAY-01 Payroll
+
+- [ ] Record salary payment for valid employee/period/date/amount and each supported payment source.
+- [ ] Prevent negative/zero/duplicate or overpayment according to policy.
+- [ ] Payment history, employee totals, cash/bank effect, and Dr Payroll / Cr Cash|Bank journal are exact.
+- [ ] Delete/reversal requires authorization and preserves audit/accounting integrity.
+
+### EXP-01 Expenses and categories
+
+- [ ] CRUD categories; prevent unsafe removal when linked.
+- [ ] Create/edit/correct expense with category, amount, date, payment method, supplier/reference, notes, and receipt upload.
+- [ ] Validate negative/zero/too-large amount, future/invalid date policy, missing category, and unsupported payment account.
+- [ ] Cash/bank/credit expense posts correct balanced journal once.
+- [ ] Purchase/wastage-linked expenses cannot be accidentally duplicated or independently deleted into inconsistency.
+- [ ] Expense filters, totals, receipt view, and reports match source records.
+
+## 13. Accounting and finance
+
+For every case below, compare UI totals with database/source transaction and journal lines. Every journal must have non-negative lines, at least two effective sides, total debit exactly equal total credit, correct date/reference, and no duplicate `external_ref`.
+
+### ACC-01 Chart of accounts and general ledger
+
+- [ ] Seeded account codes/names/types are present and structurally correct.
+- [ ] Create/edit allowed account fields; prevent duplicate code, invalid type, or deletion of referenced account.
+- [ ] General ledger filters by account/date/reference and opening/movement/closing calculations are exact.
+- [ ] Journal detail shows all lines, description, source, actor/date, and balanced totals.
+
+### ACC-02 Cash drawer and cash book
+
+- [ ] Open drawer with opening cash; block invalid duplicate open.
+- [ ] Cash sale, expense, payroll, refund, exchange, and adjustment appear once in the correct session/book.
+- [ ] Close/reconcile with counted denominations/amount; expected vs actual variance is exact and recorded.
+- [ ] Closed session cannot receive silent backdated mutation.
+
+### ACC-03 Bank and bank book
+
+- [ ] Create/manage bank account within allowed rules.
+- [ ] Deposit, withdrawal, and bank-to-bank/cash transfer create correct two-sided entries.
+- [ ] Reject insufficient/invalid amount where policy requires and same-account transfer.
+- [ ] Bank book date/reference/balance agrees with journal lines.
+
+### ACC-04 Settlements and cash exchange
+
+- [ ] Record payment-provider settlement with gross, fee, net, method/account, and date.
+- [ ] Journal moves correct receivable/clearing amount, expense fee, and bank/cash amount.
+- [ ] Cash exchange preserves total value and attributes drawer/bank correctly.
+- [ ] Duplicate settlement/reference is rejected or idempotent.
+
+### ACC-05 Accounts payable
+
+- [ ] Credit purchase creates exact supplier payable.
+- [ ] Partial/full payment reduces the selected supplier and liability, using correct cash/bank account.
+- [ ] Supplier statement, ageing buckets, as-of date, and total agree with journal sub-ledger.
+- [ ] Cannot pay more than allowed or apply payment to wrong supplier through ID tampering.
+
+### ACC-06 Bank reconciliation
+
+- [ ] Import/enter statement boundaries and reconcile matching lines.
+- [ ] Reconciled/unreconciled totals, statement balance, book balance, outstanding items, and difference are exact.
+- [ ] Already reconciled line cannot be reconciled twice or altered without controlled undo.
+- [ ] Date/account isolation prevents cross-bank contamination.
+
+### ACC-07 Financial reports and finance dashboard
+
+Test day, month, custom range, empty range, period boundary, and time-zone boundary.
+
+- [ ] Trial balance total debit equals total credit exactly.
+- [ ] Profit and loss income minus expenses equals reported profit/loss.
+- [ ] Balance sheet satisfies Assets = Liabilities + Equity using intended retained-profit treatment.
+- [ ] Cash book, bank book, ledger, payable, sales, expense, dashboard, and source records reconcile.
+- [ ] Date filters are inclusive/exclusive as labeled and exports/print match onscreen values.
+- [ ] Reversal/refund appears in the correct period and does not delete original activity.
+
+## 14. Dashboards, analytics, reports, settings
+
+### RPT-01 Operational dashboards and reports
+
+- [ ] Admin dashboard cards/charts match independently queried orders, bills, payments, and dates.
+- [ ] Sales by item/category/method/hour, top items, average values, and counts use correct denominator and status inclusion.
+- [ ] Kitchen analytics prep times, queue/chef metrics, empty data, and overnight/time-zone cases are correct where active data exists.
+- [ ] Filters, sort, pagination, export, refresh, and drill-down retain consistent totals.
+- [ ] Cancelled/void/refunded/test transactions are included/excluded exactly as labels define.
+- [ ] On the dashboard, the Needs Attention and Today's Activity cards stay fixed-height on desktop; long lists scroll inside each card without pushing later sections below the fold.
+- [ ] The admin sidebar keeps its scroll position after navigating between pages (including links near the bottom); it does not jump back to the top.
+
+### SET-01 Settings
+
+- [ ] Business identity/contact/PAN/VAT changes appear in intended public pages and receipts.
+- [ ] Tax, service charge, discount, payment method, QR, and receipt settings affect new transactions correctly and do not rewrite history.
+- [ ] Reservation timing and ordering toggle values enforce server behavior.
+- [ ] Validate blank, malformed, negative, excessive, and long values; failed save does not partially apply.
+- [ ] Settings persist after refresh/restart and unauthorized API calls cannot change them.
+- [ ] Credential/account change requires correct current credential and invalidates old credential as designed.
+
+## 15. API, database, and transactional integrity
+
+### API-01 Contract behavior
+
+- [ ] Each active endpoint supports only declared methods; unsupported methods fail safely.
+- [ ] Success and error responses use correct status, valid JSON/content type, stable shape, and sanitized message.
+- [ ] IDs, pagination, sorting, date ranges, filters, and empty results behave consistently.
+- [ ] Missing resource is 404; auth failures are 401/403; conflicts/rate limits use intended status.
+- [ ] Malformed, oversized, duplicate, and concurrent requests do not crash the server or partially commit.
+
+### DB-01 Constraints and migration
+
+- [ ] Fresh database from `deploy/production_schema.sql` + `deploy/production_seed.sql` starts successfully (schema through migration `028`).
+- [ ] Seed loads the full menu (13 categories, 103 items, 6 variants), a recipe for every item, and the ingredient master with opening stock 0; verify the counts and that stock is 0 until the client enters it.
+- [ ] Seeded admin logs in with username `admin` / PIN `984898` and is forced to change the PIN on first sign-in.
+- [ ] After the seed, `npm run db:migrate` reports every migration already applied (no-op) because the markers are present.
+- [ ] Database at prior release upgrades through `npm run db:migrate` without losing or changing valid historical data.
+- [ ] Migration rerun is safe and `schema_migrations` is correct.
+- [ ] Required foreign keys, unique constraints, indexes, and delete restrictions protect history.
+- [ ] PostgreSQL production behavior—not only SQLite fallback—is tested.
+
+### DB-02 Atomicity and concurrency
+
+Simulate network interruption, duplicate clicks, and two browser sessions acting on the same record.
+
+- [ ] Sale/payment either fully commits order+bill+payment+stock+journal or fully rolls back.
+- [ ] Purchase either fully commits purchase+lines+stock+payable/payment+journal or fully rolls back.
+- [ ] Wastage/expense/payroll/correction is all-or-nothing.
+- [ ] Concurrent payment, order transition, stock adjustment, and table assignment do not duplicate or overwrite silently.
+- [ ] User receives a safe retry/conflict message and the final stored state is reconcilable.
+
+## 16. Security and privacy testing
+
+Perform only in the authorized QA environment.
+
+- [ ] HTTPS redirects/policy and certificate are valid; no mixed content.
+- [ ] Headers include effective content-type protection, frame protection/CSP, referrer policy, permissions policy, and production HSTS.
+- [ ] XSS attempts in every text field display as text and never execute in list, detail, receipt, export, or public pages.
+- [ ] SQL/meta characters do not bypass login/filter or cause database errors.
+- [ ] Object ID changes cannot expose/update another protected record without authorization.
+- [ ] Directory traversal and encoded traversal cannot read arbitrary media/server files.
+- [ ] Upload validates real content type, size, filename, storage path, and access.
+- [ ] Sensitive responses are not cached publicly; secrets and stack traces never reach browser responses.
+- [ ] Logs redact credentials, tokens, cookies, database URL, and sensitive request fields.
+- [ ] Rate limits are effective but do not permanently block normal operation.
+- [ ] Dependency/advisory review has no unaccepted exploitable production finding.
+- [ ] Only necessary customer/employee data is collected and access/export/retention follows business policy.
+
+## 17. Accessibility, compatibility, and usability
+
+- [ ] Every interactive element is reachable and operable by keyboard in logical order.
+- [ ] Visible focus, labels/instructions, error association, required state, and status announcements are present.
+- [ ] Buttons/links have accessible names; icon-only controls have labels.
+- [ ] Heading hierarchy, landmarks, dialog semantics, table headers, and image alt text are meaningful.
+- [ ] Text/controls meet contrast expectations; information is not conveyed by color alone.
+- [ ] At 200% zoom and mobile width, content remains available without two-dimensional scrolling except true data tables.
+- [ ] Loading, empty, success, validation, conflict, offline/network, permission, and server-error states explain the next action.
+- [ ] Destructive actions require clear confirmation; irreversible/accounting actions explain consequences.
+- [ ] Common counter task can be completed efficiently without accidental duplicate action.
+
+## 18. Performance and reliability
+
+Measure on production-like hosting with realistic data volume and record tooling/network conditions.
+
+- [ ] Public landing and menu meet agreed Core Web Vitals/performance budget on mobile network profile.
+- [ ] Login, menu search, add-to-cart, order submission, counter product search, checkout, and key reports meet agreed response targets.
+- [ ] Large order/product/customer/inventory/report lists paginate and remain usable.
+- [ ] Images are appropriately sized/cached; initial pages do not download unnecessary full-size media.
+- [ ] A brief database/network failure produces a recoverable error, no white screen, and no partial/duplicate transaction.
+- [ ] Application recovers after server restart; graceful shutdown does not corrupt in-flight operations.
+- [ ] Database pool stays within host limits during representative concurrent use.
+- [ ] Disk-full/near-full and upload failure are monitored and fail safely.
+
+Suggested starting targets, unless the business sets stricter ones: health/API simple request under 1 second at normal load, transactional action under 3 seconds, report under 5 seconds, and no critical console error. Record percentile/load details rather than a single best run.
+
+## 19. Deployment, monitoring, backup, and recovery
+
+### OPS-01 Deployment
+
+- [ ] Release excludes `.env`, local databases, `.git`, `node_modules`, `.next`, test artifacts, and temporary files from public exposure.
+- [ ] cPanel uses Node 22, production mode, correct application root, and `server.js`; host-injected `PORT` is not overridden.
+- [ ] Environment variables match `.env.example` requirements and secrets are unique.
+- [ ] Build, migration, restart, health check, and smoke test procedure succeeds from written guide.
+- [ ] Persistent uploads remain available after a release replacement.
+
+### OPS-02 Monitoring and logging
+
+- [ ] `/api/health` detects application/database failure and returns appropriate status without secrets.
+- [ ] Operators can see application exceptions, failed jobs/requests, database connectivity, pool pressure, disk/uploads capacity, and backup status.
+- [ ] Alert recipient and escalation path are tested.
+- [ ] Timestamps/time zone and request/error correlation are useful for investigation.
+
+### OPS-03 Backup and restore drill
+
+- [ ] Create timestamped PostgreSQL dump and upload-folder backup.
+- [ ] Verify backup file is non-empty, protected, retained, and includes required data/media.
+- [ ] Restore into an isolated database/storage location using documented steps.
+- [ ] Start the restored app and verify admin login, settings, product images, customers, orders, bills, payments, stock movements, and journals.
+- [ ] Compare counts/checksums/control totals between source and restored system.
+- [ ] Record achieved recovery time and recovery point against business targets.
+
+### OPS-04 Rollback drill
+
+- [ ] Previous application release is available and rollback owner/decision threshold are documented.
+- [ ] Roll back application safely in staging and re-run health/critical smoke tests.
+- [ ] For schema changes, demonstrate the forward-fix/compatibility plan; never overwrite newer orders with an older backup without explicit incident authorization.
+- [ ] Confirm failed deployment and rollback leave no half-applied migration or unavailable uploads.
+
+## 20. End-to-end reconciliation scenario
+
+This scenario is mandatory because it proves integration across modules.
+
+1. Record opening cash, bank, and inventory control values.
+2. Create/verify a supplier, inventory item/unit conversion, menu item, and recipe.
+3. Receive a credit purchase, then make a partial supplier payment from bank.
+4. Create a counter cash sale for the recipe item and a separate online order paid through another method.
+5. Log controlled wastage and one operating expense.
+6. Issue a partial or full correction/refund through the supported workflow.
+7. Close/reconcile the cash drawer and reconcile the bank test items.
+8. Run sales, inventory, payable, ledger, trial balance, P&L, balance sheet, and cash/bank reports.
+
+Pass only when:
+
+- [ ] Order and bill totals equal independently calculated values.
+- [ ] Payments minus refunds equal cash/bank/clearing movements as applicable.
+- [ ] Closing inventory equals opening + purchases/restocks − recipe use − wastage ± approved corrections.
+- [ ] Supplier payable equals credit purchases − supplier payments ± corrections.
+- [ ] Every event has exactly one intended balanced journal/reversal.
+- [ ] Trial balance balances and financial reports reconcile to ledger/source records.
+- [ ] Actors, timestamps, references, reasons, and audit history allow every change to be traced.
+
+## 21. Final production smoke test
+
+Run immediately after deployment with controlled data:
+
+- [ ] `/api/health` passes and public home/menu/images load over HTTPS.
+- [ ] Contact/phone/WhatsApp and restaurant information are correct.
+- [ ] Admin login works and wrong credentials fail.
+- [ ] Create one marked test counter sale, accept payment, and print/review receipt.
+- [ ] Submit one marked public order and verify it appears in admin.
+- [ ] Confirm associated order, bill/payment, stock movement, and journal records.
+- [ ] Confirm dashboard/report totals reflect the tests.
+- [ ] Reverse test transactions through the approved auditable workflow; do not directly delete financial history.
+- [ ] Verify legacy role routes redirect, security headers/cookies are active, uploads work, logs are clean, and monitoring receives data.
+- [ ] Confirm the scheduled database/uploads backup is active.
+
+## 22. Sign-off
+
+| Role | Name | Decision | Date/time | Notes |
+|---|---|---|---|---|
+| QA owner | | PASS / FAIL | | |
+| Technical owner | | GO / NO-GO | | |
+| Business owner | | GO / NO-GO | | |
+
+### Open accepted risks
+
+| Defect ID | Severity | Risk and workaround | Owner | Target date | Approver |
+|---|---|---|---|---|---|
+| | | | | | |
+
+### Final decision
+
+- Release identifier:
+- Deployment time:
+- Backup identifier:
+- QA evidence location:
+- Decision: **GO / NO-GO**
+- Rollback deadline/criteria:
+
+The release is production-ready only when this guide is completed with evidence and the exit criteria in Section 3 are satisfied.

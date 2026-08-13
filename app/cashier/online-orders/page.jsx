@@ -1,2 +1,1 @@
-import OnlineOrderQueue from '@/components/online-order/online-order-queue.jsx';
-export default function CashierOnlineOrdersPage() { return <OnlineOrderQueue basePath="/cashier" />; }
+export { default } from '@/app/admin/orders/online/page';

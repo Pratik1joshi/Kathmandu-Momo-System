@@ -3,6 +3,7 @@ import QRCode from 'qrcode';
 import Database from '@/lib/db/index.js';
 import { requireAuth, handleRouteError } from '@/lib/api-guard.js';
 import { ensureTableTokens } from '@/lib/table-qr.js';
+import { getPublicAppUrl } from '@/lib/app-url.js';
 
 /** Admin: QR (SVG) + ordering URL for one table (or ?id omitted → all tables). */
 export async function GET(request) {
@@ -14,7 +15,12 @@ export async function GET(request) {
     await ensureTableTokens(db);
 
     const url = new URL(request.url);
-    const origin = request.headers.get('origin') || url.origin;
+    const origin = getPublicAppUrl(request);
+    if (!origin) {
+      return NextResponse.json({
+        error: 'Set APP_URL in the environment (e.g. https://your-domain.com) so table QR codes use a public link.',
+      }, { status: 500 });
+    }
     const id = url.searchParams.get('id');
 
     const orderUrl = (token) => `${origin}/order/${token}`;

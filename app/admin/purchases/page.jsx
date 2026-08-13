@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import AdminLayout from '@/components/admin/admin-layout';
 import { Ban, Pencil, Truck, Upload, Users } from 'lucide-react';
 import { useToast } from '@/components/ui/toast';
@@ -15,11 +16,21 @@ import { apiJson } from '@/lib/authed-fetch';
 import DataGrid, { StatusBadge } from '@/components/admin/data-grid';
 import useServerList from '@/lib/use-server-list';
 import AttentionBar from '@/components/admin/attention-bar';
+import { formatNepalDate } from '@/lib/time-utils';
 import { KpiCards } from '@/components/admin/report-kit';
 import ReceiveDeliveryModal from '@/components/purchases/receive-delivery-modal';
 import PurchaseDrawer, { PURCHASE_STATUS } from '@/components/purchases/purchase-drawer';
+import { useCapabilities } from '@/lib/use-capabilities.js';
 
 export default function PurchasesPage() {
+  const pathname = usePathname();
+  const isCashierPanel = pathname?.startsWith('/cashier');
+  const { can } = useCapabilities();
+  const canCreate = can('purchases.create');
+  const canImport = can('purchases.import');
+  const canEdit = can('purchases.edit');
+  const canVoid = can('purchases.void');
+  const canViewSuppliers = can('suppliers.view');
   const { addToast } = useToast();
   const [items, setItems] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
@@ -59,16 +70,30 @@ export default function PurchasesPage() {
 
   useEffect(() => {
     let cancelled = false;
+    let currentUser = {};
+    try { currentUser = JSON.parse(localStorage.getItem('pos_user') || '{}'); } catch { /* ignore */ }
     Promise.all([
       apiJson('/api/admin/inventory'),
       apiJson('/api/admin/suppliers?export=1').catch(() => ({ suppliers: [] })),
-      apiJson('/api/admin/employees').catch(() => ({ employees: [] })),
+      currentUser.role === 'admin'
+        ? apiJson('/api/admin/employees').catch(() => ({ employees: [] }))
+        : Promise.resolve({ employees: [] }),
     ])
       .then(([inv, sup, emp]) => {
         if (cancelled) return;
         setItems(inv.items || []);
         setSuppliers(sup.suppliers || []);
-        setEmployees((emp.employees || []).filter((e) => e.is_active !== false));
+        const activeEmployees = (emp.employees || []).filter((e) => e.is_active !== false);
+        if (activeEmployees.length) {
+          setEmployees(activeEmployees);
+        } else {
+          try {
+            const me = JSON.parse(localStorage.getItem('pos_user') || '{}');
+            setEmployees(me?.id ? [me] : []);
+          } catch {
+            setEmployees([]);
+          }
+        }
       })
       .catch((error) => {
         if (!cancelled) addToast(friendlyFromError(error, 'load_failed'));
@@ -107,7 +132,7 @@ export default function PurchasesPage() {
         key: 'invoice_date',
         label: 'Date',
         value: (r) => r.invoice_date || r.created_at || '',
-        render: (r) => (r.invoice_date ? String(r.invoice_date).slice(0, 10) : new Date(r.created_at).toLocaleDateString()),
+        render: (r) => (r.invoice_date ? String(r.invoice_date).slice(0, 10) : formatNepalDate(r.created_at)),
       },
       { key: 'supplier', label: 'Supplier', value: (r) => r.supplier_name || r.supplier || '', render: (r) => r.supplier_name || r.supplier || <span className="text-gray-300">Not recorded</span> },
       { key: 'line_count', label: 'Lines', align: 'right', numeric: true, value: (r) => Number(r.line_count || 0) },
@@ -145,15 +170,15 @@ export default function PurchasesPage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <Link href="/admin/suppliers" className={BTN_SECONDARY}>
+            {canViewSuppliers && <Link href={isCashierPanel ? '/cashier/suppliers' : '/admin/suppliers'} className={BTN_SECONDARY}>
               <Users className="h-4 w-4" /> Suppliers
-            </Link>
-            <Link href="/admin/purchases/import" className={BTN_SECONDARY}>
+            </Link>}
+            {canImport && <Link href={isCashierPanel ? '/cashier/purchases/import' : '/admin/purchases/import'} className={BTN_SECONDARY}>
               <Upload className="h-4 w-4" /> Import purchases
-            </Link>
-            <button type="button" onClick={() => setFormPurchase({})} className={BTN_PRIMARY}>
+            </Link>}
+            {canCreate && <button type="button" onClick={() => setFormPurchase({})} className={BTN_PRIMARY}>
               <Truck className="h-4 w-4" /> Receive delivery
-            </button>
+            </button>}
           </div>
         </div>
       </header>
@@ -222,7 +247,7 @@ export default function PurchasesPage() {
               <span className="inline-flex items-center gap-1 px-2 text-xs text-gray-400">
                 <Ban className="h-3.5 w-3.5" /> Voided
               </span>
-            ) : (
+            ) : canEdit ? (
               <button
                 type="button"
                 title="Edit purchase"
@@ -232,7 +257,7 @@ export default function PurchasesPage() {
               >
                 <Pencil className="h-4 w-4" />
               </button>
-            )
+            ) : null
           }
         />
       </div>
@@ -240,6 +265,8 @@ export default function PurchasesPage() {
       {drawerId && (
         <PurchaseDrawer
           purchaseId={drawerId}
+          canEdit={canEdit}
+          canVoid={canVoid}
           onClose={() => setDrawerId(null)}
           onChanged={fetchAll}
           onEdit={(p) => {
@@ -249,7 +276,7 @@ export default function PurchasesPage() {
         />
       )}
 
-      {formPurchase && (
+      {formPurchase && (formPurchase.id ? canEdit : canCreate) && (
         <PurchaseFormLoader
           purchaseId={formPurchase.id}
           seed={formPurchase}

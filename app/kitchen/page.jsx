@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import { useRouter } from 'next/navigation'
-import { ChefHat, Clock, CheckCircle, Flame, Maximize2, X, Trash, ClipboardList } from 'lucide-react'
+import { ChefHat, Clock, CheckCircle, Flame, Maximize2, X, Trash, ClipboardList, BookOpen, Printer, Warehouse } from 'lucide-react'
 import { useToast } from '@/components/ui/toast'
 import { friendlyFromError, friendlyMessage } from '@/lib/friendly-message'
 import { formatElapsed, urgencyFromCreatedAt } from '@/lib/restaurant-status'
@@ -75,6 +75,11 @@ function TicketBody({ order, items, expanded = false }) {
         ))}
         {items.length === 0 && (
           <p className="text-sm text-slate-400">Loading items…</p>
+        )}
+        {order.notes && (
+          <p className="rounded-lg bg-amber-50 px-2.5 py-2 text-sm font-medium text-amber-900">
+            Order note: {order.notes}
+          </p>
         )}
         {expanded && order.customer_name && (
           <p className="text-sm text-slate-600 pt-2 border-t border-slate-100">
@@ -169,6 +174,10 @@ export default function KitchenPage() {
       router.push('/login')
       return
     }
+    if (user && !['kitchen', 'admin'].includes(user.role)) {
+      router.push('/login')
+      return
+    }
     load()
     const t = setInterval(load, 8000)
     const onVis = () => {
@@ -179,7 +188,7 @@ export default function KitchenPage() {
       clearInterval(t)
       document.removeEventListener('visibilitychange', onVis)
     }
-  }, [authLoading, token])
+  }, [authLoading, token, user, router])
 
   useEffect(() => {
     if (!focusedId) return
@@ -241,17 +250,48 @@ export default function KitchenPage() {
           </div>
           <button
             type="button"
-            onClick={() => setShowWastageHistory(true)}
-            className="flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-200"
+            onClick={() => router.push('/kitchen/kots')}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200"
+            aria-label="Ticket history"
+            title="Ticket history"
           >
-            <ClipboardList className="w-3.5 h-3.5" /> Wastage
+            <Printer className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => router.push('/kitchen/inventory')}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200"
+            aria-label="Stock levels"
+            title="Stock levels"
+          >
+            <Warehouse className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => router.push('/kitchen/recipes')}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200"
+            aria-label="Kitchen recipes"
+            title="Kitchen recipes"
+          >
+            <BookOpen className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowWastageHistory(true)}
+            className="flex h-10 w-10 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-slate-100 text-xs font-semibold text-slate-700 hover:bg-slate-200 xl:w-auto xl:px-3"
+            aria-label="Wastage history"
+            title="Wastage history"
+          >
+            <ClipboardList className="w-3.5 h-3.5" /> <span className="hidden xl:inline">Wastage</span>
           </button>
           <button
             type="button"
             onClick={() => setShowWastage(true)}
-            className="flex items-center gap-1.5 rounded-lg bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-100"
+            className="flex h-10 w-10 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-rose-50 text-xs font-semibold text-rose-700 hover:bg-rose-100 xl:w-auto xl:px-3"
+            aria-label="Log wastage"
+            title="Log wastage"
           >
-            <Trash className="w-3.5 h-3.5" /> Log Wastage
+            <Trash className="w-3.5 h-3.5" /> <span className="hidden xl:inline">Log Wastage</span>
           </button>
           <LogoutButton onLogout={logout} iconOnly />
         </div>

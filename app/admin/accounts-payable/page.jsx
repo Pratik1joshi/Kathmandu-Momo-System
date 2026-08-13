@@ -7,6 +7,7 @@ import { useToast } from '@/components/ui/toast';
 import { friendlyMessage, friendlyFromError } from '@/lib/friendly-message';
 import { apiJson } from '@/lib/authed-fetch';
 import LedgerTable, { money } from '@/components/accounting/ledger-table';
+import { adminInputClass } from '@/components/ui/admin-form';
 
 const BUCKETS = ['0-30', '31-60', '61-90', '90+'];
 
@@ -116,7 +117,7 @@ export default function AccountsPayablePage() {
 
       {payFor && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 sm:p-8">
+          <div className="w-full max-w-2xl rounded-t-2xl sm:rounded-2xl bg-white p-6 sm:p-8 max-h-[94dvh] overflow-y-auto">
             <h3 className="mb-1 text-lg font-bold text-gray-900">Pay {payFor.name}</h3>
             <p className="mb-4 text-sm text-gray-500">Outstanding {money(payFor.outstanding)}</p>
             <div className="space-y-3">
@@ -172,7 +173,7 @@ function Panel({ title, children }) {
 function Field({ label, children }) {
   return <label className="block"><span className="mb-1 block text-sm font-medium text-gray-700">{label}</span>{children}</label>;
 }
-const INPUT = 'h-11 w-full rounded-lg border border-gray-300 px-3 text-sm text-gray-900';
+const INPUT = adminInputClass;
 function newKey() {
   return typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `k-${Date.now()}-${Math.random()}`;
 }

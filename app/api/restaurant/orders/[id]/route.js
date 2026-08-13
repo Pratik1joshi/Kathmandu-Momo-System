@@ -171,7 +171,7 @@ export async function PUT(request, context) {
     const status = error.status || 500;
     return Response.json(
       { error: error.message || 'Could not update the order. Please try again.' },
-      { status: status === 403 || status === 400 ? status : 500 }
+      { status: [400, 403, 404, 409].includes(status) ? status : 500 }
     );
   }
 }
@@ -201,7 +201,7 @@ export async function DELETE(request, context) {
     const status = error.status || 500;
     return Response.json(
       { error: error.message || 'Could not cancel the order. Please try again.' },
-      { status: status === 403 || status === 400 ? status : 500 }
+      { status: [400, 403, 404, 409].includes(status) ? status : 500 }
     );
   }
 }

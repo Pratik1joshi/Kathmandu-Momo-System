@@ -11,16 +11,28 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import AdminLayout from '@/components/admin/admin-layout';
 import { Combine, Pencil, Plus, X } from 'lucide-react';
 import { useToast } from '@/components/ui/toast';
 import { friendlyFromError, friendlyMessage } from '@/lib/friendly-message';
+import { formatNepalDate } from '@/lib/time-utils';
 import { apiJson } from '@/lib/authed-fetch';
 import DataGrid from '@/components/admin/data-grid';
 import useServerList from '@/lib/use-server-list';
 import AttentionBar from '@/components/admin/attention-bar';
 import { KpiCards } from '@/components/admin/report-kit';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import {
+  AdminField,
+  adminInputClass,
+  adminTextareaClass,
+  adminDialogMd,
+  adminBtnPrimary,
+  adminBtnSecondary,
+  adminFieldStackClass,
+} from '@/components/ui/admin-form';
+import { useCapabilities } from '@/lib/use-capabilities.js';
 
 /** Rough duplicate sniff: same first word, or one name contained in the other. */
 function looksDuplicated(suppliers) {
@@ -34,6 +46,12 @@ function looksDuplicated(suppliers) {
 }
 
 export default function SuppliersPage() {
+  const pathname = usePathname();
+  const isCashierPanel = pathname?.startsWith('/cashier');
+  const { role, can } = useCapabilities();
+  const canManage = can('suppliers.manage');
+  const canMerge = role === 'admin';
+  const canViewPurchases = can('purchases.view');
   const { addToast } = useToast();
   const [selected, setSelected] = useState([]);
   const [editing, setEditing] = useState(null); // {} for new
@@ -98,7 +116,7 @@ export default function SuppliersPage() {
         key: 'last_purchase',
         label: 'Last delivery',
         value: (r) => r.last_purchase || '',
-        render: (r) => (r.last_purchase ? new Date(r.last_purchase).toLocaleDateString() : <span className="text-gray-300">Never</span>),
+        render: (r) => (r.last_purchase ? formatNepalDate(r.last_purchase) : <span className="text-gray-300">Never</span>),
       },
     ],
     []
@@ -113,12 +131,12 @@ export default function SuppliersPage() {
             <p className="mt-1 text-sm text-gray-500 sm:text-base">Who you buy from, what you spend with them, and where the duplicates are.</p>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <Link href="/admin/purchases" className="inline-flex items-center gap-1.5 rounded-xl border border-gray-300 px-3.5 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+            {canViewPurchases && <Link href={isCashierPanel ? '/cashier/purchases' : '/admin/purchases'} className="inline-flex items-center gap-1.5 rounded-xl border border-gray-300 px-3.5 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50">
               Purchases
-            </Link>
-            <button type="button" onClick={() => setEditing({})} className="inline-flex items-center gap-1.5 rounded-xl bg-gray-900 px-3.5 py-2.5 text-sm font-semibold text-white hover:bg-gray-800">
+            </Link>}
+            {canManage && <button type="button" onClick={() => setEditing({})} className="inline-flex items-center gap-1.5 rounded-xl bg-gray-900 px-3.5 py-2.5 text-sm font-semibold text-white hover:bg-gray-800">
               <Plus className="h-4 w-4" /> Add supplier
-            </button>
+            </button>}
           </div>
         </div>
       </header>
@@ -133,7 +151,7 @@ export default function SuppliersPage() {
           ]}
         />
 
-        {duplicateGroups.length > 0 && (
+        {canMerge && duplicateGroups.length > 0 && (
           <AttentionBar
             tone="amber"
             title={`${duplicateGroups.length} group${duplicateGroups.length === 1 ? '' : 's'} of suppliers look like the same business`}
@@ -147,12 +165,12 @@ export default function SuppliersPage() {
           rows={rows}
           server={server}
           csvName="suppliers"
-          selected={selected}
-          onSelectionChange={setSelected}
+          selected={canMerge ? selected : undefined}
+          onSelectionChange={canMerge ? setSelected : undefined}
           searchPlaceholder="Search suppliers…"
           empty={loading ? 'Loading suppliers…' : 'No suppliers yet. Add one, or just type a new name when you receive a delivery.'}
           footNote="Click a supplier for its purchase history."
-          bulkActions={
+          bulkActions={canMerge ? (
             <button
               type="button"
               onClick={() => (selected.length >= 2 ? setMerging(true) : addToast(friendlyMessage('validation', { description: 'Pick at least two suppliers to merge.' })))}
@@ -160,8 +178,8 @@ export default function SuppliersPage() {
             >
               <Combine className="h-3.5 w-3.5" /> Merge selected
             </button>
-          }
-          renderActions={(row) => (
+          ) : null}
+          renderActions={(row) => canManage ? (
             <button
               type="button"
               title="Edit supplier"
@@ -171,12 +189,12 @@ export default function SuppliersPage() {
             >
               <Pencil className="h-4 w-4" />
             </button>
-          )}
+          ) : null}
         />
       </div>
 
-      {editing && <SupplierFormModal supplier={editing.id ? editing : null} onClose={() => setEditing(null)} onSaved={fetchAll} />}
-      {merging && (
+      {canManage && editing && <SupplierFormModal supplier={editing.id ? editing : null} onClose={() => setEditing(null)} onSaved={fetchAll} />}
+      {canMerge && merging && (
         <MergeModal
           candidates={rows.filter((r) => selected.includes(r.id))}
           onClose={() => setMerging(false)}
@@ -187,7 +205,7 @@ export default function SuppliersPage() {
         />
       )}
       {detail && (
-        <SupplierDetail supplier={detail} onClose={() => setDetail(null)} />
+        <SupplierDetail supplier={detail} canViewPurchases={canViewPurchases} onClose={() => setDetail(null)} />
       )}
     </AdminLayout>
   );
@@ -228,46 +246,41 @@ function SupplierFormModal({ supplier, onClose, onSaved }) {
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent onClose={onClose}>
+      <DialogContent onClose={onClose} className={adminDialogMd}>
         <DialogHeader>
           <DialogTitle>{supplier ? `Edit ${supplier.name}` : 'Add supplier'}</DialogTitle>
         </DialogHeader>
-        <div className="mt-4 space-y-4">
+        <div className={`mt-6 ${adminFieldStackClass}`}>
           {[
             { key: 'name', label: 'Name', required: true },
             { key: 'phone', label: 'Phone' },
             { key: 'email', label: 'Email', type: 'email' },
             { key: 'address', label: 'Address' },
           ].map((f) => (
-            <label key={f.key} className="block">
-              <span className="mb-1 block text-sm font-medium text-gray-700">
-                {f.label}
-                {f.required && <span className="text-red-600"> *</span>}
-              </span>
+            <AdminField key={f.key} label={f.label} required={f.required}>
               <input
                 type={f.type || 'text'}
                 autoFocus={f.key === 'name'}
                 value={form[f.key]}
                 onChange={(e) => setForm((p) => ({ ...p, [f.key]: e.target.value }))}
-                className="h-10 w-full rounded-lg border border-gray-300 px-3 text-sm"
+                className={adminInputClass}
               />
-            </label>
+            </AdminField>
           ))}
-          <label className="block">
-            <span className="mb-1 block text-sm font-medium text-gray-700">Notes</span>
+          <AdminField label="Notes">
             <textarea
-              rows={2}
+              rows={3}
               value={form.notes}
               onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              className={adminTextareaClass}
             />
-          </label>
+          </AdminField>
         </div>
         <DialogFooter>
-          <button type="button" onClick={onClose} className="h-10 rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700">
+          <button type="button" onClick={onClose} className={adminBtnSecondary}>
             Cancel
           </button>
-          <button type="button" disabled={saving} onClick={submit} className="h-10 rounded-lg bg-gray-900 px-4 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50">
+          <button type="button" disabled={saving} onClick={submit} className={adminBtnPrimary}>
             {saving ? 'Saving…' : 'Save'}
           </button>
         </DialogFooter>
@@ -342,13 +355,16 @@ function MergeModal({ candidates, onClose, onMerged }) {
   );
 }
 
-function SupplierDetail({ supplier, onClose }) {
+function SupplierDetail({ supplier, canViewPurchases, onClose }) {
   // This supplier's own deliveries, asked for by supplier_id. The page used to
   // hold 500 purchases for every supplier just so this drawer could filter them.
   const [purchases, setPurchases] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!canViewPurchases) {
+      return undefined;
+    }
     let cancelled = false;
     apiJson(`/api/admin/purchases?supplier_id=${supplier.id}&page_size=200`)
       .then((body) => {
@@ -363,7 +379,7 @@ function SupplierDetail({ supplier, onClose }) {
     return () => {
       cancelled = true;
     };
-  }, [supplier.id]);
+  }, [supplier.id, canViewPurchases]);
 
   const spend = purchases.filter((p) => p.status !== 'voided').reduce((s, p) => s + Number(p.total || 0), 0);
   return (
@@ -396,7 +412,11 @@ function SupplierDetail({ supplier, onClose }) {
 
           <section>
             <h3 className="mb-3 text-sm font-semibold text-gray-900">Purchase history</h3>
-            {loading ? (
+            {!canViewPurchases ? (
+              <p className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-500">
+                Purchase-history access has not been granted for this account.
+              </p>
+            ) : loading ? (
               <p className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-500">
                 Loading purchase history…
               </p>

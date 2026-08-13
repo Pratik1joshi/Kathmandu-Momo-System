@@ -3,17 +3,19 @@
 import { useState, useEffect } from 'react';
 import AdminLayout from '@/components/admin/admin-layout';
 import {
-  Plus, Edit, Trash2, Users, Grid, List, Eye, EyeOff, X, ArrowRightLeft
+  Plus, Edit, Trash2, Users, Grid, List, Eye, EyeOff, X
 } from 'lucide-react';
 import { useToast } from '@/components/ui/toast';
+import { useConfirm } from '@/components/ui/confirm';
 import { friendlyMessage, friendlyFromError } from '@/lib/friendly-message';
-import TableActionsModal from '@/components/billing/table-actions-modal';
 
 export default function TableManagementPage() {
   const { addToast } = useToast();
+  const { confirm } = useConfirm();
   const [tables, setTables] = useState([]);
-  const [actionsTable, setActionsTable] = useState(null);
   const [filteredTables, setFilteredTables] = useState([]);
+  const [floors, setFloors] = useState([]);
+  const [types, setTypes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState('grid');
   const [filterFloor, setFilterFloor] = useState('all');
@@ -34,12 +36,37 @@ export default function TableManagementPage() {
   });
 
   useEffect(() => {
+    fetchMeta();
+  }, []);
+
+  useEffect(() => {
     fetchTables();
   }, [showInactive]);
 
   useEffect(() => {
     filterTables();
   }, [tables, filterFloor, filterType]);
+
+  const fetchMeta = async () => {
+    try {
+      const token = localStorage.getItem('pos_token');
+      const headers = { Authorization: `Bearer ${token}` };
+      const [fRes, tRes] = await Promise.all([
+        fetch('/api/admin/table-floors', { headers }),
+        fetch('/api/admin/table-types', { headers }),
+      ]);
+      if (fRes.ok) {
+        const data = await fRes.json();
+        setFloors(data.floors || []);
+      }
+      if (tRes.ok) {
+        const data = await tRes.json();
+        setTypes(data.types || []);
+      }
+    } catch {
+      /* ignore — fall back to hardcoded options */
+    }
+  };
 
   const fetchTables = async () => {
     try {
@@ -109,7 +136,12 @@ export default function TableManagementPage() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Are you sure you want to deactivate this table?')) return;
+    const ok = await confirm({
+      title: 'Deactivate table?',
+      message: 'Are you sure you want to deactivate this table?',
+      tone: 'delete',
+    });
+    if (!ok) return;
 
     try {
       const token = localStorage.getItem('pos_token');
@@ -165,13 +197,17 @@ export default function TableManagementPage() {
   const getStatusColor = (status) => {
     const colors = {
       available: 'bg-green-100 text-green-800 border-green-300',
-      occupied: 'bg-red-100 text-red-800 border-red-300',
-      reserved: 'bg-yellow-100 text-yellow-800 border-yellow-300',
-      cleaning: 'bg-blue-100 text-blue-800 border-blue-300',
+      occupied: 'bg-blue-100 text-blue-800 border-blue-300',
+      reserved: 'bg-red-100 text-red-800 border-red-300',
+      cleaning: 'bg-amber-100 text-amber-800 border-amber-300',
       maintenance: 'bg-gray-100 text-gray-800 border-gray-300'
     };
     return colors[status] || colors.available;
   };
+
+  const getStatusLabel = (status) => status === 'occupied'
+    ? 'Running'
+    : String(status || '').replace(/_/g, ' ');
 
   const getTypeLabel = (type) => {
     const labels = {
@@ -226,12 +262,12 @@ export default function TableManagementPage() {
                 className="w-full px-4 py-2 border-2 border-blue-200 rounded-lg focus:border-blue-500 focus:outline-none text-slate-900 bg-white"
               >
                 <option value="all">All Floors</option>
-                <option value="Ground">Ground Floor</option>
-                <option value="First">First Floor</option>
-                <option value="Second">Second Floor</option>
-                <option value="Rooftop">Rooftop</option>
-                <option value="Basement">Basement</option>
-                <option value="Outdoor">Outdoor</option>
+                {(floors.length
+                  ? floors.map((f) => f.name)
+                  : ['Ground', 'First', 'Second', 'Rooftop', 'Basement', 'Outdoor']
+                ).map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
               </select>
             </div>
 
@@ -243,12 +279,12 @@ export default function TableManagementPage() {
                 className="w-full px-4 py-2 border-2 border-blue-200 rounded-lg focus:border-blue-500 focus:outline-none text-slate-900 bg-white"
               >
                 <option value="all">All Types</option>
-                <option value="regular">Regular</option>
-                <option value="vip">VIP</option>
-                <option value="outdoor">Outdoor</option>
-                <option value="event">Event</option>
-                <option value="counter">Counter</option>
-                <option value="booth">Booth</option>
+                {(types.length
+                  ? types.map((t) => t.name)
+                  : ['regular', 'vip', 'outdoor', 'event', 'counter', 'booth']
+                ).map((name) => (
+                  <option key={name} value={name} className="capitalize">{name}</option>
+                ))}
               </select>
             </div>
 
@@ -305,15 +341,15 @@ export default function TableManagementPage() {
               {filteredTables.filter(t => t.status === 'available').length}
             </p>
           </div>
-          <div className="bg-red-50 rounded-xl p-4 border-2 border-red-200">
-            <p className="text-red-700 text-sm font-medium">Occupied</p>
-            <p className="text-2xl font-bold text-red-900 mt-1">
+          <div className="bg-blue-50 rounded-xl p-4 border-2 border-blue-200">
+            <p className="text-blue-700 text-sm font-medium">Running</p>
+            <p className="text-2xl font-bold text-blue-900 mt-1">
               {filteredTables.filter(t => t.status === 'occupied').length}
             </p>
           </div>
-          <div className="bg-yellow-50 rounded-xl p-4 border-2 border-yellow-200">
-            <p className="text-yellow-700 text-sm font-medium">Reserved</p>
-            <p className="text-2xl font-bold text-yellow-900 mt-1">
+          <div className="bg-red-50 rounded-xl p-4 border-2 border-red-200">
+            <p className="text-red-700 text-sm font-medium">Reserved</p>
+            <p className="text-2xl font-bold text-red-900 mt-1">
               {filteredTables.filter(t => t.status === 'reserved').length}
             </p>
           </div>
@@ -348,7 +384,7 @@ export default function TableManagementPage() {
                     </div>
                   </div>
                   <span className={`px-3 py-1 rounded-full text-xs font-semibold border-2 ${getStatusColor(table.status)}`}>
-                    {table.status}
+                    {getStatusLabel(table.status)}
                   </span>
                 </div>
 
@@ -378,14 +414,6 @@ export default function TableManagementPage() {
                   </div>
                 )}
 
-                {table.status === 'occupied' && (
-                  <button
-                    onClick={() => setActionsTable(table)}
-                    className="mb-2 flex w-full items-center justify-center gap-2 rounded-lg bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-200"
-                  >
-                    <ArrowRightLeft className="h-4 w-4" /> Move / Merge
-                  </button>
-                )}
                 <div className="flex space-x-2">
                   <button
                     onClick={() => handleEdit(table)}
@@ -424,7 +452,7 @@ export default function TableManagementPage() {
                       </div>
                     </div>
                     <span className={`px-2.5 py-1 rounded-full text-xs font-semibold border-2 flex-shrink-0 ${getStatusColor(table.status)}`}>
-                      {table.status}
+                      {getStatusLabel(table.status)}
                     </span>
                   </div>
                   <div className="grid grid-cols-2 gap-2 text-sm mb-3">
@@ -480,20 +508,11 @@ export default function TableManagementPage() {
                     </td>
                     <td className="px-6 py-4">
                       <span className={`px-3 py-1 rounded-full text-xs font-semibold border-2 ${getStatusColor(table.status)}`}>
-                        {table.status}
+                        {getStatusLabel(table.status)}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end space-x-2">
-                        {table.status === 'occupied' && (
-                          <button
-                            onClick={() => setActionsTable(table)}
-                            className="p-2 bg-amber-100 text-amber-800 rounded-lg hover:bg-amber-200 transition-colors"
-                            title="Move / Merge"
-                          >
-                            <ArrowRightLeft className="w-4 h-4" />
-                          </button>
-                        )}
                         <button
                           onClick={() => handleEdit(table)}
                           className="p-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors"
@@ -561,12 +580,12 @@ export default function TableManagementPage() {
                     onChange={(e) => setFormData({ ...formData, table_type: e.target.value })}
                     className="w-full px-4 py-2 border-2 border-blue-200 rounded-lg focus:border-blue-500 focus:outline-none text-slate-900 bg-white"
                   >
-                    <option value="regular">🪑 Regular</option>
-                    <option value="vip">👑 VIP</option>
-                    <option value="outdoor">🌳 Outdoor</option>
-                    <option value="event">🎉 Event</option>
-                    <option value="counter">🪑 Counter</option>
-                    <option value="booth">🛋️ Booth</option>
+                    {(types.length
+                      ? types.map((t) => t.name)
+                      : ['regular', 'vip', 'outdoor', 'event', 'counter', 'booth']
+                    ).map((name) => (
+                      <option key={name} value={name} className="capitalize">{name}</option>
+                    ))}
                   </select>
                 </div>
 
@@ -579,24 +598,24 @@ export default function TableManagementPage() {
                     onChange={(e) => setFormData({ ...formData, floor: e.target.value })}
                     className="w-full px-4 py-2 border-2 border-blue-200 rounded-lg focus:border-blue-500 focus:outline-none text-slate-900 bg-white"
                   >
-                    <option value="Ground">Ground Floor</option>
-                    <option value="First">First Floor</option>
-                    <option value="Second">Second Floor</option>
-                    <option value="Rooftop">Rooftop</option>
-                    <option value="Basement">Basement</option>
-                    <option value="Outdoor">Outdoor</option>
+                    {(floors.length
+                      ? floors.map((f) => f.name)
+                      : ['Ground', 'First', 'Second', 'Rooftop', 'Basement', 'Outdoor']
+                    ).map((name) => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
                   </select>
                 </div>
 
                 <div>
                   <label className="block text-sm font-semibold text-slate-800 mb-2">
-                    Section
+                    Room / Section
                   </label>
                   <input
                     type="text"
                     value={formData.section}
                     onChange={(e) => setFormData({ ...formData, section: e.target.value })}
-                    placeholder="e.g., A, B, Main Hall"
+                    placeholder="e.g. Ground Floor, Cabin, Terrace"
                     className="w-full px-4 py-2 border-2 border-blue-200 rounded-lg focus:border-blue-500 focus:outline-none text-slate-900 placeholder-slate-400"
                   />
                 </div>
@@ -694,18 +713,6 @@ export default function TableManagementPage() {
             </form>
           </div>
         </div>
-      )}
-
-      {actionsTable && (
-        <TableActionsModal
-          table={actionsTable}
-          tables={tables}
-          onClose={() => setActionsTable(null)}
-          onDone={(data) => {
-            addToast(friendlyMessage('save_success', { description: data?.message || 'Table updated.' }));
-            fetchTables();
-          }}
-        />
       )}
     </AdminLayout>
   );

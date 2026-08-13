@@ -12,11 +12,12 @@ import { useEffect, useMemo, useState } from 'react';
 import AdminLayout from '@/components/admin/admin-layout';
 import { Plus, Pencil, Trash2, Layers, Tag, LayoutGrid, QrCode, Printer } from 'lucide-react';
 import { useToast } from '@/components/ui/toast';
+import { useConfirm } from '@/components/ui/confirm';
 import { friendlyMessage, friendlyFromError } from '@/lib/friendly-message';
 import { apiJson, authedRequest } from '@/lib/authed-fetch';
 
 const TABLE_STATUSES = ['available', 'reserved', 'out_of_service'];
-const STATUS_LABEL = { available: 'Available', reserved: 'Reserved', out_of_service: 'Out of service', occupied: 'Occupied' };
+const STATUS_LABEL = { available: 'Available', reserved: 'Reserved', out_of_service: 'Out of service', occupied: 'Running' };
 
 export default function TableManagementPage() {
   const { addToast } = useToast();
@@ -214,8 +215,8 @@ function typeColor(types, name) {
   return t?.color || '#94a3b8';
 }
 function statusTone(status) {
-  if (status === 'occupied') return 'bg-rose-100 text-rose-800';
-  if (status === 'reserved') return 'bg-amber-100 text-amber-800';
+  if (status === 'occupied') return 'bg-blue-100 text-blue-800';
+  if (status === 'reserved') return 'bg-red-100 text-red-800';
   if (status === 'out_of_service') return 'bg-gray-200 text-gray-700';
   return 'bg-emerald-100 text-emerald-800';
 }
@@ -224,6 +225,7 @@ function statusTone(status) {
 
 function TaxonomyCard({ title, icon: Icon, rows, columns, fields, endpoint, onChange }) {
   const { addToast } = useToast();
+  const { confirm } = useConfirm();
   const [editing, setEditing] = useState(null); // row | {} | null
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
@@ -255,7 +257,11 @@ function TaxonomyCard({ title, icon: Icon, rows, columns, fields, endpoint, onCh
   };
 
   const remove = async (row) => {
-    if (!confirm(`Delete "${row.name}"?`)) return;
+    const ok = await confirm({
+      title: `Delete "${row.name}"?`,
+      tone: 'delete',
+    });
+    if (!ok) return;
     try {
       await apiJson(`${endpoint}?id=${row.id}`, { method: 'DELETE' });
       onChange();
@@ -324,11 +330,13 @@ function TaxonomyCard({ title, icon: Icon, rows, columns, fields, endpoint, onCh
 /* ------------------------------------------------------------- table add/edit */
 
 function TableModal({ table, floors, types, onClose, onSaved, addToast }) {
+  const { confirm } = useConfirm();
   const editing = Boolean(table?.id);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     table_number: table?.table_number || '',
     floor: table?.floor || floors[0]?.name || '',
+    section: table?.section || '',
     table_type: table?.table_type || types[0]?.name || 'regular',
     capacity: table?.capacity ?? 4,
     min_capacity: table?.min_capacity ?? 1,
@@ -371,7 +379,11 @@ function TableModal({ table, floors, types, onClose, onSaved, addToast }) {
   };
 
   const remove = async () => {
-    if (!confirm(`Delete table ${form.table_number}?`)) return;
+    const ok = await confirm({
+      title: `Delete table ${form.table_number}?`,
+      tone: 'delete',
+    });
+    if (!ok) return;
     try {
       const res = await authedRequest(`/api/admin/tables?id=${table.id}`, { method: 'DELETE' });
       const data = await res.json().catch(() => ({}));
@@ -396,6 +408,9 @@ function TableModal({ table, floors, types, onClose, onSaved, addToast }) {
               {floors.length === 0 && <option value="">No floors — add one first</option>}
               {floors.map((f) => <option key={f.id} value={f.name}>{f.name}</option>)}
             </select>
+          </Field>
+          <Field label="Room / section">
+            <input value={form.section} onChange={(e) => set({ section: e.target.value })} className={INPUT} placeholder="e.g. Ground Floor, Cabin, Terrace" />
           </Field>
           <Field label="Type">
             <select value={form.table_type} onChange={(e) => pickType(e.target.value)} className={INPUT}>

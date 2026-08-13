@@ -16,6 +16,7 @@ import DataGrid, { StatusBadge } from '@/components/admin/data-grid';
 import AttentionBar from '@/components/admin/attention-bar';
 import { KpiCards } from '@/components/admin/report-kit';
 import RecipePanel from '@/components/inventory/recipe-panel';
+import { formatNepalDate } from '@/lib/time-utils';
 
 export default function RecipesPage() {
   const { addToast } = useToast();
@@ -127,7 +128,7 @@ export default function RecipesPage() {
         key: 'updated_at',
         label: 'Last updated',
         value: (r) => r.updated_at || '',
-        render: (r) => (r.updated_at ? new Date(r.updated_at).toLocaleDateString() : '—'),
+        render: (r) => (r.updated_at ? formatNepalDate(r.updated_at) : '—'),
       },
     ],
     []

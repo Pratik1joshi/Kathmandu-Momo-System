@@ -6,7 +6,7 @@
  */
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import AdminLayout from '@/components/admin/admin-layout';
 import { ArrowLeft } from 'lucide-react';
 import ImportWizard from '@/components/admin/import-wizard';
@@ -97,6 +97,8 @@ function summarize(preview) {
 
 export default function PurchaseImportPage() {
   const router = useRouter();
+  const pathname = usePathname();
+  const purchasesPath = pathname?.startsWith('/cashier') ? '/cashier/purchases' : '/admin/purchases';
 
   return (
     <AdminLayout>
@@ -108,7 +110,7 @@ export default function PurchaseImportPage() {
               Load a batch of delivery lines at once. Each invoice number becomes one purchase, with its stock and expense.
             </p>
           </div>
-          <Link href="/admin/purchases" className="inline-flex items-center gap-1.5 self-start rounded-xl border border-gray-300 px-3.5 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+          <Link href={purchasesPath} className="inline-flex items-center gap-1.5 self-start rounded-xl border border-gray-300 px-3.5 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 active:scale-[0.97] transition-transform duration-150">
             <ArrowLeft className="h-4 w-4" /> Back to purchases
           </Link>
         </div>
@@ -122,7 +124,7 @@ export default function PurchaseImportPage() {
           endpoint="/api/admin/purchases/import"
           summarize={summarize}
           commitLabel="Create these purchases"
-          onCommitted={() => router.push('/admin/purchases')}
+          onCommitted={() => router.push(purchasesPath)}
         />
         <p className="mt-5 text-sm text-gray-500">
           Item names must match an active inventory item — archived items are ignored on purpose, so a retired ingredient

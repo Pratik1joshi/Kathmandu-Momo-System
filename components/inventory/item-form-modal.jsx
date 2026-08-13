@@ -29,8 +29,17 @@
  */
 
 import { useState, useEffect } from 'react';
-import { Truck, Warehouse } from 'lucide-react';
+import { ChevronDown, Truck, Warehouse } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import {
+  AdminField,
+  adminInputClass,
+  adminTextareaClass,
+  adminDialogLg,
+  adminBtnPrimary,
+  adminBtnSecondary,
+  adminFieldStackClass,
+} from '@/components/ui/admin-form';
 import { useToast } from '@/components/ui/toast';
 import { friendlyMessage, friendlyFromError } from '@/lib/friendly-message';
 import { apiJson } from '@/lib/authed-fetch';
@@ -59,13 +68,18 @@ export default function ItemFormModal({ item, suppliers = [], categories = [], o
   });
   // Factor was typed by hand -> auto-derivation must not clobber it.
   const [factorManual, setFactorManual] = useState(false);
+  const [showPurchaseUnit, setShowPurchaseUnit] = useState(() => {
+    const purchaseUnit = item?.purchase_unit;
+    const consumptionUnit = item?.consumption_unit || item?.unit;
+    return Boolean(purchaseUnit && consumptionUnit && purchaseUnit !== consumptionUnit);
+  });
   const [quantity, setQuantity] = useState({ amount: '', unit: 'purchase' });
   const [cost, setCost] = useState(() =>
     // An existing item stores cost per CONSUMPTION unit; show it back as the
     // per-purchase-unit rate the owner actually recognises.
     item?.cost_per_unit === undefined || item?.cost_per_unit === null || item?.cost_per_unit === ''
       ? blankCost()
-      : { basis: 'per_purchase_unit', amount: String(round(Number(item.cost_per_unit) * factorOf(item), 6)) }
+      : { basis: 'per_purchase_unit', amount: String(round(Number(item.cost_per_unit) * displayFactorOf(item), 6)) }
   );
   const [origin, setOrigin] = useState(null); // null | 'owned' | 'purchased'
   // Owner-defined pack conversions (1 box = 24 bottles). Merged with the
@@ -205,100 +219,111 @@ export default function ItemFormModal({ item, suppliers = [], categories = [], o
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent onClose={onClose} className="sm:max-w-4xl">
+      <DialogContent onClose={onClose} className={adminDialogLg}>
         <DialogHeader>
           <DialogTitle>{editing ? `Edit ${item.item_name}` : 'Add inventory item'}</DialogTitle>
         </DialogHeader>
 
-        <form onSubmit={submit} className="mt-4 space-y-4">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="Item name" required>
+        <form onSubmit={submit} className={`mt-6 ${adminFieldStackClass}`}>
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+            <AdminField label="Item name" required>
               <input
                 autoFocus
                 value={form.item_name}
                 onChange={(e) => set({ item_name: e.target.value })}
-                className={INPUT}
+                className={adminInputClass}
                 placeholder="e.g. Green Chili"
               />
-            </Field>
-            <Field label="Category">
+            </AdminField>
+            <AdminField label="Category">
               <Combobox
                 value={form.category}
                 onChange={(v) => set({ category: v })}
                 options={categories.map((c) => ({ value: c, label: c }))}
                 placeholder="e.g. Vegetables"
               />
-            </Field>
+            </AdminField>
           </div>
 
-          <div className="rounded-xl border border-gray-200 p-4">
-            <p className="text-sm font-medium text-gray-900">Units</p>
-            <p className="mt-0.5 text-xs text-gray-500">
-              Stock is stored and consumed in the consumption unit. Deliveries are entered in the purchase unit and
-              converted once, on the way in.
-            </p>
-            <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <Field label="Purchase unit">
-                <UnitSelect value={form.purchase_unit} onChange={(v) => setUnit('purchase_unit', v)} placeholder="kg" />
-              </Field>
-              <Field label="Consumption unit" required>
-                <UnitSelect value={form.consumption_unit} onChange={(v) => setUnit('consumption_unit', v)} placeholder="g" />
-              </Field>
-              <Field label="Conversion factor">
-                <input
-                  type="number"
-                  step="any"
-                  min="0"
-                  value={form.conversion_factor}
-                  onChange={(e) => {
-                    setFactorManual(true);
-                    set({ conversion_factor: e.target.value });
-                  }}
-                  className={INPUT}
-                />
-              </Field>
-            </div>
-            {form.purchase_unit && cUnit && (
-              <p className="mt-2 text-xs text-gray-500">
-                1 {unitLabel(form.purchase_unit)} ={' '}
-                <span className="font-medium text-gray-700">
-                  {factor} {unitLabel(cUnit)}
-                </span>
-                {derivable !== null && !factorManual && ' · filled in for you'}
-                {factorManual && ' · your value, kept as typed'}
-              </p>
-            )}
-            {form.purchase_unit && cUnit && derivable === null && (
-              <p className="mt-2 text-xs text-amber-700">
-                We can&apos;t work out how many {unitLabel(cUnit)} are in 1 {unitLabel(form.purchase_unit)} — enter the
-                conversion factor yourself.
-              </p>
+          <div className="rounded-xl border border-gray-200 p-5 sm:p-6">
+            <AdminField label="Unit" required hint="Use the same unit for stock, recipes and purchases (for example kg, litre or pcs).">
+              <UnitSelect value={form.consumption_unit} onChange={(v) => setUnit('consumption_unit', v)} placeholder="kg" />
+            </AdminField>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (showPurchaseUnit) {
+                  setCost({ basis: 'per_purchase_unit', amount: costs.perConsumptionUnit == null ? '' : String(round(costs.perConsumptionUnit, 6)) });
+                  setForm((current) => ({ ...current, purchase_unit: '', conversion_factor: 1 }));
+                  setFactorManual(false);
+                }
+                setShowPurchaseUnit((current) => !current);
+              }}
+              className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-gray-900"
+            >
+              <ChevronDown className={`h-4 w-4 transition-transform ${showPurchaseUnit ? 'rotate-180' : ''}`} />
+              {showPurchaseUnit ? 'Use one unit' : 'I buy this in a different unit'}
+            </button>
+
+            {showPurchaseUnit && (
+              <div className="mt-4 rounded-lg bg-gray-50 p-4">
+                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                  <AdminField label="Purchase unit" hint="The unit written on the supplier invoice.">
+                    <UnitSelect value={form.purchase_unit} onChange={(v) => setUnit('purchase_unit', v)} placeholder="kg" />
+                  </AdminField>
+                  <AdminField label="How many stock units in one purchase unit?">
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      value={form.conversion_factor}
+                      onChange={(e) => {
+                        setFactorManual(true);
+                        set({ conversion_factor: e.target.value });
+                      }}
+                      className={adminInputClass}
+                    />
+                  </AdminField>
+                </div>
+                {form.purchase_unit && cUnit && (
+                  <p className="mt-2 text-xs text-gray-500">
+                    1 {unitLabel(form.purchase_unit)} = <span className="font-medium text-gray-700">{factor} {unitLabel(cUnit)}</span>
+                    {derivable !== null && !factorManual && ' · filled in for you'}
+                    {factorManual && ' · your value, kept as typed'}
+                  </p>
+                )}
+                {form.purchase_unit && cUnit && derivable === null && (
+                  <p className="mt-2 text-xs text-amber-700">
+                    This conversion is not automatic. Enter how many {unitLabel(cUnit)} are in one {unitLabel(form.purchase_unit)}.
+                  </p>
+                )}
+              </div>
             )}
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="Minimum stock">
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+            <AdminField label="Minimum stock" hint={`In ${unitLabel(cUnit) || 'consumption units'}.`}>
               <input
                 type="number"
                 step="any"
                 value={form.min_stock_level}
                 onChange={(e) => set({ min_stock_level: e.target.value })}
-                className={INPUT}
+                className={adminInputClass}
               />
-              <span className="mt-1 block text-xs text-gray-400">In {unitLabel(cUnit) || 'consumption units'}.</span>
-            </Field>
-            <Field label="Supplier">
+            </AdminField>
+            <AdminField label="Supplier">
               <Combobox
                 value={form.supplier}
                 onChange={(v) => set({ supplier: v })}
                 options={suppliers.map((s) => ({ value: s.name, label: s.name }))}
                 placeholder="Pick or type a new one"
               />
-            </Field>
+            </AdminField>
           </div>
 
           {!editing && (
-            <Field label="Opening stock">
+            <AdminField label="Opening stock">
               <QuantityInput
                 value={qtyEntry}
                 onChange={(v) => {
@@ -311,28 +336,37 @@ export default function ItemFormModal({ item, suppliers = [], categories = [], o
                 placeholder="0 — leave blank and receive a delivery instead"
                 hint="will be added to stock"
               />
-            </Field>
+            </AdminField>
           )}
 
-          <div className="rounded-xl border border-gray-200 p-4">
-            <CostEntry
-              value={cost}
-              onChange={setCost}
-              quantity={costQty}
-              purchaseUnit={form.purchase_unit}
-              consumptionUnit={cUnit}
-              factor={factor}
-              label="Cost"
-            />
-            {!dual && (
-              <p className="mt-2 text-xs text-gray-400">
-                This item is bought and used in the same unit, so there is nothing to convert.
-              </p>
+          <div className="rounded-xl border border-gray-200 p-5 sm:p-6">
+            {dual ? (
+              <CostEntry
+                value={cost}
+                onChange={setCost}
+                quantity={costQty}
+                purchaseUnit={form.purchase_unit}
+                consumptionUnit={cUnit}
+                factor={factor}
+                label="Cost"
+              />
+            ) : (
+              <AdminField label={`Cost per ${unitLabel(cUnit) || 'unit'} (Rs)`}>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={cost.amount}
+                  onChange={(event) => setCost({ basis: 'per_purchase_unit', amount: event.target.value })}
+                  className={adminInputClass}
+                  placeholder="0"
+                />
+              </AdminField>
             )}
           </div>
 
           {needsOrigin && (
-            <div className="rounded-xl border border-gray-200 p-4">
+            <div className="rounded-xl border border-gray-200 p-5 sm:p-6">
               <p className="text-sm font-medium text-gray-900">Where did this opening stock come from?</p>
               <p className="mt-1 text-sm text-gray-500">
                 Stock you already own is just a balance. Stock you just bought is also money out — recording it as a
@@ -366,15 +400,15 @@ export default function ItemFormModal({ item, suppliers = [], categories = [], o
               )}
 
               {origin === 'purchased' && (
-                <div className="mt-3 space-y-3">
-                  <Field label="Invoice number">
+                <div className="mt-4 space-y-4">
+                  <AdminField label="Invoice number">
                     <input
                       value={form.invoice_number}
                       onChange={(e) => set({ invoice_number: e.target.value })}
-                      className={INPUT}
+                      className={adminInputClass}
                       placeholder="Optional"
                     />
-                  </Field>
+                  </AdminField>
                   <p className="text-xs text-gray-500">
                     A purchase of {round(qtyPurchase)} {unitLabel(pUnit)}
                     {form.supplier ? ` from ${form.supplier}` : ''} will be recorded, adding {round(qtyConsumption)}{' '}
@@ -393,25 +427,25 @@ export default function ItemFormModal({ item, suppliers = [], categories = [], o
             </p>
           )}
 
-          <Field label="Notes">
+          <AdminField label="Notes">
             <textarea
-              rows={2}
+              rows={3}
               value={form.notes}
               onChange={(e) => set({ notes: e.target.value })}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              className={adminTextareaClass}
             />
-          </Field>
+          </AdminField>
         </form>
 
         <DialogFooter>
-          <button type="button" onClick={onClose} className="h-10 rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700">
+          <button type="button" onClick={onClose} className={adminBtnSecondary}>
             Cancel
           </button>
           <button
             type="button"
             disabled={saving || (needsOrigin && !origin)}
             onClick={submit}
-            className="h-10 rounded-lg bg-gray-900 px-4 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+            className={adminBtnPrimary}
           >
             {saving ? 'Saving…' : editing ? 'Save changes' : origin === 'purchased' ? 'Add item & record purchase' : 'Add item'}
           </button>
@@ -426,16 +460,8 @@ function factorOf(item) {
   return Number.isFinite(cf) && cf > 0 ? cf : 1;
 }
 
-const INPUT = 'h-10 w-full rounded-lg border border-gray-300 px-3 text-sm text-gray-900';
-
-function Field({ label, required, children }) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-sm font-medium text-gray-700">
-        {label}
-        {required && <span className="text-red-600"> *</span>}
-      </span>
-      {children}
-    </label>
-  );
+function displayFactorOf(item) {
+  const purchaseUnit = item?.purchase_unit;
+  const consumptionUnit = item?.consumption_unit || item?.unit;
+  return purchaseUnit && consumptionUnit && purchaseUnit !== consumptionUnit ? factorOf(item) : 1;
 }

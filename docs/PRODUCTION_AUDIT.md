@@ -25,7 +25,7 @@ Generated before cPanel / PostgreSQL migration work. Findings are from static re
 
 ## Public vs authenticated surfaces
 
-**Public (keep):** `/api/public/menu`, `/api/public/reservations`, `/api/public/inquiries`, marketing `kathmandu-momo.html`
+**Public (keep):** `/api/public/menu`, `/api/public/reservations`, `/api/public/inquiries`, marketing `sundar.html`
 
 **Must authenticate:** all `/api/admin/*` (except none for shop login — remove), `/api/restaurant/*`, `/api/uploads/*`, `/api/auth/*` (except login), `/api/users/*`
 

@@ -169,7 +169,8 @@ export async function POST(request) {
       order_id,
       station,
       items,
-      prepared_by: null
+      prepared_by: null,
+      order_notes: body.order_notes ?? body.kot_note ?? null,
     });
     
     // Get the created KOT with items

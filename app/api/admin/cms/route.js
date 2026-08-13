@@ -1,53 +1,39 @@
 import { NextResponse } from 'next/server';
-import Database from '@/lib/db/index.js';
+import Database from '@/lib/db/index';
 import { requireAuth, handleRouteError } from '@/lib/api-guard.js';
-import { CMS_KEYS, ensureCmsSchema, readCmsContent } from '@/lib/cms.js';
-import { writeAudit } from '@/lib/audit.js';
+import { getCmsContent, setCmsSection, CMS_SECTIONS } from '@/lib/cms.js';
 
+/** GET /api/admin/cms — full CMS content (admin). */
 export async function GET(request) {
-  const auth = await requireAuth(request, { roles: ['admin'] });
-  if (auth.error) return auth.error;
   try {
+    const auth = await requireAuth(request, { roles: ['admin'] });
+    if (auth.error) return auth.error;
     const db = Database.getInstance();
-    const content = await readCmsContent(db);
-    return NextResponse.json({ content });
+    const content = await getCmsContent(db);
+    return NextResponse.json({ content, sections: CMS_SECTIONS });
   } catch (error) {
-    return handleRouteError(error, 'Could not load website content.');
+    return handleRouteError(error, 'Failed to load CMS content.');
   }
 }
 
+/** PUT /api/admin/cms — body: { section, data }. Updates one section. */
 export async function PUT(request) {
-  const auth = await requireAuth(request, { roles: ['admin'] });
-  if (auth.error) return auth.error;
   try {
-    const body = await request.json();
-    const updates = body?.content && typeof body.content === 'object' ? body.content : body;
-    const invalid = Object.keys(updates || {}).filter((key) => !CMS_KEYS.has(key));
-    if (invalid.length) {
-      return NextResponse.json({ error: `Unsupported content field: ${invalid[0]}` }, { status: 400 });
+    const auth = await requireAuth(request, { roles: ['admin'] });
+    if (auth.error) return auth.error;
+
+    const body = await request.json().catch(() => ({}));
+    const { section, data } = body || {};
+    if (!section || !CMS_SECTIONS.includes(section)) {
+      return NextResponse.json({ error: 'Invalid or missing section.' }, { status: 400 });
+    }
+    if (!data || typeof data !== 'object') {
+      return NextResponse.json({ error: 'Missing section data.' }, { status: 400 });
     }
     const db = Database.getInstance();
-    await ensureCmsSchema(db);
-    const before = await readCmsContent(db);
-    await db.transaction(async (tx) => {
-      for (const [key, raw] of Object.entries(updates || {})) {
-        if (raw !== null && typeof raw === 'object') {
-          return Promise.reject(Object.assign(new Error(`${key} must be text.`), { status: 400 }));
-        }
-        const value = raw == null ? '' : String(raw).slice(0, key === 'gallery_json' ? 20000 : 2000);
-        await tx.run(
-          `INSERT INTO cms_content (content_key, content_value, is_published, updated_by, updated_at)
-           VALUES (?, ?, 1, ?, CURRENT_TIMESTAMP)
-           ON CONFLICT (content_key) DO UPDATE SET content_value = EXCLUDED.content_value,
-             is_published = 1, updated_by = EXCLUDED.updated_by, updated_at = CURRENT_TIMESTAMP`,
-          [key, value, auth.user.id]
-        );
-      }
-      await writeAudit(tx, { event_type: 'cms.updated', entity_type: 'cms', entity_id: 'public-site', actor: auth.user, before, after: updates });
-    });
-    return NextResponse.json({ success: true, content: await readCmsContent(db) });
+    const saved = await setCmsSection(db, section, data, auth.user?.id || null);
+    return NextResponse.json({ message: 'Saved.', section, data: saved });
   } catch (error) {
-    return handleRouteError(error, 'Could not save website content.');
+    return handleRouteError(error, 'Failed to save CMS content.');
   }
 }
-

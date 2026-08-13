@@ -311,7 +311,7 @@ export default function ReportsPage() {
           )}
 
           <div className="mt-4 text-center text-gray-800 font-semibold">
-            Report Period: {new Date(startDate).toLocaleDateString()} - {new Date(endDate).toLocaleDateString()}
+            Report Period: {new Date(`${startDate}T12:00:00+05:45`).toLocaleDateString('en-GB', { timeZone: 'Asia/Kathmandu' })} - {new Date(`${endDate}T12:00:00+05:45`).toLocaleDateString('en-GB', { timeZone: 'Asia/Kathmandu' })}
           </div>
         </div>
 

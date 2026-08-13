@@ -5,6 +5,7 @@ import Link from 'next/link';
 import AdminLayout from '@/components/admin/admin-layout';
 import { Plus, Edit, Trash2, Search, ChefHat, Upload, Trash } from 'lucide-react';
 import { useToast } from '@/components/ui/toast';
+import { useConfirm } from '@/components/ui/confirm';
 import { friendlyMessage, friendlyFromError } from '@/lib/friendly-message';
 import WastageModal from '@/components/inventory/wastage-modal';
 
@@ -18,6 +19,7 @@ function authedRequest(url, options = {}) {
 
 export default function StockManagement() {
   const { addToast } = useToast();
+  const { confirm, prompt } = useConfirm();
   const [inventoryItems, setInventoryItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -80,9 +82,15 @@ export default function StockManagement() {
     // refuses to record one without a reason.
     let adjustmentReason;
     if (editingItem && Number(editingItem.quantity) !== Number(inventoryForm.quantity)) {
-      adjustmentReason = prompt(
-        `Why is ${editingItem.item_name} changing from ${editingItem.quantity} to ${inventoryForm.quantity}? (e.g. stock count correction)`
-      );
+      adjustmentReason = await prompt({
+        title: 'Stock adjustment',
+        message: `Why is ${editingItem.item_name} changing from ${editingItem.quantity} to ${inventoryForm.quantity}?`,
+        label: 'Reason',
+        placeholder: 'e.g. stock count correction',
+        required: true,
+        multiline: true,
+      });
+      if (adjustmentReason == null) return;
       if (!adjustmentReason?.trim()) {
         addToast(friendlyMessage('validation', { description: 'A reason is required to adjust stock by hand.' }));
         return;
@@ -161,7 +169,12 @@ export default function StockManagement() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Remove this item? Items with history are archived instead of deleted.')) return;
+    const ok = await confirm({
+      title: 'Remove item?',
+      message: 'Remove this item? Items with history are archived instead of deleted.',
+      tone: 'delete',
+    });
+    if (!ok) return;
     try {
       const token = localStorage.getItem('pos_token');
       const res = await fetch(`/api/admin/inventory?id=${id}`, {

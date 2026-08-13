@@ -32,7 +32,7 @@ export async function GET(request) {
     `;
 
     if (!includeInactive) {
-      query += ` WHERE t.is_active = 1`;
+      query += ` WHERE COALESCE(t.is_active, 1) = 1`;
     }
 
     query += ` ORDER BY t.floor, t.section, t.table_number`;

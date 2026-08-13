@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import AdminLayout from '@/components/admin/admin-layout';
-import { Search, Plus, Minus, ShoppingCart, Trash2, Wallet, CreditCard, Building2, QrCode, Sparkles, X, ArrowLeft } from 'lucide-react';
+import { Search, Plus, Minus, ShoppingCart, Trash2, Wallet, Building2, QrCode, Sparkles, X, ArrowLeft } from 'lucide-react';
 import { formatCurrency } from '@/lib/currency';
 import MenuItemImage from '@/components/menu-item-image';
 import { useToast } from '@/components/ui/toast';
@@ -15,6 +15,8 @@ import CustomerModePicker, {
 import BillConfirmModal from '@/components/billing/bill-confirm-modal';
 import QrEnlargeModal from '@/components/billing/qr-enlarge-modal';
 import { calculateBillTotals, parseSettingsRates } from '@/lib/billing-totals';
+import { compactBillNumber, compactOrderNumber } from '@/lib/document-display.js';
+import SplitPaymentFields, { emptySplitPayment } from '@/components/billing/split-payment-fields';
 
 export default function WalkInBilling({ variant = 'admin' }) {
   const router = useRouter();
@@ -26,6 +28,7 @@ export default function WalkInBilling({ variant = 'admin' }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [amountPaid, setAmountPaid] = useState('');
+  const [splitPayment, setSplitPayment] = useState(emptySplitPayment);
   const [discount, setDiscount] = useState(0);
   const [customerSelection, setCustomerSelection] = useState(emptyCustomerSelection);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -36,8 +39,8 @@ export default function WalkInBilling({ variant = 'admin' }) {
   const [showCustom, setShowCustom] = useState(false);
   const [customItem, setCustomItem] = useState({ name: '', price: '', quantity: 1 });
   const [settings, setSettings] = useState({
-    vat_percentage: 13,
-    service_charge_percentage: 10,
+    vat_percentage: 0,
+    service_charge_percentage: 0,
     esewa_qr_image: '',
     bank_qr_image: '',
     restaurant_name: '',
@@ -64,8 +67,8 @@ export default function WalkInBilling({ variant = 'admin' }) {
       if (response.ok) {
         const data = await response.json();
         setSettings({
-          vat_percentage: Number(data.settings?.vat_percentage ?? 13),
-          service_charge_percentage: Number(data.settings?.service_charge_percentage ?? 10),
+          vat_percentage: Number(data.settings?.vat_percentage ?? 0),
+          service_charge_percentage: Number(data.settings?.service_charge_percentage ?? 0),
           esewa_qr_image: data.settings.esewa_qr_image || '',
           bank_qr_image: data.settings.bank_qr_image || '',
           restaurant_name: data.settings.restaurant_name || 'Restaurant',
@@ -191,6 +194,32 @@ export default function WalkInBilling({ variant = 'admin' }) {
     return paid - calculateTotal();
   };
 
+  const buildAllocations = (total) => {
+    const amount = (value) => Math.round((Number(value) || 0) * 100) / 100;
+    const common = { notes: splitPayment.notes || undefined };
+    let allocations;
+    if (paymentMethod === 'cash') {
+      allocations = [{ method: 'cash', amount: total, cash_tendered: amountPaid || total, ...common }];
+    } else if (paymentMethod === 'online') {
+      allocations = [{ method: 'qr', amount: total, provider: splitPayment.qrProvider, verified: true, ...common }];
+    } else if (paymentMethod === 'credit') {
+      allocations = [{ method: 'credit', amount: total, due_date: splitPayment.creditDueDate || undefined, ...common }];
+    } else {
+      allocations = [
+        { method: 'cash', amount: amount(splitPayment.cash), cash_tendered: splitPayment.cashTendered || splitPayment.cash, ...common },
+        { method: 'qr', amount: amount(splitPayment.qr), provider: splitPayment.qrProvider, verified: true, ...common },
+        { method: 'credit', amount: amount(splitPayment.credit), due_date: splitPayment.creditDueDate || undefined, ...common },
+      ].filter((row) => row.amount > 0);
+    }
+    const allocatedCents = allocations.reduce((sum, row) => sum + Math.round(Number(row.amount || 0) * 100), 0);
+    if (allocatedCents !== Math.round(total * 100)) throw new Error('Cash + QR + Credit must equal the invoice total.');
+    const cash = allocations.find((row) => row.method === 'cash');
+    if (cash && Math.round(Number(cash.cash_tendered || 0) * 100) < Math.round(cash.amount * 100)) throw new Error('Cash tendered must cover the cash allocation.');
+    const credit = allocations.find((row) => row.method === 'credit');
+    if (credit && !customerSelection.customer?.id) throw new Error('Credit requires an existing identified customer with an approved limit.');
+    return allocations;
+  };
+
 
 
   const handleCheckout = () => {
@@ -201,12 +230,11 @@ export default function WalkInBilling({ variant = 'admin' }) {
 
     const totals = getTotals();
     const total = totals.total;
-    const paid = parseFloat(amountPaid) || total;
-
-    if (paymentMethod === 'cash' && paid < total) {
-      addToast(friendlyMessage('insufficient_payment'));
-      return;
-    }
+    let allocations;
+    try { allocations = buildAllocations(total); }
+    catch (error) { addToast(friendlyMessage('payment_invalid', { description: error.message })); return; }
+    const paid = allocations.filter((row) => row.method !== 'credit').reduce((sum, row) => sum + Number(row.amount), 0);
+    const cash = allocations.find((row) => row.method === 'cash');
 
     const customerCheck = validateCustomerSelection(customerSelection);
     if (!customerCheck.ok) {
@@ -234,7 +262,9 @@ export default function WalkInBilling({ variant = 'admin' }) {
       total: totals.total,
       payment_method: paymentMethod,
       amount_paid: paid,
-      change: paymentMethod === 'cash' ? paid - totals.total : 0,
+      change: cash ? Math.max(0, Number(cash.cash_tendered || 0) - Number(cash.amount)) : 0,
+      allocations,
+      idempotency_key: globalThis.crypto?.randomUUID?.() || `bill-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       order_type: 'takeaway',
       date: new Date().toLocaleString('en-NP', { timeZone: 'Asia/Kathmandu' }),
       restaurant_name: settings.restaurant_name || 'Restaurant',
@@ -277,6 +307,8 @@ export default function WalkInBilling({ variant = 'admin' }) {
         payment_method: pendingBill.payment_method,
         amount_paid: pendingBill.amount_paid,
         change_amount: pendingBill.change,
+        allocations: pendingBill.allocations,
+        idempotency_key: pendingBill.idempotency_key,
         order_type: 'takeaway',
         items: pendingBill.items,
       };
@@ -309,6 +341,7 @@ export default function WalkInBilling({ variant = 'admin' }) {
         setAmountPaid('');
         setDiscount(0);
         setPaymentMethod('cash');
+        setSplitPayment(emptySplitPayment);
         setCustomerSelection(emptyCustomerSelection);
         setMobileCartOpen(false);
         setConfirmOpen(false);
@@ -446,8 +479,8 @@ export default function WalkInBilling({ variant = 'admin' }) {
         </div>
 
         <div class="bill-info">
-          <div><strong>Bill No:</strong> ${billData.bill_number}</div>
-          <div><strong>Order No:</strong> ${billData.order_number}</div>
+          <div><strong>Bill No:</strong> ${compactBillNumber(billData.bill_number)}</div>
+          <div><strong>Order No:</strong> ${compactOrderNumber(billData.order_number)}</div>
           <div><strong>Date:</strong> ${billData.date}</div>
           <div><strong>Customer:</strong> ${billData.customer_name}</div>
         </div>
@@ -501,21 +534,26 @@ export default function WalkInBilling({ variant = 'admin' }) {
         </div>
 
         <div class="payment-info">
+          <div class="total-row"><span><strong>Payment:</strong></span><span>${billData.allocations.length > 1 ? 'SPLIT' : billData.allocations[0].method.toUpperCase()}</span></div>
+          ${billData.allocations.map((allocation) => `
           <div class="total-row">
-            <span><strong>Payment Method:</strong></span>
-            <span>${billData.payment_method.toUpperCase()}</span>
-          </div>
-          ${billData.payment_method === 'cash' ? `
+            <span>${allocation.method === 'credit' ? 'Credit / Due' : allocation.method.toUpperCase()}:</span>
+            <span>Rs ${Number(allocation.amount).toFixed(2)}</span>
+          </div>`).join('')}
           <div class="total-row">
-            <span>Amount Paid:</span>
+            <span>Amount received:</span>
             <span>Rs ${billData.amount_paid.toFixed(2)}</span>
           </div>
+          ${billData.total - billData.amount_paid > 0 ? `<div class="total-row"><span>Outstanding:</span><span>Rs ${(billData.total - billData.amount_paid).toFixed(2)}</span></div>` : ''}
+          <div class="total-row"><span>Payment status:</span><span>${billData.total - billData.amount_paid > 0 ? 'PARTIALLY PAID' : 'PAID'}</span></div>
+          ${billData.allocations.some((a) => a.method === 'credit') ? `<div class="total-row"><span>Credit customer:</span><span>${billData.customer_name}</span></div>` : ''}
+          ${billData.allocations.find((a) => a.method === 'credit')?.due_date ? `<div class="total-row"><span>Credit due date:</span><span>${billData.allocations.find((a) => a.method === 'credit').due_date}</span></div>` : ''}
+          ${billData.allocations.find((a) => a.method === 'qr')?.reference ? `<div class="total-row"><span>QR reference:</span><span>${billData.allocations.find((a) => a.method === 'qr').reference}</span></div>` : ''}
           ${billData.change > 0 ? `
           <div class="total-row">
             <span>Change:</span>
             <span>Rs ${billData.change.toFixed(2)}</span>
           </div>
-          ` : ''}
           ` : ''}
         </div>
 
@@ -912,17 +950,31 @@ export default function WalkInBilling({ variant = 'admin' }) {
 
               <div>
                 <label className="block text-xs font-bold text-slate-900 mb-1.5">Payment</label>
-                <div className="grid grid-cols-4 gap-1.5">
+                <div className="grid grid-cols-5 gap-1.5">
                   {[
                     { id: 'cash', label: 'Cash', Icon: Wallet },
                     { id: 'online', label: 'QR', Icon: QrCode },
-                    { id: 'card', label: 'Card', Icon: CreditCard },
                     { id: 'credit', label: 'Credit', Icon: Building2 },
+                    { id: 'split', label: 'Split', Icon: Sparkles },
                   ].map(({ id, label, Icon }) => (
                     <button
                       key={id}
                       type="button"
-                      onClick={() => setPaymentMethod(id)}
+                      onClick={() => {
+                        setPaymentMethod(id);
+                        if (id === 'cash' && !amountPaid) setAmountPaid(String(calculateTotal()));
+                        if (id === 'credit') {
+                          setCustomerSelection((prev) => ({
+                            ...prev,
+                            mode: 'customer',
+                            name: prev.mode === 'customer' ? prev.name : '',
+                            phone: prev.mode === 'customer' ? prev.phone : '',
+                            address: prev.mode === 'customer' ? prev.address : '',
+                            customer: prev.mode === 'customer' ? prev.customer : null,
+                            isNew: prev.mode === 'customer' ? prev.isNew : false,
+                          }));
+                        }
+                      }}
                       className={`p-1.5 rounded-lg border-2 transition-colors ${
                         paymentMethod === id
                           ? 'bg-blue-600 text-white border-blue-600'
@@ -937,26 +989,46 @@ export default function WalkInBilling({ variant = 'admin' }) {
               </div>
 
               {paymentMethod === 'cash' && (
-                <div>
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs text-slate-600">
+                    <span>Amount due</span>
+                    <span className="font-bold tabular-nums">{formatCurrency(calculateTotal())}</span>
+                  </div>
                   <label className="block text-xs font-bold text-slate-900 mb-1">Amount Received</label>
                   <input
-                    type="number"
-                    step="0.01"
+                    type="text"
+                    inputMode="decimal"
+                    autoComplete="off"
                     value={amountPaid}
-                    onChange={(e) => setAmountPaid(e.target.value)}
-                    className="w-full px-3 py-2 border-2 border-blue-200 rounded-lg text-slate-900 font-bold"
-                    placeholder="0.00"
+                    onChange={(e) => {
+                      const raw = e.target.value.replace(/[^\d.]/g, '');
+                      const parts = raw.split('.');
+                      setAmountPaid(parts.length > 2 ? `${parts[0]}.${parts.slice(1).join('')}` : raw);
+                    }}
+                    onFocus={(e) => e.target.select()}
+                    className="w-full px-3 py-2 border-2 border-blue-200 rounded-lg text-slate-900 font-bold tabular-nums"
+                    placeholder={String(calculateTotal() || '0.00')}
                   />
-                  {amountPaid && calculateChange() >= 0 && (
-                    <p className="mt-1.5 text-green-800 font-semibold text-sm">
-                      Change: {formatCurrency(calculateChange())}
-                    </p>
+                  {amountPaid !== '' && (
+                    calculateChange() >= -0.009 ? (
+                      <p className="mt-1.5 text-green-800 font-semibold text-sm">
+                        Change: {formatCurrency(Math.max(0, calculateChange()))}
+                      </p>
+                    ) : (
+                      <p className="mt-1.5 text-amber-700 font-semibold text-sm">
+                        Still short by {formatCurrency(Math.abs(calculateChange()))}
+                      </p>
+                    )
                   )}
                 </div>
               )}
 
               {paymentMethod === 'online' && (
                 <div className="space-y-2">
+                  <select value={splitPayment.qrProvider} onChange={(e) => setSplitPayment((v) => ({ ...v, qrProvider: e.target.value, qrVerified: true }))} className="w-full rounded-lg border border-blue-200 px-2 py-2 text-xs">
+                    <option>Fonepay</option><option>eSewa</option><option>Khalti</option><option>Bank QR</option><option>Other</option>
+                  </select>
+                  <p className="text-xs text-slate-500">Show the QR and confirm the guest paid.</p>
                   {settings.esewa_qr_image && (
                     <button
                       type="button"
@@ -1005,6 +1077,25 @@ export default function WalkInBilling({ variant = 'admin' }) {
                     </div>
                   )}
                 </div>
+              )}
+
+              {paymentMethod === 'credit' && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
+                  <p className="font-semibold">{customerSelection.customer ? `Credit customer: ${customerSelection.customer.name}` : 'Select an existing customer above before using Credit.'}</p>
+                  <label className="mt-2 block">Due date (optional)
+                    <input type="date" value={splitPayment.creditDueDate} onChange={(e) => setSplitPayment((v) => ({ ...v, creditDueDate: e.target.value }))} className="mt-1 w-full rounded-lg border border-amber-200 bg-white px-2 py-2" />
+                  </label>
+                </div>
+              )}
+
+              {paymentMethod === 'split' && (
+                <SplitPaymentFields
+                  total={calculateTotal()}
+                  value={splitPayment}
+                  onChange={setSplitPayment}
+                  customer={customerSelection.customer}
+                  settings={settings}
+                />
               )}
 
               <div className="flex gap-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">

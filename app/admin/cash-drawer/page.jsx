@@ -7,6 +7,7 @@ import { useToast } from '@/components/ui/toast';
 import { friendlyMessage, friendlyFromError } from '@/lib/friendly-message';
 import { apiJson } from '@/lib/authed-fetch';
 import { money } from '@/components/accounting/ledger-table';
+import { formatNepalTime } from '@/lib/time-utils';
 
 export default function CashDrawerPage() {
   const { addToast } = useToast();
@@ -66,7 +67,7 @@ export default function CashDrawerPage() {
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
               <Stat label="Opened by" value={data.open.opened_by_name || '—'} />
               <Stat label="Opening float" value={money(data.open.opening_amount)} />
-              <Stat label="Opened at" value={new Date(data.open.opened_at).toLocaleString()} />
+              <Stat label="Opened at" value={formatNepalTime(data.open.opened_at)} />
             </div>
             <div className="mt-5 flex flex-wrap items-end gap-3 border-t border-emerald-200 pt-4">
               <label className="block"><span className="mb-1 block text-sm font-medium text-gray-700">Counted cash</span>
@@ -115,8 +116,8 @@ export default function CashDrawerPage() {
                 {data.sessions.map((s) => (
                   <tr key={s.id} className="hover:bg-gray-50">
                     <td className="px-4 py-2.5 text-gray-900">{s.drawer_name}</td>
-                    <td className="px-4 py-2.5 text-gray-600">{new Date(s.opened_at).toLocaleString()}</td>
-                    <td className="px-4 py-2.5 text-gray-600">{s.closed_at ? new Date(s.closed_at).toLocaleString() : <span className="text-emerald-700">Open</span>}</td>
+                    <td className="px-4 py-2.5 text-gray-600">{formatNepalTime(s.opened_at)}</td>
+                    <td className="px-4 py-2.5 text-gray-600">{s.closed_at ? formatNepalTime(s.closed_at) : <span className="text-emerald-700">Open</span>}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums">{money(s.opening_amount)}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums">{s.expected_amount != null ? money(s.expected_amount) : '—'}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums">{s.counted_amount != null ? money(s.counted_amount) : '—'}</td>

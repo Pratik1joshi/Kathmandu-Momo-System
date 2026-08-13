@@ -281,7 +281,7 @@ export default function Dashboard({ onNavigate }) {
               })
               const dayTotal = dayOrders.reduce((sum, o) => sum + parseFloat(o.total || 0), 0)
               days.push({
-                label: date.toLocaleDateString('en-US', { weekday: 'short' }),
+                label: date.toLocaleDateString('en-US', { timeZone: 'Asia/Kathmandu', weekday: 'short' }),
                 value: dayTotal
               })
             }
@@ -441,7 +441,7 @@ export default function Dashboard({ onNavigate }) {
                       <td className="py-2 sm:py-3 px-3 sm:px-4 text-muted-foreground text-xs">
                         <div className="flex items-center gap-1">
                           <Clock size={12} />
-                          {orderTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          {orderTime.toLocaleTimeString('en-US', { timeZone: 'Asia/Kathmandu', hour: '2-digit', minute: '2-digit' })}
                         </div>
                       </td>
                     </tr>

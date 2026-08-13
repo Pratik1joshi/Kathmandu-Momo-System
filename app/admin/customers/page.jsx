@@ -2,8 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import AdminLayout from '@/components/admin/admin-layout';
-import { Search, Plus, Edit, Trash2, Phone, Mail } from 'lucide-react';
+import { Search, Plus, Edit, Trash2, Phone, Mail, Eye } from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
 import { useToast } from '@/components/ui/toast';
+import { useConfirm } from '@/components/ui/confirm';
 import { friendlyMessage, friendlyFromError } from '@/lib/friendly-message';
 import FieldError, { inputErrorClass } from '@/components/ui/field-error';
 import {
@@ -27,8 +29,15 @@ const emptyForm = {
   notes: '',
 };
 
+const panelCustomerPath = () => typeof window !== 'undefined' && window.location.pathname.startsWith('/cashier')
+  ? '/cashier/customers'
+  : '/admin/customers';
+
 export default function AdminCustomers() {
   const { addToast } = useToast();
+  const { confirm } = useConfirm();
+  const router = useRouter();
+  const isCashier = usePathname()?.startsWith('/cashier');
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -199,7 +208,12 @@ export default function AdminCustomers() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Remove this customer from your list?')) return;
+    const ok = await confirm({
+      title: 'Remove customer?',
+      message: 'Remove this customer from your list?',
+      tone: 'delete',
+    });
+    if (!ok) return;
 
     try {
       const token = localStorage.getItem('pos_token');
@@ -277,11 +291,19 @@ export default function AdminCustomers() {
                 className="bg-white rounded-lg border border-gray-200 p-6 hover:shadow-lg transition-shadow"
               >
                 <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900">{customer.name}</h3>
+                  <button type="button" onClick={() => router.push(`${panelCustomerPath()}/${customer.id}`)} className="text-left">
+                    <h3 className="text-lg font-semibold text-gray-900 hover:text-blue-700">{customer.name}</h3>
                     <p className="text-sm text-gray-700">ID: {customer.id}</p>
-                  </div>
+                  </button>
                   <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => router.push(`${panelCustomerPath()}/${customer.id}`)}
+                      className="p-2 text-teal-700 hover:bg-teal-50 rounded-lg transition-colors"
+                      title="View profile"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </button>
                     <button
                       type="button"
                       onClick={() => handleEdit(customer)}
@@ -289,13 +311,15 @@ export default function AdminCustomers() {
                     >
                       <Edit className="w-4 h-4" />
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(customer.id)}
-                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {!isCashier && (
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(customer.id)}
+                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -343,7 +367,7 @@ export default function AdminCustomers() {
 
       {showModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-md w-full p-6 max-h-[90dvh] overflow-y-auto">
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[94dvh] overflow-y-auto p-6 sm:p-8">
             <h2 className="text-2xl font-bold text-gray-900 mb-6">
               {editingCustomer ? 'Edit Customer' : 'Add New Customer'}
             </h2>

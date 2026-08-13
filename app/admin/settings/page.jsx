@@ -2,22 +2,23 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import AdminLayout from '@/components/admin/admin-layout';
-import PermissionsPanel from '@/components/admin/permissions-panel';
 import {
   Save, Store, Receipt, CreditCard, QrCode, Upload, Loader2, Shield, Percent,
-  CalendarClock, Utensils, ExternalLink, KeyRound, ScanLine,
+  CalendarClock, Utensils, ExternalLink, KeyRound, ScanLine, Truck, Plus, Trash2,
 } from 'lucide-react';
+import { PRIMARY_ROUTE } from '@/lib/deployment';
 
 // Everything here maps to a system_settings key the app actually reads.
 const TABS = [
   { id: 'business', label: 'Business', icon: Store },
   { id: 'billing', label: 'Billing & Tax', icon: Percent },
+  { id: 'delivery', label: 'Delivery pricing', icon: Truck },
   { id: 'reservations', label: 'Reservations', icon: CalendarClock },
   { id: 'receipt', label: 'Receipt', icon: Receipt },
   { id: 'ordering', label: 'Ordering', icon: ScanLine },
   { id: 'payments', label: 'Payments & QR', icon: CreditCard },
-  { id: 'permissions', label: 'Permissions', icon: Shield },
   { id: 'shortcuts', label: 'More config', icon: ExternalLink },
   { id: 'account', label: 'Account', icon: Shield },
 ];
@@ -45,6 +46,8 @@ const SHORTCUTS = [
 ];
 
 export default function SettingsPage() {
+  const router = useRouter();
+  const [forcePin, setForcePin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState('business');
@@ -58,19 +61,34 @@ export default function SettingsPage() {
     website: '', vat_number: '', pan_number: '', registration_number: '', restaurant_address: '',
     vat_percentage: 13, service_charge_percentage: 10,
     receipt_footer: '', receipt_paper_size: '80', qr_ordering_enabled: true,
+    kitchen_printing_enabled: false,
+    delivery_pricing_enabled: false, delivery_pricing_mode: 'fixed', delivery_fixed_fee: 0,
+    delivery_distance_bands: [], delivery_per_km_rate: 0, delivery_minimum_fee: 0, delivery_max_distance_km: 0,
     bank_qr_image: '', esewa_qr_image: '',
     ...Object.fromEntries(RES_FIELDS.map(([k, , d]) => [k, d])),
   });
   const set = (patch) => setS((prev) => ({ ...prev, ...patch }));
 
   useEffect(() => {
-    setCurrentUser(JSON.parse(localStorage.getItem('pos_user') || '{}'));
+    const u = JSON.parse(localStorage.getItem('pos_user') || '{}');
+    setCurrentUser(u);
+    const forced = typeof window !== 'undefined'
+      && (new URLSearchParams(window.location.search).get('changePin') === '1' || !!u.must_change_password);
+    setForcePin(forced);
+    if (forced) {
+      setTab('account');
+      setShowCredentials(true);
+      setPw((p) => ({ ...p, username: u.username || 'admin' }));
+      setMessage({ type: 'error', text: 'Please change the default admin PIN before using the system.' });
+    }
     (async () => {
       try {
         const token = localStorage.getItem('pos_token');
         const res = await fetch('/api/admin/settings', { headers: { Authorization: `Bearer ${token}` } });
         if (res.ok) {
           const d = (await res.json()).settings || {};
+          let deliveryBands = [];
+          try { deliveryBands = JSON.parse(d.delivery_distance_bands || '[]'); } catch { deliveryBands = []; }
           set({
             restaurant_name: d.restaurant_name || '', legal_name: d.legal_name || '', owner_name: d.owner_name || '',
             restaurant_phone: d.restaurant_phone || '', restaurant_email: d.restaurant_email || '', website: d.website || '',
@@ -78,7 +96,15 @@ export default function SettingsPage() {
             restaurant_address: d.restaurant_address || '',
             vat_percentage: Number(d.vat_percentage ?? 13), service_charge_percentage: Number(d.service_charge_percentage ?? 10),
             receipt_footer: d.receipt_footer || '', receipt_paper_size: d.receipt_paper_size || '80', qr_ordering_enabled: String(d.qr_ordering_enabled ?? 'true') !== 'false',
+            kitchen_printing_enabled: String(d.kitchen_printing_enabled ?? 'false') === 'true',
             bank_qr_image: d.bank_qr_image || '', esewa_qr_image: d.esewa_qr_image || '',
+            delivery_pricing_enabled: String(d.delivery_pricing_enabled ?? 'false') === 'true',
+            delivery_pricing_mode: d.delivery_pricing_mode || 'fixed',
+            delivery_fixed_fee: Number(d.delivery_fixed_fee || 0),
+            delivery_distance_bands: Array.isArray(deliveryBands) ? deliveryBands : [],
+            delivery_per_km_rate: Number(d.delivery_per_km_rate || 0),
+            delivery_minimum_fee: Number(d.delivery_minimum_fee || 0),
+            delivery_max_distance_km: Number(d.delivery_max_distance_km || 0),
             ...Object.fromEntries(RES_FIELDS.map(([k, , dv]) => [k, Number(d[k] ?? dv)])),
           });
         }
@@ -108,6 +134,9 @@ export default function SettingsPage() {
           vat_percentage: Number(s.vat_percentage) || 0,
           service_charge_percentage: Number(s.service_charge_percentage) || 0,
           qr_ordering_enabled: s.qr_ordering_enabled ? 'true' : 'false',
+          kitchen_printing_enabled: s.kitchen_printing_enabled ? 'true' : 'false',
+          delivery_pricing_enabled: s.delivery_pricing_enabled ? 'true' : 'false',
+          delivery_distance_bands: JSON.stringify(s.delivery_distance_bands || []),
           ...Object.fromEntries(RES_FIELDS.map(([k]) => [k, Number(s[k]) || 0])),
         }),
       });
@@ -132,9 +161,10 @@ export default function SettingsPage() {
       const d = await res.json();
       if (res.ok) {
         setMessage({ type: 'success', text: d.message || 'Credentials updated.' });
-        const u = { ...currentUser, username: pw.username };
+        const u = { ...(currentUser || {}), ...(d.user || {}), username: pw.username, must_change_password: false };
         localStorage.setItem('pos_user', JSON.stringify(u)); setCurrentUser(u);
         setPw({ username: pw.username, currentPassword: '', newPassword: '', confirmPassword: '' }); setShowCredentials(false);
+        if (forcePin) router.replace(PRIMARY_ROUTE);
       } else setMessage({ type: 'error', text: d.error || 'Failed to update credentials.' });
     } catch { setMessage({ type: 'error', text: 'Connection error.' }); }
     finally { setSaving(false); }
@@ -204,6 +234,40 @@ export default function SettingsPage() {
               </Panel>
             )}
 
+            {tab === 'delivery' && (
+              <Panel title="Delivery pricing" hint="Shown at website checkout and saved on the order and bill. Pickup remains free.">
+                <label className="flex items-center justify-between rounded-lg border border-gray-200 p-4">
+                  <span><span className="block text-sm font-medium text-gray-800">Charge for delivery</span><span className="mt-0.5 block text-xs text-gray-500">Turn off to show delivery as free.</span></span>
+                  <input type="checkbox" checked={s.delivery_pricing_enabled} onChange={(e) => set({ delivery_pricing_enabled: e.target.checked })} className="h-5 w-5 rounded border-gray-300" />
+                </label>
+                {s.delivery_pricing_enabled && <>
+                  <Field label="How is the fee calculated?">
+                    <select value={s.delivery_pricing_mode} onChange={(e) => set({ delivery_pricing_mode: e.target.value })} className={INPUT}>
+                      <option value="fixed">One fixed fee</option>
+                      <option value="distance_bands">Fee by distance range</option>
+                      <option value="per_km">Price per kilometre</option>
+                    </select>
+                  </Field>
+                  {s.delivery_pricing_mode === 'fixed' && <Field label="Fixed delivery fee (Rs)"><input type="number" min="0" step="0.01" value={s.delivery_fixed_fee} onChange={(e) => set({ delivery_fixed_fee: e.target.value })} className={INPUT} /></Field>}
+                  {s.delivery_pricing_mode === 'distance_bands' && <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-3"><div><p className="text-sm font-medium text-gray-800">Distance ranges</p><p className="text-xs text-gray-500">Customers choose the range that contains their address.</p></div><button type="button" onClick={() => set({ delivery_distance_bands: [...s.delivery_distance_bands, { id: globalThis.crypto?.randomUUID?.() || `band-${Date.now()}`, maxKm: '', fee: '' }] })} className="inline-flex h-10 items-center gap-2 rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 active:scale-[0.97]"><Plus className="h-4 w-4" />Add range</button></div>
+                    {s.delivery_distance_bands.map((band, index) => <div key={band.id || index} className="grid grid-cols-[1fr_1fr_auto] gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                      <Field label="Up to (km)"><input type="number" min="0.1" step="0.1" value={band.maxKm ?? band.max_km ?? ''} onChange={(e) => set({ delivery_distance_bands: s.delivery_distance_bands.map((row, i) => i === index ? { ...row, maxKm: e.target.value } : row) })} className={INPUT} /></Field>
+                      <Field label="Fee (Rs)"><input type="number" min="0" step="0.01" value={band.fee ?? ''} onChange={(e) => set({ delivery_distance_bands: s.delivery_distance_bands.map((row, i) => i === index ? { ...row, fee: e.target.value } : row) })} className={INPUT} /></Field>
+                      <button type="button" aria-label="Remove range" onClick={() => set({ delivery_distance_bands: s.delivery_distance_bands.filter((_, i) => i !== index) })} className="mt-6 flex h-11 w-11 items-center justify-center rounded-lg text-rose-600 hover:bg-rose-50 active:scale-[0.97]"><Trash2 className="h-4 w-4" /></button>
+                    </div>)}
+                    {!s.delivery_distance_bands.length && <p className="rounded-lg border border-dashed border-gray-300 p-4 text-sm text-gray-500">Add at least one distance range before using this mode.</p>}
+                  </div>}
+                  {s.delivery_pricing_mode === 'per_km' && <Grid>
+                    <Field label="Price per km (Rs)"><input type="number" min="0" step="0.01" value={s.delivery_per_km_rate} onChange={(e) => set({ delivery_per_km_rate: e.target.value })} className={INPUT} /></Field>
+                    <Field label="Minimum fee (Rs)"><input type="number" min="0" step="0.01" value={s.delivery_minimum_fee} onChange={(e) => set({ delivery_minimum_fee: e.target.value })} className={INPUT} /></Field>
+                    <Field label="Maximum delivery distance (km)"><input type="number" min="0" step="0.1" value={s.delivery_max_distance_km} onChange={(e) => set({ delivery_max_distance_km: e.target.value })} className={INPUT} /></Field>
+                  </Grid>}
+                  <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">Distance is entered or selected by the customer and should be confirmed against the address before accepting the order.</p>
+                </>}
+              </Panel>
+            )}
+
             {tab === 'receipt' && (
               <Panel title="Receipt" hint="Business name, VAT/PAN, website and this footer all print on the customer receipt.">
                 <Grid>
@@ -216,6 +280,13 @@ export default function SettingsPage() {
                   <Field label="Receipt footer message"><input value={s.receipt_footer} onChange={(e) => set({ receipt_footer: e.target.value })} className={INPUT} placeholder="Thank you for your visit!" /></Field>
                 </Grid>
                 <p className="text-xs text-gray-400">Receipts print through the shared thermal system and re-format automatically for the selected width.</p>
+                <label className="mt-4 flex items-center justify-between rounded-lg border border-gray-200 p-4">
+                  <span className="flex items-center gap-2 text-sm font-medium text-gray-800"><Receipt className="h-4 w-4 text-gray-500" /> Auto-print kitchen tickets (KOT)</span>
+                  <input type="checkbox" checked={s.kitchen_printing_enabled} onChange={(e) => set({ kitchen_printing_enabled: e.target.checked })} className="h-5 w-5 rounded border-gray-300" />
+                </label>
+                <p className="text-xs text-gray-400">
+                  Enable only on devices physically connected to the kitchen printer (waiter tablet or POS PC in the kitchen). When on, KOTs print automatically as soon as they&apos;re sent — new, additional and cancellation tickets. When off, staff still see the ticket on the Kitchen display and can print any KOT manually from KOT history. Uses the thermal paper size above.
+                </p>
               </Panel>
             )}
 
@@ -243,8 +314,6 @@ export default function SettingsPage() {
               </Panel>
             )}
 
-            {tab === 'permissions' && <PermissionsPanel />}
-
             {tab === 'shortcuts' && (
               <Panel title="More configuration" hint="These have dedicated screens — settings here would only duplicate them.">
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -263,7 +332,7 @@ export default function SettingsPage() {
               </Panel>
             )}
 
-            {tab !== 'shortcuts' && tab !== 'account' && tab !== 'permissions' && (
+            {tab !== 'shortcuts' && tab !== 'account' && (
               <div className="sticky bottom-4 flex justify-end">
                 <button disabled={saving} onClick={save} className="inline-flex items-center gap-2 rounded-xl bg-gray-900 px-6 py-3 text-sm font-semibold text-white shadow-lg hover:bg-gray-800 disabled:opacity-50">
                   <Save className="h-4 w-4" /> {saving ? 'Saving…' : 'Save settings'}
@@ -277,16 +346,23 @@ export default function SettingsPage() {
       {showCredentials && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <form onSubmit={changeCredentials} className="w-full max-w-md rounded-2xl bg-white p-6 sm:p-8">
-            <h3 className="mb-5 text-lg font-bold text-gray-900">Change credentials</h3>
+            <h3 className="mb-2 text-lg font-bold text-gray-900">{forcePin ? 'Set a new admin PIN' : 'Change credentials'}</h3>
+            {forcePin && (
+              <p className="mb-4 text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                Default seed PIN must be changed before going live.
+              </p>
+            )}
             <div className="space-y-3">
               <Field label="Username"><input value={pw.username} onChange={(e) => setPw({ ...pw, username: e.target.value })} className={INPUT} /></Field>
-              <Field label="Current password"><input type="password" value={pw.currentPassword} onChange={(e) => setPw({ ...pw, currentPassword: e.target.value })} className={INPUT} /></Field>
-              <Field label="New password (optional)"><input type="password" value={pw.newPassword} onChange={(e) => setPw({ ...pw, newPassword: e.target.value })} className={INPUT} /></Field>
-              <Field label="Confirm new password"><input type="password" value={pw.confirmPassword} onChange={(e) => setPw({ ...pw, confirmPassword: e.target.value })} className={INPUT} /></Field>
+              <Field label="Current password"><input type="password" value={pw.currentPassword} onChange={(e) => setPw({ ...pw, currentPassword: e.target.value })} className={INPUT} required /></Field>
+              <Field label={forcePin ? 'New PIN (required)' : 'New password (optional)'}><input type="password" value={pw.newPassword} onChange={(e) => setPw({ ...pw, newPassword: e.target.value })} className={INPUT} required={forcePin} /></Field>
+              <Field label="Confirm new password"><input type="password" value={pw.confirmPassword} onChange={(e) => setPw({ ...pw, confirmPassword: e.target.value })} className={INPUT} required={forcePin} /></Field>
             </div>
             <div className="mt-6 flex gap-3">
               <button type="submit" disabled={saving} className="flex-1 rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50">Save</button>
-              <button type="button" onClick={() => setShowCredentials(false)} className="flex-1 rounded-lg bg-gray-200 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-300">Cancel</button>
+              {!forcePin && (
+                <button type="button" onClick={() => setShowCredentials(false)} className="flex-1 rounded-lg bg-gray-200 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-300">Cancel</button>
+              )}
             </div>
           </form>
         </div>

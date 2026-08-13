@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, useCallback, Suspense } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
-  Bell, Plus, Search, Users, Clock, Receipt, X, ChefHat, Banknote, Calendar,
+  Bell, BellRing, Plus, Search, Users, Clock, Receipt, X, ChefHat, Banknote, Calendar,
   LayoutGrid, AlertTriangle, UserCheck, Star, CheckCircle, Trash2, ClipboardList,
 } from 'lucide-react'
 import WastageModal from '@/components/inventory/wastage-modal'
@@ -16,6 +16,7 @@ import {
 } from '@/lib/restaurant-status'
 import LogoutButton from '@/components/ui/logout-button'
 import ConfirmDialog from '@/components/ui/confirm-dialog'
+import { useConfirm } from '@/components/ui/confirm'
 import ReservationCard from '@/components/waiter/reservation-card'
 import AssignTableDialog from '@/components/waiter/assign-table-dialog'
 import ReservationDetailSheet from '@/components/waiter/reservation-detail-sheet'
@@ -51,6 +52,7 @@ function alertKey(kind, id, status) {
 
 function WaiterDashboardInner() {
   const { user, apiCall, logout, loading: authLoading, token } = useAuth()
+  const { alert } = useConfirm()
   const [showWastageLog, setShowWastageLog] = useState(false)
   const [showWastageHistory, setShowWastageHistory] = useState(false)
   const router = useRouter()
@@ -70,6 +72,7 @@ function WaiterDashboardInner() {
   const [seenIds, setSeenIds] = useState(() => new Set())
   const [floorFilter, setFloorFilter] = useState(null)
   const [resSection, setResSection] = useState(null)
+  const [waiterCallCount, setWaiterCallCount] = useState(0)
 
   const [detailRes, setDetailRes] = useState(null)
   const [assignRes, setAssignRes] = useState(null)
@@ -80,6 +83,8 @@ function WaiterDashboardInner() {
   const [confirmAction, setConfirmAction] = useState(null)
   const [confirmBusy, setConfirmBusy] = useState(false)
   const [actionBusy, setActionBusy] = useState(false)
+  const [partyPickerTable, setPartyPickerTable] = useState(null)
+  const [startingParty, setStartingParty] = useState(false)
 
   useEffect(() => {
     setSeenIds(loadSeenIds())
@@ -91,21 +96,35 @@ function WaiterDashboardInner() {
 
   const fetchAll = useCallback(async () => {
     try {
-      const [tablesRes, ordersRes, resRes, alertsRes] = await Promise.all([
+      const [tablesRes, ordersRes, resRes, alertsRes, posTablesRes, waiterCallsRes] = await Promise.all([
         apiCall('/api/restaurant/tables'),
         apiCall('/api/restaurant/orders'),
         apiCall('/api/restaurant/reservations?board=ops'),
         apiCall('/api/admin/reservations/alerts'),
+        apiCall('/api/admin/pos/tables').catch(() => null),
+        apiCall('/api/waiter-requests?status=active&limit=1').catch(() => null),
       ])
+      // Multi-party info (parties/kot counts) layered on top of the reservation-aware
+      // table list above — additive only, never overrides reservation status/badges.
+      let partiesByTable = {}
+      if (posTablesRes?.ok) {
+        const posData = await posTablesRes.json().catch(() => null)
+        for (const t of posData?.tables || []) {
+          partiesByTable[t.id] = { parties: t.parties || [], party_count: t.party_count || 0 }
+        }
+      }
       if (tablesRes.ok) {
         const data = await tablesRes.json()
         // Keep reserved_arrived distinct from reserved for floor badges
         setTables(
           (data.tables || []).map((t) => {
-            if (t.status === 'reserved' && t.reservation_status === 'arrived') {
-              return { ...t, status: 'reserved_arrived' }
+            const tid = t.table_id || t.id
+            const extra = partiesByTable[tid] || { parties: [], party_count: 0 }
+            const merged = { ...t, parties: extra.parties, party_count: extra.party_count }
+            if (merged.status === 'reserved' && merged.reservation_status === 'arrived') {
+              return { ...merged, status: 'reserved_arrived' }
             }
-            return t
+            return merged
           })
         )
       }
@@ -130,6 +149,10 @@ function WaiterDashboardInner() {
           setGraceMinutes(data.settings.reservation_grace_minutes)
         }
       }
+      if (waiterCallsRes?.ok) {
+        const data = await waiterCallsRes.json().catch(() => ({}))
+        setWaiterCallCount(Number(data?.counts?.active || 0))
+      }
     } catch (e) {
       console.error(e)
     } finally {
@@ -144,6 +167,10 @@ function WaiterDashboardInner() {
       router.push('/login')
       return
     }
+    if (user && !['waiter', 'admin'].includes(user.role)) {
+      router.push('/login')
+      return
+    }
     fetchAll()
     const poll = setInterval(fetchAll, 5000)
     const tick = setInterval(() => setNow(Date.now()), 30000)
@@ -151,7 +178,7 @@ function WaiterDashboardInner() {
       clearInterval(poll)
       clearInterval(tick)
     }
-  }, [authLoading, token, fetchAll, router])
+  }, [authLoading, token, user, fetchAll, router])
 
   const groups = useMemo(
     () => groupReservationsForWaiter(reservations, { now: new Date(now), graceMinutes }),
@@ -280,7 +307,29 @@ function WaiterDashboardInner() {
       router.push(`/waiter/new-order?table=${table.table_id || table.id}`)
       return
     }
+    if ((table.party_count || 0) > 1) {
+      setPartyPickerTable(table)
+      return
+    }
     router.push(`/waiter/order/${orderId}`)
+  }
+
+  const startNewParty = async (table) => {
+    setStartingParty(true)
+    try {
+      const res = await apiCall('/api/admin/pos/orders', {
+        method: 'POST',
+        body: JSON.stringify({ table_id: table.table_id || table.id, new_party: true }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Could not start a new party')
+      setPartyPickerTable(null)
+      router.push(`/waiter/new-order?order=${data.order_id}&table=${table.table_id || table.id}`)
+    } catch (e) {
+      await alert({ title: 'Could not start new party', message: e.message, tone: 'danger' })
+    } finally {
+      setStartingParty(false)
+    }
   }
 
   const patchRes = async (id, body) => {
@@ -317,7 +366,7 @@ function WaiterDashboardInner() {
       setDetailRes(null)
       router.push(`/waiter/order/${data.order_id}`)
     } catch (e) {
-      alert(e.message || 'Could not seat')
+      await alert({ title: 'Could not seat', message: e.message || 'Could not seat', tone: 'danger' })
     } finally {
       setActionBusy(false)
     }
@@ -443,19 +492,33 @@ function WaiterDashboardInner() {
           </button>
           <button
             type="button"
-            onClick={() => router.push('/waiter/dashboard')}
-            className="h-11 w-11 rounded-xl flex items-center justify-center bg-slate-100 text-slate-700"
-            aria-label="My dashboard"
-            title="My dashboard"
+            onClick={() => router.push('/waiter/requests')}
+            className={`relative h-11 w-11 rounded-xl flex items-center justify-center ${waiterCallCount > 0 ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-700'}`}
+            aria-label="Waiter calls"
+            title="Waiter calls"
           >
-            <LayoutGrid className="w-5 h-5" />
+            <BellRing className="w-5 h-5" />
+            {waiterCallCount > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-red-600 text-white text-[11px] font-bold flex items-center justify-center">
+                {waiterCallCount}
+              </span>
+            )}
           </button>
           <button
             type="button"
-            onClick={() => router.push('/waiter/history')}
+            onClick={() => router.push('/waiter/kots')}
             className="h-11 w-11 rounded-xl flex items-center justify-center bg-slate-100 text-slate-700"
-            aria-label="Order history"
-            title="Order history"
+            aria-label="KOT history"
+            title="KOT history"
+          >
+            <ChefHat className="w-5 h-5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => router.push('/waiter/bills')}
+            className="h-11 w-11 rounded-xl flex items-center justify-center bg-slate-100 text-slate-700"
+            aria-label="Bills history"
+            title="Bills history"
           >
             <Receipt className="w-5 h-5" />
           </button>
@@ -624,13 +687,35 @@ function WaiterDashboardInner() {
                   const ui = TABLE_STATUS_UI[status] || TABLE_STATUS_UI.available
                   const total = Number(table.current_amount || table.current_order_amount || 0)
                   const elapsed = formatElapsed(table.order_created_at)
+                  const canAddParty = !['available', 'reserved', 'reserved_arrived'].includes(status)
                   return (
                     <button
                       key={table.table_id || table.id}
                       type="button"
                       onClick={() => openFromTable(table)}
-                      className={`text-left rounded-2xl border ${ui.soft} bg-white shadow-sm overflow-hidden active:scale-[0.98] transition-transform`}
+                      className={`relative text-left rounded-2xl border ${ui.soft} bg-white shadow-sm overflow-hidden active:scale-[0.98] transition-transform`}
                     >
+                      {canAddParty && (
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setPartyPickerTable(table)
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.stopPropagation()
+                              setPartyPickerTable(table)
+                            }
+                          }}
+                          className="absolute top-2 right-2 z-10 h-6 w-6 rounded-full bg-slate-900/80 text-white text-xs font-bold flex items-center justify-center"
+                          aria-label="Table parties"
+                          title="Parties on this table"
+                        >
+                          +
+                        </span>
+                      )}
                       <div className={`h-1.5 ${ui.bg}`} />
                       <div className="p-3.5 space-y-2">
                         <div className="flex items-start justify-between gap-2">
@@ -647,6 +732,12 @@ function WaiterDashboardInner() {
                             {ui.short}
                           </span>
                         </div>
+
+                        {table.party_count > 1 && (
+                          <p className="text-[10px] font-semibold text-indigo-700 bg-indigo-50 rounded-full px-2 py-0.5 inline-block">
+                            {table.party_count} parties
+                          </p>
+                        )}
 
                         {status === 'reserved' || status === 'reserved_arrived' ? (
                           <div className="space-y-1 pt-1 border-t border-yellow-100">
@@ -899,6 +990,46 @@ function WaiterDashboardInner() {
         }}
         onConfirm={runConfirm}
       />
+
+      {partyPickerTable && (
+        <div className="fixed inset-0 z-[85] bg-black/40 flex items-end sm:items-center sm:justify-center">
+          <div className="w-full sm:max-w-sm bg-white rounded-t-3xl sm:rounded-2xl overflow-hidden">
+            <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="font-bold text-slate-900">Table {partyPickerTable.table_number} — parties</h3>
+              <button type="button" onClick={() => setPartyPickerTable(null)} className="p-2 rounded-lg hover:bg-slate-100">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-3 space-y-2 max-h-[60vh] overflow-y-auto">
+              {(partyPickerTable.parties || []).map((p) => (
+                <button
+                  key={p.order_id}
+                  type="button"
+                  onClick={() => {
+                    setPartyPickerTable(null)
+                    router.push(`/waiter/order/${p.order_id}`)
+                  }}
+                  className="w-full text-left rounded-xl border border-slate-200 px-3 py-2.5 flex items-center justify-between hover:border-slate-400"
+                >
+                  <span>
+                    <span className="block text-sm font-semibold text-slate-900">{p.party_label}</span>
+                    <span className="block text-xs text-slate-500">{p.order_number}{p.customer_name ? ` · ${p.customer_name}` : ''}</span>
+                  </span>
+                  <span className="text-sm font-bold text-slate-900">Rs {Number(p.amount || 0).toFixed(0)}</span>
+                </button>
+              ))}
+              <button
+                type="button"
+                disabled={startingParty}
+                onClick={() => startNewParty(partyPickerTable)}
+                className="w-full h-11 rounded-xl border border-dashed border-slate-300 text-sm font-semibold text-slate-700 disabled:opacity-50"
+              >
+                {startingParty ? 'Starting…' : '+ Start new party'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showWastageLog && <WastageModal request={apiCall} onClose={() => setShowWastageLog(false)} />}
       {showWastageHistory && <WastageHistoryModal request={apiCall} onClose={() => setShowWastageHistory(false)} />}

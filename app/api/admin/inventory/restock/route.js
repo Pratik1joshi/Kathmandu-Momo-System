@@ -12,7 +12,7 @@ import { resolveSupplier } from '@/lib/purchases.js';
  */
 export async function POST(request) {
   try {
-    const auth = await requireAuth(request, { roles: ['admin'] });
+    const auth = await requireAuth(request, { roles: ['admin', 'cashier'] });
     if (auth.error) return auth.error;
 
     const data = await request.json();

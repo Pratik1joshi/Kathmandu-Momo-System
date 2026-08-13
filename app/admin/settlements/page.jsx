@@ -6,6 +6,7 @@ import { useToast } from '@/components/ui/toast';
 import { friendlyMessage, friendlyFromError } from '@/lib/friendly-message';
 import { apiJson } from '@/lib/authed-fetch';
 import { money } from '@/components/accounting/ledger-table';
+import { formatNepalDate } from '@/lib/time-utils';
 
 // Clearing account code -> settlement method key the API expects.
 const CODE_METHOD = { '1100': 'card', '1110': 'esewa', '1120': 'khalti', '1130': 'qr', '1140': 'online' };
@@ -101,7 +102,7 @@ export default function SettlementsPage() {
               <tbody className="divide-y divide-gray-100">
                 {history.map((s) => (
                   <tr key={s.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-2.5 text-gray-600">{new Date(s.settled_at).toLocaleDateString()}</td>
+                    <td className="px-4 py-2.5 text-gray-600">{formatNepalDate(s.settled_at)}</td>
                     <td className="px-4 py-2.5 capitalize text-gray-900">{s.method}</td>
                     <td className="px-4 py-2.5 text-gray-600">{s.bank_name || '—'}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums">{money(s.gross_amount)}</td>

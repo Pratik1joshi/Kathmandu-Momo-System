@@ -22,6 +22,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Paperclip, Plus, Trash2, X } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import {
+  AdminField,
+  adminInputClass,
+  adminTextareaClass,
+  adminDialogXl,
+  adminBtnPrimary,
+  adminBtnSecondary,
+  adminFieldStackClass,
+} from '@/components/ui/admin-form';
 import { useToast } from '@/components/ui/toast';
 import { friendlyMessage, friendlyFromError } from '@/lib/friendly-message';
 import { apiJson, authedRequest } from '@/lib/authed-fetch';
@@ -68,6 +77,13 @@ export default function ReceiveDeliveryModal({ purchase, items, suppliers, emplo
         }))
       : [blankLine()]
   );
+  const [partialDelivery, setPartialDelivery] = useState(Boolean(
+    purchase?.items?.some((line) => Number(line.quantity_received) < Number(line.quantity_ordered))
+  ));
+  const [showDetails, setShowDetails] = useState(Boolean(
+    editing || purchase?.expected_delivery_date || purchase?.attachment_url || purchase?.notes
+      || Number(purchase?.tax || 0) || Number(purchase?.discount || 0) || Number(purchase?.shipping || 0)
+  ));
 
   const itemById = useMemo(() => new Map(items.map((i) => [String(i.id), i])), [items]);
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
@@ -181,12 +197,12 @@ export default function ReceiveDeliveryModal({ purchase, items, suppliers, emplo
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent onClose={onClose} className="sm:max-w-5xl">
+      <DialogContent onClose={onClose} className={adminDialogXl}>
         <DialogHeader>
           <DialogTitle>{editing ? `Edit purchase #${purchase.id}` : 'Receive delivery'}</DialogTitle>
         </DialogHeader>
 
-        <div className="mt-4 space-y-5">
+        <div className={`mt-6 ${adminFieldStackClass}`}>
           {editing && (
             <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
               Saving reverses the stock this purchase originally added, then applies the new lines and rewrites the linked
@@ -194,13 +210,13 @@ export default function ReceiveDeliveryModal({ purchase, items, suppliers, emplo
             </p>
           )}
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <Field label="Supplier">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <AdminField label="Supplier" hint="Pick an existing supplier, or type a new one if your permissions allow it.">
               <input
                 list="delivery-suppliers"
                 value={form.supplier}
                 onChange={(e) => set({ supplier: e.target.value })}
-                className={INPUT}
+                className={adminInputClass}
                 placeholder="Pick one, or type a new name"
               />
               <datalist id="delivery-suppliers">
@@ -208,78 +224,98 @@ export default function ReceiveDeliveryModal({ purchase, items, suppliers, emplo
                   <option key={s.id} value={s.name} />
                 ))}
               </datalist>
-              <span className="mt-1 block text-xs text-gray-400">A name that does not exist yet is created for you.</span>
-            </Field>
-            <Field label="Invoice number">
-              <input value={form.invoice_number} onChange={(e) => set({ invoice_number: e.target.value })} className={INPUT} placeholder="Optional" />
-            </Field>
-            <Field label="Invoice date">
-              <input type="date" value={form.invoice_date} onChange={(e) => set({ invoice_date: e.target.value })} className={INPUT} />
-            </Field>
-            <Field label="Expected delivery date">
-              <input
-                type="date"
-                value={form.expected_delivery_date}
-                onChange={(e) => set({ expected_delivery_date: e.target.value })}
-                className={INPUT}
-              />
-            </Field>
-            <Field label="Received by">
-              <select value={form.received_by} onChange={(e) => set({ received_by: e.target.value })} className={INPUT}>
-                <option value="">Not recorded</option>
-                {employees.map((emp) => (
-                  <option key={emp.id} value={emp.id}>
-                    {emp.full_name || emp.username}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Payment">
-              <select value={form.payment_method} onChange={(e) => set({ payment_method: e.target.value })} className={INPUT}>
+            </AdminField>
+            <AdminField label="Invoice number">
+              <input value={form.invoice_number} onChange={(e) => set({ invoice_number: e.target.value })} className={adminInputClass} placeholder="Optional" />
+            </AdminField>
+            <AdminField label="Invoice date">
+              <input type="date" value={form.invoice_date} onChange={(e) => set({ invoice_date: e.target.value })} className={adminInputClass} />
+            </AdminField>
+            <AdminField label="Payment" hint={'On credit books this to Accounts Payable for the supplier.'}>
+              <select value={form.payment_method} onChange={(e) => set({ payment_method: e.target.value })} className={adminInputClass}>
                 <option value="cash">Paid — Cash</option>
                 <option value="bank_transfer">Paid — Bank</option>
                 <option value="credit">On credit (payable)</option>
               </select>
-              <span className="mt-1 block text-xs text-gray-400">&quot;On credit&quot; books this to Accounts Payable for the supplier.</span>
-            </Field>
-            <Field label="Invoice attachment">
-              {form.attachment_url ? (
-                <span className="flex h-10 items-center gap-2 text-sm text-gray-600">
-                  <Paperclip className="h-4 w-4" />
-                  <a href={form.attachment_url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">
-                    Attached
-                  </a>
-                  <button type="button" onClick={() => set({ attachment_url: '' })} className="text-gray-400 hover:text-red-600">
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </span>
-              ) : (
-                <input type="file" accept=".jpg,.jpeg,.png,.pdf" onChange={(e) => uploadInvoice(e.target.files?.[0])} disabled={uploading} className="h-10 w-full text-sm" />
-              )}
-            </Field>
+            </AdminField>
           </div>
+
+          <button
+            type="button"
+            onClick={() => setShowDetails((value) => !value)}
+            className="inline-flex h-9 self-start items-center rounded-lg border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 transition-transform duration-150 hover:bg-gray-50 active:scale-[0.97]"
+          >
+            {showDetails ? 'Hide extra details' : 'Add tax, attachment or notes'}
+          </button>
+
+          {showDetails && (
+            <div className="grid grid-cols-1 gap-4 rounded-xl border border-gray-200 bg-gray-50 p-4 sm:grid-cols-2 lg:grid-cols-3">
+              <AdminField label="Expected delivery date">
+                <input type="date" value={form.expected_delivery_date} onChange={(e) => set({ expected_delivery_date: e.target.value })} className={adminInputClass} />
+              </AdminField>
+              <AdminField label="Received by">
+                <select value={form.received_by} onChange={(e) => set({ received_by: e.target.value })} className={adminInputClass}>
+                  <option value="">Current user</option>
+                  {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.full_name || emp.username}</option>)}
+                </select>
+              </AdminField>
+              <AdminField label="Invoice attachment">
+                {form.attachment_url ? (
+                  <span className="flex min-h-11 items-center gap-2 text-sm text-gray-600">
+                    <Paperclip className="h-4 w-4" />
+                    <a href={form.attachment_url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">Attached</a>
+                    <button type="button" onClick={() => set({ attachment_url: '' })} className="text-gray-400 hover:text-red-600"><X className="h-3.5 w-3.5" /></button>
+                  </span>
+                ) : (
+                  <input type="file" accept=".jpg,.jpeg,.png,.pdf" onChange={(e) => uploadInvoice(e.target.files?.[0])} disabled={uploading} className="min-h-11 w-full text-sm" />
+                )}
+              </AdminField>
+              <AdminField label="Tax"><input type="number" step="any" value={form.tax} onChange={(e) => set({ tax: e.target.value })} className={adminInputClass} placeholder="0" /></AdminField>
+              <AdminField label="Discount"><input type="number" step="any" value={form.discount} onChange={(e) => set({ discount: e.target.value })} className={adminInputClass} placeholder="0" /></AdminField>
+              <AdminField label="Shipping"><input type="number" step="any" value={form.shipping} onChange={(e) => set({ shipping: e.target.value })} className={adminInputClass} placeholder="0" /></AdminField>
+              <div className="sm:col-span-2 lg:col-span-3">
+                <AdminField label="Notes"><textarea rows={2} value={form.notes} onChange={(e) => set({ notes: e.target.value })} className={adminTextareaClass} /></AdminField>
+              </div>
+            </div>
+          )}
 
           <div className="rounded-xl border border-gray-200">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-4 py-3">
               <div>
                 <p className="text-sm font-medium text-gray-900">Delivered items</p>
                 <p className="text-xs text-gray-500">
-                  Quantities and costs are in purchase units. Type either the unit cost or the line total — the other
-                  fills itself in.
+                  Select an item, enter the delivered quantity and its cost per purchase unit.
                 </p>
               </div>
-              <button type="button" onClick={() => setLines((p) => [...p, blankLine()])} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50">
-                <Plus className="h-3.5 w-3.5" /> Add line
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-600">
+                  <input
+                    type="checkbox"
+                    checked={partialDelivery}
+                    onChange={(event) => {
+                      const checked = event.target.checked;
+                      setPartialDelivery(checked);
+                      if (!checked) {
+                        setLines((current) => current.map((line) => ({
+                          ...line,
+                          quantity_received: '',
+                        })));
+                      }
+                    }}
+                  /> Partial delivery
+                </label>
+                <button type="button" onClick={() => setLines((p) => [...p, blankLine()])} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 transition-transform duration-150 hover:bg-gray-50 active:scale-[0.97]">
+                  <Plus className="h-3.5 w-3.5" /> Add item
+                </button>
+              </div>
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto hidden md:block">
               <table className="w-full min-w-[720px] text-sm">
                 <thead>
                   <tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-400">
                     <th className="px-3 py-2 font-semibold">Item</th>
-                    <th className="px-3 py-2 font-semibold">Ordered</th>
-                    <th className="px-3 py-2 font-semibold">Received</th>
+                    {partialDelivery ? <><th className="px-3 py-2 font-semibold">Ordered</th><th className="px-3 py-2 font-semibold">Received</th></> : <th className="px-3 py-2 font-semibold">Quantity</th>}
                     <th className="px-3 py-2 font-semibold">Unit cost</th>
                     <th className="px-3 py-2 text-right font-semibold">Line total</th>
                     <th className="w-10 px-3 py-2" />
@@ -292,7 +328,6 @@ export default function ReceiveDeliveryModal({ purchase, items, suppliers, emplo
                     const factor = Number(item?.conversion_factor) > 0 ? Number(item.conversion_factor) : 1;
                     const short = line.quantity_received !== '' && money(line.quantity_received) < money(line.quantity_ordered);
                     const rate = rateOf(line);
-                    const byTotal = line.cost_basis === 'total';
                     return (
                       <tr key={i}>
                         <td className="px-3 py-2">
@@ -318,7 +353,7 @@ export default function ReceiveDeliveryModal({ purchase, items, suppliers, emplo
                         <td className="px-3 py-2">
                           <input type="number" step="any" value={line.quantity_ordered} onChange={(e) => updateLine(i, { quantity_ordered: e.target.value })} className="h-9 w-24 rounded-md border border-gray-300 px-2 text-sm" />
                         </td>
-                        <td className="px-3 py-2">
+                        {partialDelivery && <td className="px-3 py-2">
                           <input
                             type="number"
                             step="any"
@@ -327,36 +362,24 @@ export default function ReceiveDeliveryModal({ purchase, items, suppliers, emplo
                             placeholder="all"
                             className={`h-9 w-24 rounded-md border px-2 text-sm ${short ? 'border-amber-400 bg-amber-50' : 'border-gray-300'}`}
                           />
-                        </td>
+                        </td>}
                         <td className="px-3 py-2">
                           <input
                             type="number"
                             step="any"
-                            value={byTotal ? (rate === null ? '' : round(rate, 4)) : line.unit_cost}
+                            value={line.unit_cost}
                             onChange={(e) => updateLine(i, { unit_cost: e.target.value, cost_basis: 'unit' })}
                             placeholder="0"
-                            className={`h-9 w-28 rounded-md border px-2 text-sm ${byTotal ? 'border-gray-200 bg-gray-50 text-gray-500' : 'border-gray-300'}`}
+                            className="h-9 w-28 rounded-md border border-gray-300 px-2 text-sm"
                           />
                           <p className="mt-1 text-xs text-gray-400">
                             per {unitLabel(item?.purchase_unit || item?.unit) || 'unit'}
-                            {byTotal ? ' · calculated' : ''}
                           </p>
                         </td>
                         <td className="px-3 py-2">
-                          {/* Type whichever end the invoice shows; the other is derived. */}
-                          <input
-                            type="number"
-                            step="any"
-                            value={byTotal ? line.line_total : received > 0 && line.unit_cost !== '' ? round(totalOf(line), 2) : ''}
-                            onChange={(e) => updateLine(i, { line_total: e.target.value, cost_basis: 'total' })}
-                            placeholder="0"
-                            className={`h-9 w-28 rounded-md border px-2 text-right text-sm tabular-nums ${
-                              byTotal ? 'border-gray-300' : 'border-gray-200 bg-gray-50 text-gray-500'
-                            }`}
-                          />
-                          {byTotal && rate === null && (
-                            <p className="mt-1 text-xs text-amber-700">Enter a quantity first.</p>
-                          )}
+                          <span className="block w-28 text-right font-medium tabular-nums text-gray-900">
+                            {received > 0 && rate !== null ? `Rs ${round(totalOf(line), 2).toFixed(2)}` : '—'}
+                          </span>
                         </td>
                         <td className="px-3 py-2">
                           {lines.length > 1 && (
@@ -371,21 +394,53 @@ export default function ReceiveDeliveryModal({ purchase, items, suppliers, emplo
                 </tbody>
               </table>
             </div>
+
+            <div className="space-y-4 p-4 md:hidden">
+              {lines.map((line, i) => {
+                const item = itemById.get(line.inventory_item_id);
+                const received = receivedOf(line);
+                const factor = Number(item?.conversion_factor) > 0 ? Number(item.conversion_factor) : 1;
+                const short = line.quantity_received !== '' && money(line.quantity_received) < money(line.quantity_ordered);
+                const rate = rateOf(line);
+                return (
+                  <div key={`m-${i}`} className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-3">
+                    <select value={line.inventory_item_id} onChange={(e) => updateLine(i, { inventory_item_id: e.target.value })} className={adminInputClass}>
+                      <option value="">Select item…</option>
+                      {items.map((it) => (
+                        <option key={it.id} value={it.id}>{it.item_name} ({it.purchase_unit || it.unit})</option>
+                      ))}
+                    </select>
+                    <div className={`grid gap-3 ${partialDelivery ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                      <AdminField label={partialDelivery ? 'Ordered' : 'Quantity'}>
+                        <input type="number" step="any" value={line.quantity_ordered} onChange={(e) => updateLine(i, { quantity_ordered: e.target.value })} className={adminInputClass} />
+                      </AdminField>
+                      {partialDelivery && <AdminField label="Received">
+                        <input type="number" step="any" value={line.quantity_received} onChange={(e) => updateLine(i, { quantity_received: e.target.value })} placeholder="all" className={`${adminInputClass} ${short ? 'border-amber-400 bg-amber-50' : ''}`} />
+                      </AdminField>}
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <AdminField label="Unit cost">
+                        <input type="number" step="any" value={line.unit_cost} onChange={(e) => updateLine(i, { unit_cost: e.target.value, cost_basis: 'unit' })} className={adminInputClass} />
+                      </AdminField>
+                      <AdminField label="Line total">
+                        <div className="flex h-11 items-center justify-end rounded-lg border border-gray-200 bg-white px-3 font-medium tabular-nums text-gray-900">
+                          {received > 0 && rate !== null ? `Rs ${round(totalOf(line), 2).toFixed(2)}` : '—'}
+                        </div>
+                      </AdminField>
+                    </div>
+                    {item && received > 0 && (
+                      <p className="text-xs text-gray-500">Adds {round(received * factor)} {unitLabel(item.consumption_unit || item.unit)} to stock</p>
+                    )}
+                    {lines.length > 1 && (
+                      <button type="button" onClick={() => setLines((p) => p.filter((_, j) => j !== i))} className="text-sm font-medium text-red-600">Remove line</button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-            <div className="grid grid-cols-3 gap-3">
-              <Field label="Tax">
-                <input type="number" step="any" value={form.tax} onChange={(e) => set({ tax: e.target.value })} className={INPUT} placeholder="0" />
-              </Field>
-              <Field label="Discount">
-                <input type="number" step="any" value={form.discount} onChange={(e) => set({ discount: e.target.value })} className={INPUT} placeholder="0" />
-              </Field>
-              <Field label="Shipping">
-                <input type="number" step="any" value={form.shipping} onChange={(e) => set({ shipping: e.target.value })} className={INPUT} placeholder="0" />
-              </Field>
-            </div>
-            <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm">
+          <div className="ml-auto w-full max-w-lg rounded-xl border border-gray-200 bg-gray-50 p-5 text-sm">
               <Row label="Subtotal" value={subtotal} />
               <Row label="Tax" value={money(form.tax)} />
               <Row label="Shipping" value={money(form.shipping)} />
@@ -398,19 +453,14 @@ export default function ReceiveDeliveryModal({ purchase, items, suppliers, emplo
                 {isPartial ? 'Saved as a partial delivery — the outstanding quantity stays visible on the purchase.' : 'Saved as fully received.'}{' '}
                 An expense of Rs {total.toFixed(2)} is created and linked to this purchase.
               </p>
-            </div>
           </div>
-
-          <Field label="Notes">
-            <textarea rows={2} value={form.notes} onChange={(e) => set({ notes: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
-          </Field>
         </div>
 
         <DialogFooter>
-          <button type="button" onClick={onClose} className="h-10 rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700">
+          <button type="button" onClick={onClose} className={adminBtnSecondary}>
             Cancel
           </button>
-          <button type="button" disabled={saving || uploading} onClick={submit} className="h-10 rounded-lg bg-gray-900 px-4 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50">
+          <button type="button" disabled={saving || uploading} onClick={submit} className={adminBtnPrimary}>
             {saving ? 'Saving…' : editing ? 'Save changes' : 'Receive & update stock'}
           </button>
         </DialogFooter>
@@ -419,20 +469,9 @@ export default function ReceiveDeliveryModal({ purchase, items, suppliers, emplo
   );
 }
 
-const INPUT = 'h-10 w-full rounded-lg border border-gray-300 px-3 text-sm text-gray-900';
-
-function Field({ label, children }) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-sm font-medium text-gray-700">{label}</span>
-      {children}
-    </label>
-  );
-}
-
 function Row({ label, value }) {
   return (
-    <div className="flex items-center justify-between py-0.5 text-gray-600">
+    <div className="flex items-center justify-between py-1 text-gray-600">
       <span>{label}</span>
       <span className="tabular-nums">Rs {Number(value).toFixed(2)}</span>
     </div>

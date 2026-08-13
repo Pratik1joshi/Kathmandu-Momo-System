@@ -141,7 +141,7 @@ section{position:relative}
 .js .rv-d4{transition-delay:.24s}
 
 /* masked line reveal for big headings */
-.line{display:block;overflow:hidden;padding-bottom:.04em}
+.line{display:block;overflow:hidden;padding-top:.12em;padding-bottom:.12em}
 .line > span{display:block;transform:translateY(105%);transition:transform .8s var(--ease-out)}
 .js .in .line > span,.js .line.in > span{transform:none}
 .line:nth-child(2) > span{transition-delay:.08s}
@@ -179,8 +179,8 @@ section{position:relative}
 #nav.solid{background:rgba(251,246,236,.86);backdrop-filter:blur(12px);box-shadow:0 1px 0 var(--line-2)}
 #nav.solid .nav-in{padding-top:13px;padding-bottom:13px}
 .brand{display:flex;align-items:center;gap:11px}
-.brand-mark{width:40px;height:40px;border-radius:50%;background:var(--ink);color:var(--yellow);display:grid;place-items:center;
-  font-family:var(--display);font-size:15px;font-weight:600;flex:0 0 auto}
+.brand-mark{width:40px;height:40px;border-radius:50%;overflow:hidden;display:block;flex-shrink:0;background:var(--red)}
+.brand-mark img{width:100%;height:100%;object-fit:cover;display:block}
 .brand-name{font-family:var(--display);font-size:19px;font-weight:600;line-height:1;letter-spacing:-.01em}
 .brand-sub{font-size:9px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-3);margin-top:4px}
 .nav-links{display:flex;align-items:center;gap:30px}
@@ -216,7 +216,7 @@ section{position:relative}
 .he-txt b{font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--red);display:block}
 .he-txt small{font-size:11px;color:var(--ink-3);letter-spacing:.06em}
 
-#hero h1{font-family:var(--deva);font-weight:600;font-size:clamp(38px,6vw,82px);line-height:1.16;letter-spacing:0;
+#hero h1{font-family:var(--deva);font-weight:600;font-size:clamp(38px,6vw,82px);line-height:1.42;letter-spacing:0;
   color:var(--gold);background:linear-gradient(92deg,var(--gold-deep),var(--gold) 55%,var(--yellow));
   -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
 @supports not ((-webkit-background-clip:text) or (background-clip:text)){#hero h1{color:var(--gold)}}
@@ -461,7 +461,7 @@ section p.eyebrow{color:var(--red);max-width:none;margin-bottom:0;font-size:11px
 <nav id="nav">
   <div class="nav-in">
     <a href="#hero" class="brand" aria-label="Kathmandu Momo — home">
-      <span class="brand-mark" aria-hidden="true">KM</span>
+      <span class="brand-mark" aria-hidden="true"><img src="/icon-192.png?v=2083" alt="" width="40" height="40"></span>
       <span>
         <span class="brand-name">Kathmandu Momo</span>
         <span class="brand-sub">Birendranagar · Surkhet</span>
@@ -470,8 +470,8 @@ section p.eyebrow{color:var(--red);max-width:none;margin-bottom:0;font-size:11px
     <div class="nav-links">
       <a href="#story">Story</a>
       <a href="#signatures">Signatures</a>
-      <a href="#menu">Menu</a>
-      <a href="#gallery">Gallery</a>
+      <a href="/menu">Menu</a>
+      <a href="/gallery">Gallery</a>
       <a href="#reserve">Visit</a>
     </div>
     <a href="#reserve" class="btn btn-red">Reserve a Table</a>
@@ -483,8 +483,8 @@ section p.eyebrow{color:var(--red);max-width:none;margin-bottom:0;font-size:11px
   <button class="sheet-close" id="sheetClose" aria-label="Close menu">&times;</button>
   <a href="#story">Story</a>
   <a href="#signatures">Signatures</a>
-  <a href="#menu">Menu</a>
-  <a href="#gallery">Gallery</a>
+  <a href="/menu">Menu</a>
+  <a href="/gallery">Gallery</a>
   <a href="#reserve">Reserve &amp; Visit</a>
   <a href="tel:+9779849216081" class="sheet-foot">+977 984-9216081</a>
 </div>
@@ -494,10 +494,6 @@ section p.eyebrow{color:var(--red);max-width:none;margin-bottom:0;font-size:11px
   <div class="hero-sheet" aria-hidden="true"></div>
   <div class="wrap hero-in">
     <div class="hero-text rv in">
-      <div class="hero-eyebrow">
-        <span class="hero-seal" aria-hidden="true">मःम</span>
-        <span class="he-txt"><b>Kathmandu Momo</b><small>Estd. 2019 · Birendranagar, Surkhet</small></span>
-      </div>
       <h1>
         <span class="line"><span>सस्तो पनि, राम्रो पनि,</span></span>
         <span class="line"><span>छिटो पनि, मिठो पनि।</span></span>
@@ -543,10 +539,6 @@ section p.eyebrow{color:var(--red);max-width:none;margin-bottom:0;font-size:11px
       <figure class="garnish g-1"><img src="/images/kathmandu-momo/dishes/dish-chicken-chilly.jpg" alt="" aria-hidden="true" loading="lazy"></figure>
       <figure class="garnish g-2"><img src="/images/kathmandu-momo/dishes/dish-chatamari.jpg" alt="" aria-hidden="true" loading="lazy"></figure>
       <figure class="garnish g-3"><img src="/images/kathmandu-momo/dishes/dish-fry-momo.jpg" alt="" aria-hidden="true" loading="lazy"></figure>
-      <div class="hero-tag">
-        <span class="dot" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 00-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 00-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg></span>
-        <div><b>Birendranagar, Surkhet</b><span>On the main bazaar stretch</span></div>
-      </div>
     </div>
   </div>
 </section>
@@ -652,100 +644,6 @@ section p.eyebrow{color:var(--red);max-width:none;margin-bottom:0;font-size:11px
         </div>
       </article>
     </div>
-  </div>
-</section>
-
-<!-- ===================================================== MENU -->
-<section id="menu" class="band">
-  <div class="wrap menu-shell">
-    <div class="sec-head rv">
-      <div>
-        <p class="eyebrow">The Menu</p>
-        <h2>Thirteen sections.<br>One kitchen.</h2>
-      </div>
-      <p>A preview. Live prices and every dish sit on the full menu, straight from our kitchen system.</p>
-    </div>
-
-    <div id="cats">
-      <div class="cat">
-        <button class="cat-btn" aria-expanded="false"><span class="cat-idx">01</span><span class="cat-name">Momo Specials</span><span class="cat-sign" aria-hidden="true"></span></button>
-        <div class="cat-panel"><div><ul class="cat-items">
-          <li>Chicken Momo — Steam <span class="non" aria-label="Non-veg"></span></li>
-          <li>Chicken Momo — Fry <span class="non" aria-label="Non-veg"></span></li>
-          <li>Chicken Momo — Jhol <span class="non" aria-label="Non-veg"></span></li>
-          <li>Chicken C. Momo <span class="non" aria-label="Non-veg"></span></li>
-          <li>Mutton Momo — Steam <span class="non" aria-label="Non-veg"></span></li>
-          <li>Mutton Momo — Fry <span class="non" aria-label="Non-veg"></span></li>
-          <li>Kothey Momo <span class="non" aria-label="Non-veg"></span></li>
-          <li>Veg Momo <span class="veg" aria-label="Veg"></span></li>
-          <li>Paneer Momo <span class="veg" aria-label="Veg"></span></li>
-        </ul></div></div>
-      </div>
-
-      <div class="cat">
-        <button class="cat-btn" aria-expanded="false"><span class="cat-idx">02</span><span class="cat-name">KTM Special Food</span><span class="cat-sign" aria-hidden="true"></span></button>
-        <div class="cat-panel"><div>
-          <ul class="cat-items">
-            <li>Chicken Chatamari <span class="non" aria-label="Non-veg"></span></li>
-            <li>Nepali Thali <span class="non" aria-label="Non-veg"></span></li>
-            <li>Chicken Sekuwa Set <span class="non" aria-label="Non-veg"></span></li>
-            <li>Today's Special <span class="non" aria-label="Non-veg"></span></li>
-          </ul>
-          <p class="cat-note">Today's Special changes with the market. Ask the counter, or call ahead.</p>
-        </div></div>
-      </div>
-
-      <div class="cat">
-        <button class="cat-btn" aria-expanded="false"><span class="cat-idx">03</span><span class="cat-name">Rice &amp; Noodles</span><span class="cat-sign" aria-hidden="true"></span></button>
-        <div class="cat-panel"><div><ul class="cat-items">
-          <li>Mushroom Fried Rice <span class="veg" aria-label="Veg"></span></li>
-          <li>Chicken Fried Rice <span class="non" aria-label="Non-veg"></span></li>
-          <li>Veg Fried Rice <span class="veg" aria-label="Veg"></span></li>
-          <li>Chicken Chowmein <span class="non" aria-label="Non-veg"></span></li>
-          <li>Veg Chowmein <span class="veg" aria-label="Veg"></span></li>
-          <li>Chicken Thukpa <span class="non" aria-label="Non-veg"></span></li>
-        </ul></div></div>
-      </div>
-
-      <div class="cat">
-        <button class="cat-btn" aria-expanded="false"><span class="cat-idx">04</span><span class="cat-name">Starters &amp; Soup</span><span class="cat-sign" aria-hidden="true"></span></button>
-        <div class="cat-panel"><div><ul class="cat-items">
-          <li>Chicken Chilly <span class="non" aria-label="Non-veg"></span></li>
-          <li>Chicken Lollipop <span class="non" aria-label="Non-veg"></span></li>
-          <li>Mutton Starters <span class="non" aria-label="Non-veg"></span></li>
-          <li>Hot &amp; Sour Soup <span class="veg" aria-label="Veg"></span></li>
-          <li>Veg Manchow Soup <span class="veg" aria-label="Veg"></span></li>
-          <li>Mushroom Soup <span class="veg" aria-label="Veg"></span></li>
-        </ul></div></div>
-      </div>
-
-      <div class="cat">
-        <button class="cat-btn" aria-expanded="false"><span class="cat-idx">05</span><span class="cat-name">Fast Food &amp; Breakfast</span><span class="cat-sign" aria-hidden="true"></span></button>
-        <div class="cat-panel"><div><ul class="cat-items">
-          <li>Chicken Pizza — Medium <span class="non" aria-label="Non-veg"></span></li>
-          <li>Chicken Burger <span class="non" aria-label="Non-veg"></span></li>
-          <li>Veg Sandwich <span class="veg" aria-label="Veg"></span></li>
-          <li>French Fries <span class="veg" aria-label="Veg"></span></li>
-          <li>Breakfast Set <span class="non" aria-label="Non-veg"></span></li>
-          <li>Aalu Paratha <span class="veg" aria-label="Veg"></span></li>
-        </ul></div></div>
-      </div>
-
-      <div class="cat">
-        <button class="cat-btn" aria-expanded="false"><span class="cat-idx">06</span><span class="cat-name">Beverages</span><span class="cat-sign" aria-hidden="true"></span></button>
-        <div class="cat-panel"><div><ul class="cat-items">
-          <li>Milk Tea <span class="veg" aria-label="Veg"></span></li>
-          <li>Black Tea <span class="veg" aria-label="Veg"></span></li>
-          <li>Milk Coffee <span class="veg" aria-label="Veg"></span></li>
-          <li>Black Coffee <span class="veg" aria-label="Veg"></span></li>
-          <li>Fresh Lime Soda <span class="veg" aria-label="Veg"></span></li>
-          <li>Cold Drinks <span class="veg" aria-label="Veg"></span></li>
-        </ul></div></div>
-      </div>
-    </div>
-
-    <div class="menu-foot rv"><a href="/menu" class="btn btn-red">View Full Menu
-      <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></div>
   </div>
 </section>
 
@@ -857,7 +755,7 @@ section p.eyebrow{color:var(--red);max-width:none;margin-bottom:0;font-size:11px
     <div class="foot-grid">
       <div class="foot-brand">
         <a href="#hero" class="brand">
-          <span class="brand-mark" aria-hidden="true">KM</span>
+          <span class="brand-mark" aria-hidden="true"><img src="/icon-192.png?v=2083" alt="" width="40" height="40"></span>
           <span><span class="brand-name">Kathmandu Momo</span><span class="brand-sub">Birendranagar · Surkhet</span></span>
         </a>
         <p>Momo steamed to order, Nepali plates cooked properly, and a room worth sitting in. सस्तो पनि, राम्रो पनि, छिटो पनि, मिठो पनि.</p>

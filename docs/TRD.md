@@ -1,111 +1,76 @@
 # Technical Requirements Document
 
-## 1. System profile
+## Architecture
 
-| Area | Implementation |
-|---|---|
-| Runtime | Node.js `>=22 <23` |
-| Framework | Next.js 16 App Router, React 19 |
-| UI | Tailwind CSS 4, Radix UI, Recharts, Lucide |
-| Production database | PostgreSQL; `pg` connection pool |
-| Local database | SQLite through optional `better-sqlite3` and local seed |
-| Authentication | bcrypt credentials, database sessions, bearer/cookie support |
-| Hosting entry | `server.js`; cPanel-compatible HTTP server and graceful shutdown |
-| Assets | bundled public assets plus persistent `UPLOADS_DIR` served by `/api/media` |
-| Printing | browser thermal receipt rendering for 58mm/80mm |
-
-Repository snapshot: 64 page files, 100 API route files, and 45 tables in `deploy/production_schema.sql`.
-
-## 2. Architecture
+The system is a Next.js 16 App Router application running on React 19. Pages and API route handlers share one deployment. `server.js` starts the production Next server and honors the host-provided `PORT` and `HOSTNAME`.
 
 ```text
-Browser / mobile / POS terminal
-  -> Next.js pages and static landing page
-  -> App Router route handlers
-  -> auth, CSRF, permission, validation, rate-limit services
-  -> domain libraries and repositories
-  -> database adapter
-  -> PostgreSQL (production) or SQLite (development)
+Browser
+  -> Next.js pages/components
+  -> app/api route handlers
+  -> domain services in lib/
+  -> repositories and SQL adapter in lib/db/
+  -> PostgreSQL (production) or SQLite (local fallback)
 ```
 
-The same order, bill, inventory, and accounting services are shared across waiter, cashier, admin, kitchen, and public QR flows. Production must never silently fall back to a local SQLite file when PostgreSQL is expected.
+## Runtime requirements
 
-## 3. Code boundaries
+- Node.js `>=22 <23`
+- npm with the committed `package-lock.json`
+- PostgreSQL 14+ for production
+- Writable persistent upload directory configured by `UPLOADS_DIR`
+- HTTPS and secure cookies in production
 
-- `app/`: pages, layouts, errors, and route handlers.
-- `components/`: domain and reusable UI components.
-- `lib/`: auth, validation, domain rules, accounting, reporting, printing, uploads, and database access.
-- `lib/db/repositories/`: menu, table, order, KOT, and bill persistence boundaries.
-- `migrations/`: forward-only incremental PostgreSQL changes.
-- `deploy/`: fresh production schema/seed and menu/default seed packs.
-- `scripts/`: migration, seed, health, asset build, and invariant checks.
-- `public/`: static landing page, brand images, icons, and bundled menu imagery.
+## Code organization
 
-## 4. Runtime requirements
+| Path | Responsibility |
+|---|---|
+| `app/(public)` | Public restaurant pages |
+| `app/admin` | Protected counter and management pages |
+| `app/api` | HTTP API route handlers |
+| `components` | Shared and feature UI components |
+| `lib` | Domain rules, validation, auth, accounting, and data access |
+| `lib/db` | Database selection, SQL helpers, and repositories |
+| `migrations` | Ordered incremental schema changes |
+| `deploy` | Fresh-production schema, seed, and install instructions |
+| `scripts` | Migration, seed, import, verification, and health utilities |
+| `tests/e2e` | Playwright browser acceptance tests |
 
-- Required production values: `NODE_ENV=production`, `APP_URL`, `DATABASE_URL`, strong `SESSION_SECRET` and `CSRF_SECRET`, `FORCE_SECURE_COOKIES=1`, `HOSTNAME=0.0.0.0`, and persistent `UPLOADS_DIR`.
-- cPanel supplies `PORT`; do not hardcode it.
-- PostgreSQL connection pool and SSL values must match the host.
-- Secrets must be injected by the host or a protected `.env`, never committed or exposed to the client.
-- Releases use `npm ci` and `npm run build` (`next build --webpack`).
+## Key engineering requirements
 
-## 5. Data and transaction requirements
+- Route handlers validate untrusted input and use parameterized database queries.
+- Protected operations use the shared authentication/authorization helpers.
+- Monetary calculations use the shared billing/accounting functions; UI code must not become the source of truth.
+- Multi-write business operations run in database transactions.
+- Accounting posts balanced journal lines and uses external references/idempotency where supported.
+- Order and stock transitions are explicit and reject invalid repeat transitions.
+- Public endpoints use rate limiting where abuse is plausible.
+- Logs must be useful operationally without exposing secrets, PINs, tokens, or sensitive request bodies.
 
-- PostgreSQL schema and `schema_migrations` are authoritative in production.
-- Multi-table business operations use a database transaction: payment, accounting post, inventory-impacting receipts/corrections, and table/order operations.
-- Foreign keys, checks, uniqueness, and partial indexes remain enabled.
-- Currency values must follow application rounding consistently; accounting migration `018_accounting_numeric.sql` is part of the required chain.
-- Query endpoints use bounded pagination/date ranges where exposed and indexes for common order/status/date lookups.
-- Production migrations are append-only; never edit an already-applied migration.
+## Data and migration strategy
 
-## 6. API requirements
+Fresh production installs load `deploy/production_schema.sql` followed by `deploy/production_seed.sql`. Existing installations apply ordered files through `npm run db:migrate`. Every schema change must include an idempotent migration and, before release, a refreshed production schema when the deployment process requires it.
 
-- JSON is the default request/response format; uploads use multipart form data.
-- Protected routes call shared authentication and enforce role or action permission on the server.
-- Cookie-authenticated unsafe methods require double-submit CSRF. Bearer clients are subject to session verification.
-- Validation failures use 4xx; unauthenticated 401; forbidden 403; conflict 409 where defined; rate limit 429; removed legacy features 410; safe unexpected failure 500.
-- API responses must not include secrets, SQL text, stack traces, or absolute paths in production.
-- Public order endpoints recalculate price and availability on the server.
+## Configuration
 
-## 7. UI requirements
+Required production variables are `NODE_ENV`, `APP_URL`, `DATABASE_URL`, `SESSION_SECRET`, `CSRF_SECRET`, `FORCE_SECURE_COOKIES`, `HOSTNAME`, and `UPLOADS_DIR`. Pool, SSL, rate-limit, and logging variables are described in `.env.example`. Secrets must be injected by the hosting environment or an untracked `.env` file.
 
-- Staff surfaces support common desktop/tablet sizes; public and QR flows support mobile widths.
-- Every asynchronous screen provides loading, empty, success, and recoverable error states.
-- Forms expose field-level validation and prevent accidental duplicate submission.
-- Keyboard navigation, visible focus, semantic labels, contrast, zoom to 200%, and reduced-motion behavior are verified.
-- Print output is legible on configured 58mm and 80mm paper and excludes navigation/control chrome.
+## Quality gates
 
-## 8. Security and observability
-
-- Middleware emits CSP, nosniff, frame protection, referrer policy, permissions policy, and production HSTS.
-- Login/public submissions are DB-rate-limited by client IP.
-- Structured logs must allow request/error diagnosis while redacting credentials, tokens, personal data, and filesystem paths.
-- Health checks verify database reachability but disclose no secret/configuration detail.
-- Application shutdown closes the HTTP listener and database pool on SIGTERM/SIGINT.
-
-## 9. Verification commands
+Run these from the repository root:
 
 ```bash
 npm run lint
 npm run build
+npm run test:e2e
 npm run health
-node scripts/check-accounting.mjs
-node scripts/check-entry-math.mjs
-node scripts/check-inventory-ledger.mjs
-node scripts/check-unit-conversions.mjs
-node scripts/check-units.mjs
-npm run check:permissions
-npm run check:table-ops
-npm run check:reopen
-npm run check:waiter
 ```
 
-Database-dependent scripts must run against an isolated QA database. A production build, database restore drill, and live smoke suite are mandatory release evidence.
+Database verification scripts (`check-accounting`, `check-entry-math`, inventory/unit checks) should also pass against the release database or a production-like copy.
 
-## 10. Known technical constraints
+## Operational requirements
 
-- The landing page is a static HTML file rewritten to `/`; changes require separate public/staff validation.
-- Uploaded files are outside the release bundle and require a separate backup.
-- Browser printing depends on OS/browser/printer configuration and must be tested on the real terminal.
-- Local SQLite is useful for development but does not replace PostgreSQL acceptance testing.
-
+- Nightly PostgreSQL dump and upload-folder backup, retained for 7–30 days.
+- A documented restore test before launch and after meaningful schema changes.
+- Health monitoring of `/api/health`, application errors, storage, and database connectivity.
+- Rollback deploy must not roll back the database blindly; use forward corrective migrations when data has already been written.

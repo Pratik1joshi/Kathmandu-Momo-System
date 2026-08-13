@@ -1,29 +1,33 @@
 import { NextResponse } from 'next/server';
 import Database from '@/lib/db/index.js';
 import { requireAuth, handleRouteError } from '@/lib/api-guard.js';
-import { getRolePermissions, saveRolePermissions, PERMISSION_ACTIONS } from '@/lib/permissions.js';
+import { listRolePermissions, setRolePermissions, permissionAuditHistory } from '@/lib/permissions.js';
 
-/** GET — the full role→permission matrix (admin configures waiter + cashier). */
 export async function GET(request) {
-  const auth = await requireAuth(request, { roles: ['admin'] });
-  if (auth.error) return auth.error;
   try {
-    const permissions = await getRolePermissions(Database.getInstance());
-    return NextResponse.json({ success: true, permissions, actions: PERMISSION_ACTIONS });
+    const auth = await requireAuth(request, { roles: ['admin'] });
+    if (auth.error) return auth.error;
+    const db = Database.getInstance();
+    const view = new URL(request.url).searchParams.get('view');
+    const matrix = await listRolePermissions(db);
+    if (view === 'audit') {
+      return NextResponse.json({ ...matrix, audit: await permissionAuditHistory(db) });
+    }
+    return NextResponse.json(matrix);
   } catch (error) {
-    return handleRouteError(error, 'Could not load permissions.');
+    return handleRouteError(error, 'Could not load the permission matrix.');
   }
 }
 
-/** PUT — save overrides for waiter/cashier. Admin stays full access. */
 export async function PUT(request) {
-  const auth = await requireAuth(request, { roles: ['admin'] });
-  if (auth.error) return auth.error;
   try {
+    const auth = await requireAuth(request, { roles: ['admin'] });
+    if (auth.error) return auth.error;
+    const db = Database.getInstance();
     const body = await request.json();
-    const permissions = await saveRolePermissions(Database.getInstance(), body.permissions || body);
-    return NextResponse.json({ success: true, permissions });
+    const matrix = await setRolePermissions(db, body.updates, auth.user);
+    return NextResponse.json({ message: 'Permissions updated.', ...matrix });
   } catch (error) {
-    return handleRouteError(error, 'Could not save permissions.');
+    return handleRouteError(error, 'Could not save permission changes.');
   }
 }

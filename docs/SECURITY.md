@@ -1,79 +1,63 @@
 # Security Guide
 
-## 1. Security model
+## Security model
 
-The application uses bcrypt-protected staff credentials, database-backed sessions, role and configurable action authorization, double-submit CSRF for cookie-authenticated mutations, DB-backed IP rate limiting, validation, and HTTP security headers. Security is enforced at the API, not only by hidden UI controls.
+The application uses server-side sessions, credential hashing, route-level authorization, origin/CSRF protection, rate limiting, parameterized SQL, and controlled media storage. Security controls must be enforced on the server; hidden UI controls are not authorization.
 
-## 2. Authentication and session controls
+## Production baseline
 
-- `pos_session` must be `HttpOnly`, `Secure` in production, `SameSite=Strict`, scoped to `/`, and have the intended expiration.
-- `pos_csrf` is readable by the client but must also be provided in `x-csrf-token` for unsafe cookie-authenticated requests.
-- Session tokens must be high entropy, stored/validated server-side, expire, and be invalidated on logout.
-- Failed login is generic, timing-safe as practical, and rate-limited; inactive users cannot authenticate.
-- First/default admin credential must be changed before launch. No production secret may equal `.env.example`.
+- Serve only through HTTPS.
+- Set `FORCE_SECURE_COOKIES=1`.
+- Generate independent, high-entropy `SESSION_SECRET` and `CSRF_SECRET` values.
+- Keep `.env`, SQL deployment files, logs, backups, and uploads outside `public_html` where possible.
+- Give the application database user access only to its own database.
+- Change the seeded administrator credential immediately after first login.
+- Restrict cPanel, database, and backup access with unique credentials and MFA where available.
 
-## 3. Authorization matrix
+## Authentication and sessions
 
-| Action | Public | Waiter | Kitchen | Cashier | Admin |
-|---|---:|---:|---:|---:|---:|
-| View public menu / submit public form | Yes | Yes | Yes | Yes | Yes |
-| Create/edit order, send KOT | QR-limited | Default yes | No | Default yes | Yes |
-| Update kitchen ticket | No | As allowed by route | Yes | As allowed | Yes |
-| Complete/split payment | No | Default no | No | Default yes | Yes |
-| Discount/reopen | No | Default no | No | Default yes | Yes |
-| Void/refund | No | Default no | No | Default no | Yes |
-| Manage staff/settings/accounting | No | No | No | No | Yes |
+- Credentials/PINs are hashed and compared using the shared auth service.
+- Login is rate-limited; generic errors should not reveal whether a username exists.
+- Sessions are stored server-side with expiration and can be revoked on logout.
+- Cookies must be `HttpOnly`, `Secure` in production, and use an appropriate `SameSite` policy.
+- Privileged routes verify the current user and allowed role on every request.
 
-The actual waiter/cashier action map can be overridden in Settings. QA must test both default and changed permissions with direct API calls.
+## Request protection
 
-## 4. Input and API security
+- Validate all bodies, query values, path IDs, and enum/status transitions.
+- Mutating cookie-authenticated requests must pass origin/CSRF checks.
+- Use parameterized SQL; never interpolate untrusted values into a query.
+- Do not trust client prices, totals, account IDs, role values, or stock effects.
+- Rate-limit login, public ordering, inquiries, and other abuse-prone endpoints.
 
-- Use parameterized SQL through the database layer; test quote, comment, boolean, and time-delay injection payloads.
-- Validate type, range, enum, length, ID ownership, state transition, and server-side price.
-- Reject JSON prototype keys where dangerous, oversized payloads, malformed encodings, and non-finite numbers.
-- Escape untrusted text in pages, receipts, exports, and logs; test stored/reflected XSS in names, notes, instructions, inquiries, suppliers, products, and settings.
-- Public reservation, inquiry, login, and QR order abuse is rate-limited without trusting a spoofable forwarding header configuration.
-- Legacy endpoints return 410 and perform no reads/writes.
+## Uploads and media
 
-## 5. File security
+- Allow-list MIME types/extensions and enforce size limits.
+- Generate server filenames; strip path components from user filenames.
+- Resolve and verify that every destination remains under `UPLOADS_DIR`.
+- Do not execute uploaded files or serve them with an executable content type.
+- Back up uploads and scan suspicious content before publication when possible.
 
-- Allow only necessary image formats and verified content; enforce byte-size and dimension limits.
-- Generate filenames; do not trust client paths or original extensions.
-- `/api/media` must block raw/encoded traversal, alternate separators, null bytes, absolute paths, dotfiles, `.env`, source files, and files outside `UPLOADS_DIR`.
-- Uploads are non-executable and stored outside the public application source where possible.
+## Data and logging
 
-## 6. Browser and transport controls
+- Never log passwords/PINs, session tokens, cookies, secret environment values, full payment credentials, or raw database URLs.
+- Avoid collecting customer data not required for service.
+- Limit who can export reports or view customer/employee/financial records.
+- Encrypt backup transport/storage and test deletion/retention procedures.
 
-Expected middleware headers include CSP, `X-Content-Type-Options: nosniff`, frame protection, `Referrer-Policy`, `Permissions-Policy`, and production HSTS. Validate HTTPS redirect at the proxy, current TLS, no mixed content, correct certificate chain, and that CSP does not break required images/fonts/maps/analytics.
+## Dependency and release hygiene
 
-Review the CSP before launch: it currently permits inline/eval script allowances for application/tooling compatibility and permits configured Vercel sources. Reduce these allowances when feasible and ensure production domains are intentional.
+- Commit and deploy from `package-lock.json` with Node 22.
+- Review dependency advisories and framework security releases before launch.
+- Run lint, build, E2E tests, and targeted authorization checks for every release.
+- Do not expose source maps, verbose errors, or development mode in production.
 
-## 7. Secrets, data, and logging
+## Incident response
 
-- `.env`, database credentials, session/CSRF secrets, admin seed credentials, payment references, and backups are never web-accessible or committed.
-- DB user is restricted to the application database and only required permissions.
-- Logs contain event/context but no credential, cookie, bearer token, full card/payment secret, raw sensitive payload, or absolute internal path.
-- Customer/employee data access is role-limited. Export and backup access is audited and retained only per business policy.
+1. Preserve logs and note the detection time and affected accounts/actions.
+2. Contain access: revoke sessions, rotate application/database credentials, and disable the vulnerable route if required.
+3. Assess data and financial integrity, including order, payment, stock, and journal changes.
+4. Restore or correct through audited operations; do not erase evidence.
+5. Patch, test, redeploy, monitor, and document preventive actions.
 
-## 8. Security test checklist
-
-- [ ] Unauthenticated protected endpoints return 401.
-- [ ] Cross-role and revoked-permission calls return 403 with no state change.
-- [ ] Missing/mismatched CSRF on cookie mutation returns 403; valid CSRF succeeds.
-- [ ] Reused/expired/logged-out session fails.
-- [ ] Login and public rate limits return 429 and recover after the window.
-- [ ] ID enumeration does not expose other records or forbidden financial/customer data.
-- [ ] SQLi/XSS/traversal/upload polyglot tests fail safely.
-- [ ] Duplicate/concurrent payment, refund, purchase, and table operations are idempotent/conflict-safe.
-- [ ] Production errors contain no `debugStack`, SQL, disk path, or secret.
-- [ ] Dependency and secret scans have no unaccepted high/critical finding.
-- [ ] HTTPS/cookie/header/CORS behavior is correct on the real domain.
-
-## 9. Important implementation review item
-
-`lib/api-guard.js` currently constructs unexpected-error responses with `debugMessage` and `debugStack`. Although the normal message is sanitized, production QA must verify these fields are not returned to clients. Treat any internal stack, SQL detail, or filesystem path in a production response as a release blocker and remove/gate the debug fields before launch.
-
-## 10. Incident basics
-
-On suspected compromise: preserve logs, disable affected accounts/sessions, rotate session/CSRF/database/admin secrets, isolate the service if needed, back up evidence, assess affected records, restore from a known-good point, and document timeline/actions. Do not destroy evidence or overwrite the only backup.
-
+Report suspected vulnerabilities privately to the project owner; do not place exploitable details or real secrets in a public issue.

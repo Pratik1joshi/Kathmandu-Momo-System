@@ -23,7 +23,14 @@ async function seedDefaultsIfEmpty(db) {
   const existing = await db.all('SELECT setting_key FROM system_settings LIMIT 1');
   if (existing?.length) return;
 
-  let restaurantInfo = { name: '', address: '', phone: '', email: '' };
+  // Kathmandu Momo deployment identity — used only when no settings exist yet.
+  // All values remain editable in Settings; nothing here is hard-coded at billing time.
+  let restaurantInfo = {
+    name: 'Kathmandu Momo',
+    address: 'Birendranagar, Surkhet, Karnali Province, Nepal',
+    phone: '+977 984-9216081',
+    email: '',
+  };
   let ownerName = '';
   try {
     const licenseInfo = await db.get(`
@@ -32,10 +39,10 @@ async function seedDefaultsIfEmpty(db) {
     `);
     if (licenseInfo) {
       restaurantInfo = {
-        name: licenseInfo.restaurant_name || '',
-        address: licenseInfo.restaurant_address || '',
-        phone: licenseInfo.restaurant_phone || '',
-        email: licenseInfo.restaurant_email || '',
+        name: licenseInfo.restaurant_name || restaurantInfo.name,
+        address: licenseInfo.restaurant_address || restaurantInfo.address,
+        phone: licenseInfo.restaurant_phone || restaurantInfo.phone,
+        email: licenseInfo.restaurant_email || restaurantInfo.email,
       };
       ownerName = licenseInfo.owner_name || '';
     }
@@ -44,8 +51,9 @@ async function seedDefaultsIfEmpty(db) {
   }
 
   const defaults = [
-    { key: 'vat_percentage', value: '13' },
-    { key: 'service_charge_percentage', value: '10' },
+    // Tax/service default to 0% and are editable in Settings — no rate is assumed.
+    { key: 'vat_percentage', value: '0' },
+    { key: 'service_charge_percentage', value: '0' },
     { key: 'restaurant_name', value: restaurantInfo.name },
     { key: 'restaurant_address', value: restaurantInfo.address },
     { key: 'restaurant_phone', value: restaurantInfo.phone },
@@ -55,6 +63,13 @@ async function seedDefaultsIfEmpty(db) {
     { key: 'pan_number', value: '' },
     { key: 'bank_qr_image', value: '' },
     { key: 'esewa_qr_image', value: '' },
+    { key: 'delivery_pricing_enabled', value: 'false' },
+    { key: 'delivery_pricing_mode', value: 'fixed' },
+    { key: 'delivery_fixed_fee', value: '0' },
+    { key: 'delivery_distance_bands', value: '[]' },
+    { key: 'delivery_per_km_rate', value: '0' },
+    { key: 'delivery_minimum_fee', value: '0' },
+    { key: 'delivery_max_distance_km', value: '0' },
   ];
 
   for (const setting of defaults) {
@@ -71,7 +86,7 @@ async function seedDefaultsIfEmpty(db) {
 
 export async function GET(request) {
   try {
-    const auth = await requireAuth(request, { roles: ['admin', 'cashier'] });
+    const auth = await requireAuth(request, { roles: ['admin', 'cashier', 'waiter', 'kitchen'] });
     if (auth.error) return auth.error;
 
     const db = Database.getInstance();
@@ -88,6 +103,10 @@ export async function GET(request) {
       if (
         key === 'vat_percentage' ||
         key === 'service_charge_percentage' ||
+        key === 'delivery_fixed_fee' ||
+        key === 'delivery_per_km_rate' ||
+        key === 'delivery_minimum_fee' ||
+        key === 'delivery_max_distance_km' ||
         key.startsWith('reservation_')
       ) {
         value = parseFloat(value) || 0;

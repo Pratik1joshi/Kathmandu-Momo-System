@@ -11,6 +11,7 @@ import {
 import { useToast } from '@/components/ui/toast';
 import { friendlyFromError } from '@/lib/friendly-message';
 import QuickRestockModal from '@/components/inventory/quick-restock-modal';
+import { formatNepalDate, formatNepalTime } from '@/lib/time-utils';
 
 function authedRequest(url, options = {}) {
   const token = localStorage.getItem('pos_token');
@@ -122,10 +123,12 @@ export default function InventoryItemDetailPage() {
           <div className="rounded-xl border border-gray-200 bg-white p-5 space-y-2 text-sm">
             <h2 className="font-semibold text-gray-800 mb-2">Details</h2>
             <Row label="Min stock level" value={`${item.min_stock_level ?? '—'} ${item.consumption_unit || item.unit || ''}`} />
-            <Row label="Purchase unit" value={item.purchase_unit || '—'} />
-            <Row label="Conversion factor" value={item.conversion_factor || 1} />
+            <Row label="Unit" value={item.consumption_unit || item.unit || '—'} />
+            {item.purchase_unit && item.purchase_unit !== (item.consumption_unit || item.unit) && (
+              <Row label="Purchased as" value={`1 ${item.purchase_unit} = ${item.conversion_factor || 1} ${item.consumption_unit || item.unit}`} />
+            )}
             <Row label="Supplier" value={item.supplier || '—'} />
-            <Row label="Last purchase" value={lastPurchaseDate ? new Date(lastPurchaseDate).toLocaleDateString() : 'Never'} />
+            <Row label="Last purchase" value={lastPurchaseDate ? formatNepalDate(lastPurchaseDate) : 'Never'} />
             <Row label="Notes" value={item.notes || '—'} />
           </div>
 
@@ -184,7 +187,7 @@ export default function InventoryItemDetailPage() {
                       </span>
                     </div>
                     <p className="text-xs text-gray-500 mt-0.5">
-                      {new Date(m.created_at).toLocaleString()} · {m.performed_by_name || 'System'}
+                      {formatNepalTime(m.created_at)} · {m.performed_by_name || 'System'}
                       {m.reason ? ` · ${m.reason}` : ''}
                     </p>
                   </div>

@@ -12,6 +12,7 @@ import { useToast } from '@/components/ui/toast';
 import { friendlyMessage, friendlyFromError } from '@/lib/friendly-message';
 import { apiJson, authedRequest } from '@/lib/authed-fetch';
 import { StatusBadge } from '@/components/admin/data-grid';
+import { formatNepalTime } from '@/lib/time-utils';
 
 export const PURCHASE_STATUS = {
   received: { label: 'Received', tone: 'green' },
@@ -20,7 +21,7 @@ export const PURCHASE_STATUS = {
   voided: { label: 'Voided', tone: 'red' },
 };
 
-export default function PurchaseDrawer({ purchaseId, onClose, onChanged, onEdit }) {
+export default function PurchaseDrawer({ purchaseId, onClose, onChanged, onEdit, canEdit = true, canVoid = true }) {
   const { addToast } = useToast();
   const [purchase, setPurchase] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -97,12 +98,12 @@ export default function PurchaseDrawer({ purchaseId, onClose, onChanged, onEdit 
               <Detail label="Invoice date" value={purchase.invoice_date?.slice(0, 10) || '—'} />
               <Detail label="Expected delivery" value={purchase.expected_delivery_date?.slice(0, 10) || 'Not set'} />
               <Detail label="Received by" value={purchase.received_by_name || 'Not recorded'} />
-              <Detail label="Recorded" value={purchase.created_at ? new Date(purchase.created_at).toLocaleString() : '—'} />
+              <Detail label="Recorded" value={purchase.created_at ? formatNepalTime(purchase.created_at) : '—'} />
             </dl>
 
             {purchase.status === 'voided' && (
               <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
-                Voided {purchase.voided_at ? new Date(purchase.voided_at).toLocaleString() : ''}.
+                Voided {purchase.voided_at ? formatNepalTime(purchase.voided_at) : ''}.
                 {purchase.void_reason ? ` Reason: ${purchase.void_reason}.` : ''} The stock it added was reversed and its
                 expense removed. The record is kept for audit.
               </p>
@@ -200,7 +201,7 @@ export default function PurchaseDrawer({ purchaseId, onClose, onChanged, onEdit 
               </section>
             )}
 
-            {confirmVoid && (
+            {canVoid && confirmVoid && (
               <section className="rounded-xl border border-red-200 bg-red-50 p-4">
                 <p className="text-sm font-semibold text-red-900">Void this purchase?</p>
                 <ul className="mt-2 space-y-1 text-sm text-red-800">
@@ -227,14 +228,14 @@ export default function PurchaseDrawer({ purchaseId, onClose, onChanged, onEdit 
           </div>
         )}
 
-        {purchase && purchase.status !== 'voided' && !confirmVoid && (
+        {purchase && purchase.status !== 'voided' && !confirmVoid && (canEdit || canVoid) && (
           <footer className="sticky bottom-0 flex gap-2 border-t border-gray-200 bg-white px-5 py-4">
-            <button type="button" onClick={() => onEdit?.(purchase)} className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-gray-900 px-4 text-sm font-medium text-white hover:bg-gray-800">
+            {canEdit && <button type="button" onClick={() => onEdit?.(purchase)} className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-gray-900 px-4 text-sm font-medium text-white hover:bg-gray-800">
               <Pencil className="h-4 w-4" /> Edit
-            </button>
-            <button type="button" onClick={() => setConfirmVoid(true)} className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            </button>}
+            {canVoid && <button type="button" onClick={() => setConfirmVoid(true)} className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">
               <Ban className="h-4 w-4" /> Void / reverse
-            </button>
+            </button>}
           </footer>
         )}
       </aside>

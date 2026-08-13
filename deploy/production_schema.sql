@@ -3469,98 +3469,642 @@ ALTER TABLE ONLY public.wastage_log
 
 
 --
--- Migration 024: reopen paid bills + proforma (print-before-pay).
--- Kept as idempotent ALTERs so a fresh install from this file matches an
--- existing DB that has run migrations/024_reopen_bills.sql.
+-- Bill administration revision and audit tables (migration 025)
 --
 
-ALTER TABLE public.bill_corrections DROP CONSTRAINT IF EXISTS bill_corrections_type_check;
-ALTER TABLE public.bill_corrections
-    ADD CONSTRAINT bill_corrections_type_check CHECK (type IN ('void', 'refund', 'reopen'));
-
-ALTER TABLE public.bills  ADD COLUMN IF NOT EXISTS reopened_at timestamp without time zone;
-ALTER TABLE public.bills  ADD COLUMN IF NOT EXISTS reopen_count integer DEFAULT 0;
-ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS bill_printed_at timestamp without time zone;
-ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS reopened_from_bill_id integer;
-
-
---
--- Migration 025: table transfer / merge audit.
---
-
-CREATE TABLE IF NOT EXISTS public.table_ops_log (
-    id integer NOT NULL,
-    action text NOT NULL,
-    order_id integer,
-    merged_order_id integer,
-    from_table_id integer,
-    to_table_id integer,
+CREATE TABLE IF NOT EXISTS public.bill_revisions (
+    id serial PRIMARY KEY,
+    bill_id integer NOT NULL REFERENCES public.bills(id) ON DELETE CASCADE,
+    status text DEFAULT 'open'::text NOT NULL,
     reason text,
-    created_by integer,
+    original_snapshot text,
+    delta_amount numeric(14,2) DEFAULT 0,
+    supplemental_bill_id integer REFERENCES public.bills(id) ON DELETE SET NULL,
+    refund_amount numeric(14,2) DEFAULT 0,
+    revised_snapshot text,
+    created_by integer REFERENCES public.users(id) ON DELETE SET NULL,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT table_ops_log_action_check CHECK (action IN ('transfer', 'merge'))
+    finalized_by integer REFERENCES public.users(id) ON DELETE SET NULL,
+    finalized_at timestamp without time zone
 );
 
-CREATE SEQUENCE IF NOT EXISTS public.table_ops_log_id_seq AS integer START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1;
-ALTER SEQUENCE public.table_ops_log_id_seq OWNED BY public.table_ops_log.id;
-ALTER TABLE ONLY public.table_ops_log ALTER COLUMN id SET DEFAULT nextval('public.table_ops_log_id_seq'::regclass);
-DO $$ BEGIN
-  ALTER TABLE ONLY public.table_ops_log ADD CONSTRAINT table_ops_log_pkey PRIMARY KEY (id);
-EXCEPTION WHEN duplicate_table OR invalid_table_definition THEN NULL; END $$;
-CREATE INDEX IF NOT EXISTS idx_table_ops_order ON public.table_ops_log USING btree (order_id);
-
-ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS merged_into_order_id integer;
-
--- 027 admin enhancements: CMS, media metadata, audit trail, supplemental bills.
-CREATE TABLE IF NOT EXISTS public.cms_content (
-    content_key text PRIMARY KEY,
-    content_value text,
-    is_published integer NOT NULL DEFAULT 1,
-    updated_by integer REFERENCES public.users(id) ON DELETE SET NULL,
-    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS public.cms_media (
-    id SERIAL PRIMARY KEY,
-    url text NOT NULL UNIQUE,
-    original_name text,
-    mime_type text,
-    size_bytes integer NOT NULL DEFAULT 0,
-    width integer,
-    height integer,
-    alt_text text,
-    is_archived integer NOT NULL DEFAULT 0,
-    uploaded_by integer REFERENCES public.users(id) ON DELETE SET NULL,
-    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS public.audit_log (
-    id SERIAL PRIMARY KEY,
-    event_type text NOT NULL,
-    entity_type text NOT NULL,
-    entity_id text,
+CREATE TABLE IF NOT EXISTS public.bill_audit (
+    id serial PRIMARY KEY,
+    bill_id integer REFERENCES public.bills(id) ON DELETE CASCADE,
+    revision_id integer REFERENCES public.bill_revisions(id) ON DELETE SET NULL,
+    event text NOT NULL,
     actor_id integer REFERENCES public.users(id) ON DELETE SET NULL,
-    actor_role text,
-    before_data text,
-    after_data text,
+    previous_value text,
+    new_value text,
     reason text,
-    metadata text,
+    ref text,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_audit_log_entity ON public.audit_log(entity_type, entity_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_audit_log_event ON public.audit_log(event_type, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_cms_media_active ON public.cms_media(is_archived, created_at DESC);
-ALTER TABLE public.bills ADD COLUMN IF NOT EXISTS parent_bill_id integer REFERENCES public.bills(id) ON DELETE SET NULL;
-ALTER TABLE public.bill_corrections ADD COLUMN IF NOT EXISTS related_order_id integer REFERENCES public.orders(id) ON DELETE SET NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_one_active_revision
-  ON public.orders(reopened_from_bill_id)
-  WHERE reopened_from_bill_id IS NOT NULL AND status NOT IN ('completed', 'cancelled');
+CREATE UNIQUE INDEX IF NOT EXISTS ux_bill_revisions_open
+    ON public.bill_revisions (bill_id) WHERE status = 'open';
+CREATE INDEX IF NOT EXISTS idx_bill_revisions_bill
+    ON public.bill_revisions (bill_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_bill_audit_bill
+    ON public.bill_audit (bill_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_bill_audit_revision
+    ON public.bill_audit (revision_id);
+
+
+--
+-- Public checkout details and split billing (migration 026)
+--
+
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS delivery_address text;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS nearby_landmark text;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS customer_note text;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS idempotency_key text;
+CREATE UNIQUE INDEX IF NOT EXISTS ux_orders_idempotency_key ON public.orders (idempotency_key) WHERE idempotency_key IS NOT NULL;
+
+ALTER TABLE public.bills ADD COLUMN IF NOT EXISTS customer_id integer REFERENCES public.customers(id) ON DELETE SET NULL;
+ALTER TABLE public.bills ADD COLUMN IF NOT EXISTS outstanding_amount numeric(14,2) DEFAULT 0;
+ALTER TABLE public.bills ADD COLUMN IF NOT EXISTS payment_status text DEFAULT 'unpaid';
+ALTER TABLE public.bills ADD COLUMN IF NOT EXISTS idempotency_key text;
+CREATE UNIQUE INDEX IF NOT EXISTS ux_bills_idempotency_key ON public.bills (idempotency_key) WHERE idempotency_key IS NOT NULL;
+
+ALTER TABLE public.bill_payments ADD COLUMN IF NOT EXISTS provider text;
+ALTER TABLE public.bill_payments ADD COLUMN IF NOT EXISTS verification_status text DEFAULT 'not_required';
+ALTER TABLE public.bill_payments ADD COLUMN IF NOT EXISTS settlement_status text DEFAULT 'received';
+ALTER TABLE public.bill_payments ADD COLUMN IF NOT EXISTS verified_by integer REFERENCES public.users(id) ON DELETE SET NULL;
+ALTER TABLE public.bill_payments ADD COLUMN IF NOT EXISTS customer_id integer REFERENCES public.customers(id) ON DELETE SET NULL;
+ALTER TABLE public.bill_payments ADD COLUMN IF NOT EXISTS due_date date;
+ALTER TABLE public.bill_payments ADD COLUMN IF NOT EXISTS notes text;
+ALTER TABLE public.bill_payments ADD COLUMN IF NOT EXISTS cash_tendered numeric(14,2);
+ALTER TABLE public.bill_payments ADD COLUMN IF NOT EXISTS change_amount numeric(14,2) DEFAULT 0;
+ALTER TABLE public.bill_payments ADD COLUMN IF NOT EXISTS idempotency_key text;
+CREATE UNIQUE INDEX IF NOT EXISTS ux_bill_payments_idempotency_key ON public.bill_payments (idempotency_key) WHERE idempotency_key IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS public.bill_payment_allocations (
+    id serial PRIMARY KEY,
+    bill_id integer NOT NULL REFERENCES public.bills(id) ON DELETE CASCADE,
+    payment_id integer REFERENCES public.bill_payments(id) ON DELETE SET NULL,
+    method text NOT NULL CHECK (method IN ('cash', 'qr', 'credit')),
+    amount numeric(14,2) NOT NULL CHECK (amount > 0),
+    provider text,
+    reference_number text,
+    verification_status text DEFAULT 'not_required',
+    settlement_status text DEFAULT 'received',
+    customer_id integer REFERENCES public.customers(id) ON DELETE SET NULL,
+    due_date date,
+    notes text,
+    created_by integer REFERENCES public.users(id) ON DELETE SET NULL,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    idempotency_key text NOT NULL UNIQUE
+);
+CREATE INDEX IF NOT EXISTS idx_bill_allocations_bill ON public.bill_payment_allocations (bill_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_bill_allocations_customer ON public.bill_payment_allocations (customer_id) WHERE customer_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS public.customer_ledger (
+    id serial PRIMARY KEY,
+    customer_id integer NOT NULL REFERENCES public.customers(id) ON DELETE RESTRICT,
+    bill_id integer REFERENCES public.bills(id) ON DELETE SET NULL,
+    payment_id integer REFERENCES public.bill_payments(id) ON DELETE SET NULL,
+    entry_type text NOT NULL CHECK (entry_type IN ('credit_sale', 'credit_payment', 'refund', 'adjustment')),
+    debit numeric(14,2) NOT NULL DEFAULT 0 CHECK (debit >= 0),
+    credit numeric(14,2) NOT NULL DEFAULT 0 CHECK (credit >= 0),
+    due_date date,
+    note text,
+    created_by integer REFERENCES public.users(id) ON DELETE SET NULL,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    idempotency_key text NOT NULL UNIQUE,
+    CHECK (NOT (debit > 0 AND credit > 0))
+);
+CREATE INDEX IF NOT EXISTS idx_customer_ledger_customer ON public.customer_ledger (customer_id, created_at, id);
+CREATE INDEX IF NOT EXISTS idx_customer_ledger_bill ON public.customer_ledger (bill_id);
+
+ALTER TABLE public.journal_lines ADD COLUMN IF NOT EXISTS customer_id integer REFERENCES public.customers(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_journal_lines_customer ON public.journal_lines (customer_id) WHERE customer_id IS NOT NULL;
+
+
+--
+-- Online-order workflow columns (migration 024)
+--
+
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS payment_status text DEFAULT 'unpaid';
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS payment_method text;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS cancel_reason text;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS accepted_at timestamp without time zone;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS completed_at timestamp without time zone;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS cancelled_at timestamp without time zone;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS stock_consumed integer DEFAULT 0;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS stock_reserved integer DEFAULT 0;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS refunded_amount double precision DEFAULT 0;
+CREATE INDEX IF NOT EXISTS idx_orders_status_created ON public.orders (status, created_at);
+
+
+--
+-- VAT / Tax Payable account (migration 027) — data row is loaded by the seed.
+--
+
+
+--
+-- Admin single-operator POS / KOT workflow (migration 028)
+--
+
+ALTER TABLE public.order_items ADD COLUMN IF NOT EXISTS sent_quantity integer DEFAULT 0;
+ALTER TABLE public.order_items ADD COLUMN IF NOT EXISTS variant_name text;
+
+ALTER TABLE public.kots ADD COLUMN IF NOT EXISTS sequence integer DEFAULT 1;
+ALTER TABLE public.kots ADD COLUMN IF NOT EXISTS table_id integer;
+ALTER TABLE public.kots ADD COLUMN IF NOT EXISTS table_number text;
+ALTER TABLE public.kots ADD COLUMN IF NOT EXISTS order_type text;
+ALTER TABLE public.kots ADD COLUMN IF NOT EXISTS kot_type text DEFAULT 'new';
+ALTER TABLE public.kots ADD COLUMN IF NOT EXISTS issued_by integer;
+ALTER TABLE public.kots ADD COLUMN IF NOT EXISTS issued_by_name text;
+ALTER TABLE public.kots ADD COLUMN IF NOT EXISTS order_notes text;
+ALTER TABLE public.kots ADD COLUMN IF NOT EXISTS reprint_count integer DEFAULT 0;
+ALTER TABLE public.kots ADD COLUMN IF NOT EXISTS last_printed_at timestamp without time zone;
+ALTER TABLE public.kots ADD COLUMN IF NOT EXISTS amends_kot_id integer;
+ALTER TABLE public.kots ADD COLUMN IF NOT EXISTS voided integer DEFAULT 0;
+ALTER TABLE public.kots ADD COLUMN IF NOT EXISTS idempotency_key text;
+CREATE UNIQUE INDEX IF NOT EXISTS ux_kots_idempotency_key ON public.kots (idempotency_key) WHERE idempotency_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_kots_order_seq ON public.kots (order_id, sequence);
+
+ALTER TABLE public.kot_items ADD COLUMN IF NOT EXISTS item_name text;
+ALTER TABLE public.kot_items ADD COLUMN IF NOT EXISTS variant_name text;
+ALTER TABLE public.kot_items ADD COLUMN IF NOT EXISTS is_cancellation integer DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS public.pos_audit_log (
+    id serial PRIMARY KEY,
+    action text NOT NULL,
+    actor_id integer,
+    actor_name text,
+    order_id integer,
+    table_id integer,
+    kot_id integer,
+    bill_id integer,
+    reason text,
+    previous_value text,
+    new_value text,
+    detail text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_pos_audit_order ON public.pos_audit_log (order_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_pos_audit_action ON public.pos_audit_log (action, created_at);
 
 
 --
 -- PostgreSQL database dump complete
 --
 
+
+
+--
+-- =============================================================
+-- Migrations 029-038, appended so this file is current without
+-- needing a separate 'npm run db:migrate' pass. Each block below
+-- is copied verbatim from migrations/029..038 (idempotent DDL —
+-- CREATE TABLE IF NOT EXISTS / ADD COLUMN IF NOT EXISTS).
+-- =============================================================
+--
+
+-- pg_dump deliberately clears search_path near the top of this file. The
+-- hand-maintained migrations below use ordinary unqualified table names, so
+-- restore the application schema before running them.
+SET search_path = public, pg_catalog;
+
+-- ---- migrations/029_order_party.sql ----
+-- Multi-party tables: multiple independent orders/tabs can share one table.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS party_label TEXT;
+
+-- ---- migrations/030_pos_lifecycle_audit_numbers.sql ----
+-- Coherent POS lifecycle additions:
+-- - short staff-facing document numbers for future orders, bills and KOTs
+-- - explicit KOT cancellation metadata, separate from bill voiding
+
+CREATE TABLE IF NOT EXISTS document_counters (
+  id SERIAL PRIMARY KEY,
+  document_type TEXT NOT NULL UNIQUE,
+  last_value INTEGER NOT NULL DEFAULT 0,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE kots ADD COLUMN IF NOT EXISTS cancel_reason TEXT;
+ALTER TABLE kots ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMP;
+ALTER TABLE kots ADD COLUMN IF NOT EXISTS cancelled_by INTEGER;
+ALTER TABLE kots ADD COLUMN IF NOT EXISTS previous_status TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_kots_cancelled_at ON kots(cancelled_at);
+CREATE INDEX IF NOT EXISTS idx_kots_cancelled_by ON kots(cancelled_by);
+
+-- ---- migrations/031_analytics_overview_indexes.sql ----
+-- Reporting hot paths used by the restaurant management overview.
+-- These are read-performance indexes only; no business data is changed.
+
+CREATE INDEX IF NOT EXISTS idx_bills_status_paid_at
+  ON bills(status, paid_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_kots_printed_status
+  ON kots(printed_at DESC, status);
+
+CREATE INDEX IF NOT EXISTS idx_bill_corrections_type_created
+  ON bill_corrections(type, created_at DESC);
+
+-- ---- migrations/032_business_days.sql ----
+-- 032: restaurant-wide business day lifecycle.
+-- Business days are explicit operating periods and may cross calendar midnight.
+-- Drawer sessions remain independent cashier/register shifts within a day.
+
+CREATE TABLE IF NOT EXISTS business_days (
+  id SERIAL PRIMARY KEY,
+  business_date DATE NOT NULL UNIQUE,
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed')),
+  opened_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  opened_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  opening_cash NUMERIC(14,2) NOT NULL DEFAULT 0 CHECK (opening_cash >= 0),
+  opening_note TEXT,
+  closed_at TIMESTAMP,
+  closed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  expected_cash NUMERIC(14,2),
+  counted_cash NUMERIC(14,2),
+  cash_difference NUMERIC(14,2),
+  closing_note TEXT,
+  force_closed INTEGER NOT NULL DEFAULT 0,
+  force_close_reason TEXT,
+  approved_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  closing_snapshot TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_business_days_one_open
+  ON business_days(status) WHERE status = 'open';
+CREATE INDEX IF NOT EXISTS idx_business_days_date ON business_days(business_date DESC);
+
+CREATE TABLE IF NOT EXISTS business_day_audit (
+  id SERIAL PRIMARY KEY,
+  business_day_id INTEGER NOT NULL REFERENCES business_days(id) ON DELETE RESTRICT,
+  action TEXT NOT NULL,
+  actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  actor_name TEXT,
+  previous_value TEXT,
+  new_value TEXT,
+  reason TEXT,
+  detail TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_business_day_audit_day
+  ON business_day_audit(business_day_id, created_at, id);
+
+CREATE TABLE IF NOT EXISTS business_day_sessions (
+  id SERIAL PRIMARY KEY,
+  business_day_id INTEGER NOT NULL REFERENCES business_days(id) ON DELETE RESTRICT,
+  session_number INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed')),
+  opened_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  opened_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  opening_cash NUMERIC(14,2) NOT NULL DEFAULT 0 CHECK (opening_cash >= 0),
+  opening_note TEXT,
+  closed_at TIMESTAMP,
+  closed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  expected_cash NUMERIC(14,2),
+  counted_cash NUMERIC(14,2),
+  cash_difference NUMERIC(14,2),
+  closing_note TEXT,
+  force_closed INTEGER NOT NULL DEFAULT 0,
+  force_close_reason TEXT,
+  closing_snapshot TEXT,
+  drawer_session_id INTEGER,
+  opening_journal_id INTEGER REFERENCES journal_entries(id) ON DELETE SET NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_business_day_sessions_one_open
+  ON business_day_sessions(business_day_id, status) WHERE status = 'open';
+CREATE INDEX IF NOT EXISTS idx_business_day_sessions_day
+  ON business_day_sessions(business_day_id, session_number);
+
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS business_day_id INTEGER REFERENCES business_days(id) ON DELETE RESTRICT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS carried_from_business_day_id INTEGER REFERENCES business_days(id) ON DELETE SET NULL;
+ALTER TABLE kots ADD COLUMN IF NOT EXISTS business_day_id INTEGER REFERENCES business_days(id) ON DELETE RESTRICT;
+ALTER TABLE kots ADD COLUMN IF NOT EXISTS carried_from_business_day_id INTEGER REFERENCES business_days(id) ON DELETE SET NULL;
+ALTER TABLE bills ADD COLUMN IF NOT EXISTS business_day_id INTEGER REFERENCES business_days(id) ON DELETE RESTRICT;
+ALTER TABLE bills ADD COLUMN IF NOT EXISTS carried_from_business_day_id INTEGER REFERENCES business_days(id) ON DELETE SET NULL;
+ALTER TABLE bill_payments ADD COLUMN IF NOT EXISTS business_day_id INTEGER REFERENCES business_days(id) ON DELETE RESTRICT;
+ALTER TABLE bill_payment_allocations ADD COLUMN IF NOT EXISTS business_day_id INTEGER REFERENCES business_days(id) ON DELETE RESTRICT;
+ALTER TABLE customer_ledger ADD COLUMN IF NOT EXISTS business_day_id INTEGER REFERENCES business_days(id) ON DELETE RESTRICT;
+ALTER TABLE bill_corrections ADD COLUMN IF NOT EXISTS business_day_id INTEGER REFERENCES business_days(id) ON DELETE RESTRICT;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS business_day_id INTEGER REFERENCES business_days(id) ON DELETE RESTRICT;
+ALTER TABLE journal_entries ADD COLUMN IF NOT EXISTS business_day_id INTEGER REFERENCES business_days(id) ON DELETE RESTRICT;
+ALTER TABLE drawer_sessions ADD COLUMN IF NOT EXISTS business_day_id INTEGER REFERENCES business_days(id) ON DELETE RESTRICT;
+ALTER TABLE payment_settlements ADD COLUMN IF NOT EXISTS business_day_id INTEGER REFERENCES business_days(id) ON DELETE RESTRICT;
+ALTER TABLE reservations ADD COLUMN IF NOT EXISTS business_day_id INTEGER REFERENCES business_days(id) ON DELETE SET NULL;
+ALTER TABLE salary_payments ADD COLUMN IF NOT EXISTS business_day_id INTEGER REFERENCES business_days(id) ON DELETE RESTRICT;
+
+-- Preserve a pre-migration open drawer as the currently operating day. This is
+-- a one-time continuity bridge, not automatic day creation during normal use.
+INSERT INTO business_days (business_date, status, opened_at, opened_by, opening_cash, opening_note)
+SELECT (s.opened_at + INTERVAL '5 hours 45 minutes')::date,
+       'open', s.opened_at, s.opened_by, COALESCE(s.opening_amount, 0),
+       'Continued from the drawer session active when business days were installed.'
+FROM drawer_sessions s
+WHERE s.status = 'open'
+  AND NOT EXISTS (SELECT 1 FROM business_days WHERE status = 'open')
+ORDER BY s.opened_at DESC, s.id DESC
+LIMIT 1
+ON CONFLICT (business_date) DO NOTHING;
+
+-- Create read-only historical day shells. No financial values are changed.
+INSERT INTO business_days (business_date, status, opened_at, closed_at, opening_cash, opening_note)
+SELECT d, 'closed', d::timestamp, d::timestamp + INTERVAL '1 day', 0,
+       'Historical calendar-date backfill; no opening count was available.'
+FROM (
+  SELECT DISTINCT (created_at + INTERVAL '5 hours 45 minutes')::date AS d FROM orders
+  UNION SELECT DISTINCT (created_at + INTERVAL '5 hours 45 minutes')::date FROM bills
+  UNION SELECT DISTINCT (created_at + INTERVAL '5 hours 45 minutes')::date FROM expenses
+  UNION SELECT DISTINCT entry_date FROM journal_entries
+) dates
+WHERE d IS NOT NULL
+  AND (d < (CURRENT_TIMESTAMP + INTERVAL '5 hours 45 minutes')::date
+       OR EXISTS (SELECT 1 FROM business_days open_day WHERE open_day.business_date=d AND open_day.status='open'))
+ON CONFLICT (business_date) DO NOTHING;
+
+UPDATE orders o SET business_day_id = bd.id
+FROM business_days bd
+WHERE o.business_day_id IS NULL
+  AND bd.status = 'closed'
+  AND bd.business_date = (o.created_at + INTERVAL '5 hours 45 minutes')::date;
+UPDATE kots k SET business_day_id = o.business_day_id
+FROM orders o WHERE k.business_day_id IS NULL AND k.order_id = o.id;
+UPDATE bills b SET business_day_id = o.business_day_id
+FROM orders o WHERE b.business_day_id IS NULL AND b.order_id = o.id;
+UPDATE bill_payments p SET business_day_id = b.business_day_id
+FROM bills b WHERE p.business_day_id IS NULL AND p.bill_id = b.id;
+UPDATE bill_payment_allocations p SET business_day_id = b.business_day_id
+FROM bills b WHERE p.business_day_id IS NULL AND p.bill_id = b.id;
+UPDATE customer_ledger c SET business_day_id = b.business_day_id
+FROM bills b WHERE c.business_day_id IS NULL AND c.bill_id = b.id;
+UPDATE bill_corrections c SET business_day_id = b.business_day_id
+FROM bills b WHERE c.business_day_id IS NULL AND c.bill_id = b.id;
+UPDATE expenses e SET business_day_id = bd.id
+FROM business_days bd
+WHERE e.business_day_id IS NULL
+  AND bd.status = 'closed'
+  AND COALESCE(e.purchase_date, CAST(e.expense_date AS TEXT)) ~ '^\d{4}-\d{2}-\d{2}$'
+  AND bd.business_date = CAST(COALESCE(e.purchase_date, CAST(e.expense_date AS TEXT)) AS DATE);
+UPDATE journal_entries je SET business_day_id = bd.id
+FROM business_days bd
+WHERE je.business_day_id IS NULL AND bd.status = 'closed' AND bd.business_date = je.entry_date;
+UPDATE drawer_sessions s SET business_day_id = bd.id
+FROM business_days bd
+WHERE s.business_day_id IS NULL
+  AND bd.status = 'closed'
+  AND bd.business_date = (s.opened_at + INTERVAL '5 hours 45 minutes')::date;
+UPDATE payment_settlements s SET business_day_id = bd.id
+FROM business_days bd
+WHERE s.business_day_id IS NULL
+  AND bd.status = 'closed'
+  AND bd.business_date = (s.settled_at + INTERVAL '5 hours 45 minutes')::date;
+UPDATE reservations r SET business_day_id = bd.id
+FROM business_days bd
+WHERE r.business_day_id IS NULL AND bd.status = 'closed' AND r.date ~ '^\d{4}-\d{2}-\d{2}$' AND bd.business_date = CAST(r.date AS DATE);
+UPDATE salary_payments s SET business_day_id = bd.id
+FROM business_days bd
+WHERE s.business_day_id IS NULL AND bd.status = 'closed' AND bd.business_date = s.paid_on;
+
+INSERT INTO business_day_sessions
+  (business_day_id, session_number, status, opened_at, opened_by, opening_cash, opening_note,
+   closed_at, closed_by, expected_cash, counted_cash, cash_difference, closing_note,
+   force_closed, force_close_reason, closing_snapshot, drawer_session_id)
+SELECT bd.id, 1,
+       CASE WHEN bd.status='open' AND bd.closed_at IS NULL THEN 'open' ELSE 'closed' END,
+       bd.opened_at, bd.opened_by, bd.opening_cash, bd.opening_note,
+       CASE WHEN bd.status='open' AND bd.closed_at IS NULL THEN NULL ELSE bd.closed_at END,
+       bd.closed_by, bd.expected_cash, bd.counted_cash, bd.cash_difference, bd.closing_note,
+       bd.force_closed, bd.force_close_reason, bd.closing_snapshot,
+       (SELECT ds.id FROM drawer_sessions ds WHERE ds.business_day_id=bd.id ORDER BY ds.opened_at, ds.id LIMIT 1)
+FROM business_days bd
+WHERE NOT EXISTS (SELECT 1 FROM business_day_sessions s WHERE s.business_day_id=bd.id);
+
+-- If installation found an already-open drawer, preserve only activity that
+-- occurred after that drawer session began. Explicitly opened new days never
+-- adopt unassigned legacy rows merely because their calendar date matches.
+UPDATE orders o SET business_day_id = bd.id
+FROM business_days bd
+WHERE o.business_day_id IS NULL AND bd.status='open' AND o.created_at >= bd.opened_at
+  AND bd.opening_note LIKE 'Continued from the drawer session%';
+UPDATE kots k SET business_day_id=o.business_day_id FROM orders o
+WHERE k.business_day_id IS NULL AND k.order_id=o.id AND o.business_day_id IS NOT NULL;
+UPDATE bills b SET business_day_id=o.business_day_id FROM orders o
+WHERE b.business_day_id IS NULL AND b.order_id=o.id AND o.business_day_id IS NOT NULL;
+UPDATE bill_payments p SET business_day_id=b.business_day_id FROM bills b
+WHERE p.business_day_id IS NULL AND p.bill_id=b.id AND b.business_day_id IS NOT NULL;
+UPDATE bill_payment_allocations p SET business_day_id=b.business_day_id FROM bills b
+WHERE p.business_day_id IS NULL AND p.bill_id=b.id AND b.business_day_id IS NOT NULL;
+UPDATE customer_ledger c SET business_day_id=b.business_day_id FROM bills b
+WHERE c.business_day_id IS NULL AND c.bill_id=b.id AND b.business_day_id IS NOT NULL;
+UPDATE bill_corrections c SET business_day_id=b.business_day_id FROM bills b
+WHERE c.business_day_id IS NULL AND c.bill_id=b.id AND b.business_day_id IS NOT NULL;
+UPDATE expenses e SET business_day_id=bd.id FROM business_days bd
+WHERE e.business_day_id IS NULL AND bd.status='open' AND e.created_at >= bd.opened_at
+  AND bd.opening_note LIKE 'Continued from the drawer session%';
+UPDATE drawer_sessions s SET business_day_id=bd.id FROM business_days bd
+WHERE s.business_day_id IS NULL AND s.status='open' AND bd.status='open'
+  AND s.opened_at=bd.opened_at AND bd.opening_note LIKE 'Continued from the drawer session%';
+UPDATE journal_entries je SET business_day_id=bd.id FROM business_days bd
+WHERE je.business_day_id IS NULL AND bd.status='open' AND je.created_at >= bd.opened_at
+  AND bd.opening_note LIKE 'Continued from the drawer session%';
+
+CREATE INDEX IF NOT EXISTS idx_orders_business_day ON orders(business_day_id, status);
+CREATE INDEX IF NOT EXISTS idx_kots_business_day ON kots(business_day_id, status);
+CREATE INDEX IF NOT EXISTS idx_bills_business_day ON bills(business_day_id, status);
+CREATE INDEX IF NOT EXISTS idx_bill_payments_business_day ON bill_payments(business_day_id, payment_method);
+CREATE INDEX IF NOT EXISTS idx_bill_allocations_business_day ON bill_payment_allocations(business_day_id, method);
+CREATE INDEX IF NOT EXISTS idx_customer_ledger_business_day ON customer_ledger(business_day_id, entry_type);
+CREATE INDEX IF NOT EXISTS idx_bill_corrections_business_day ON bill_corrections(business_day_id, type);
+CREATE INDEX IF NOT EXISTS idx_expenses_business_day ON expenses(business_day_id);
+CREATE INDEX IF NOT EXISTS idx_journal_entries_business_day ON journal_entries(business_day_id, source_type);
+CREATE INDEX IF NOT EXISTS idx_drawer_sessions_business_day ON drawer_sessions(business_day_id, status);
+
+-- ---- migrations/033_business_day_sessions.sql ----
+-- 033: Store sessions inside a business day.
+-- A business day is the reporting/accounting container; store sessions are
+-- individual open/close cycles within that same business date.
+
+CREATE TABLE IF NOT EXISTS business_day_sessions (
+  id SERIAL PRIMARY KEY,
+  business_day_id INTEGER NOT NULL REFERENCES business_days(id) ON DELETE RESTRICT,
+  session_number INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed')),
+  opened_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  opened_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  opening_cash NUMERIC(14,2) NOT NULL DEFAULT 0 CHECK (opening_cash >= 0),
+  opening_note TEXT,
+  closed_at TIMESTAMP,
+  closed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  expected_cash NUMERIC(14,2),
+  counted_cash NUMERIC(14,2),
+  cash_difference NUMERIC(14,2),
+  closing_note TEXT,
+  force_closed INTEGER NOT NULL DEFAULT 0,
+  force_close_reason TEXT,
+  closing_snapshot TEXT,
+  drawer_session_id INTEGER,
+  opening_journal_id INTEGER REFERENCES journal_entries(id) ON DELETE SET NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE business_day_sessions
+  ADD COLUMN IF NOT EXISTS opening_journal_id INTEGER REFERENCES journal_entries(id) ON DELETE SET NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_business_day_sessions_one_open
+  ON business_day_sessions(business_day_id, status) WHERE status = 'open';
+CREATE INDEX IF NOT EXISTS idx_business_day_sessions_day
+  ON business_day_sessions(business_day_id, session_number);
+
+INSERT INTO business_day_sessions
+  (business_day_id, session_number, status, opened_at, opened_by, opening_cash, opening_note,
+   closed_at, closed_by, expected_cash, counted_cash, cash_difference, closing_note,
+   force_closed, force_close_reason, closing_snapshot, drawer_session_id)
+SELECT bd.id, 1,
+       CASE WHEN bd.status='open' AND bd.closed_at IS NULL THEN 'open' ELSE 'closed' END,
+       bd.opened_at, bd.opened_by, bd.opening_cash, bd.opening_note,
+       CASE WHEN bd.status='open' AND bd.closed_at IS NULL THEN NULL ELSE bd.closed_at END,
+       bd.closed_by, bd.expected_cash, bd.counted_cash, bd.cash_difference, bd.closing_note,
+       bd.force_closed, bd.force_close_reason, bd.closing_snapshot,
+       (SELECT ds.id FROM drawer_sessions ds WHERE ds.business_day_id=bd.id ORDER BY ds.opened_at, ds.id LIMIT 1)
+FROM business_days bd
+WHERE NOT EXISTS (SELECT 1 FROM business_day_sessions s WHERE s.business_day_id=bd.id);
+
+-- ---- migrations/034_opening_cash_movement_accounts.sql ----
+-- 034: Asset account used for opening-cash movements between drawer and safe.
+
+INSERT INTO accounts (code, name, type, subtype, is_system)
+VALUES ('1030', 'Cash Reserve / Safe', 'asset', 'cash_reserve', 1)
+ON CONFLICT (code) DO NOTHING;
+
+UPDATE accounts
+SET parent_id = (SELECT id FROM accounts WHERE code = '1000')
+WHERE code = '1030' AND parent_id IS NULL;
+
+-- ---- migrations/035_inventory_business_day_attribution.sql ----
+-- Attribute inventory movement metrics to Business Days without changing stock balances.
+
+ALTER TABLE business_day_sessions
+  ADD COLUMN IF NOT EXISTS opening_journal_id INTEGER REFERENCES journal_entries(id) ON DELETE SET NULL;
+
+ALTER TABLE stock_movements
+  ADD COLUMN IF NOT EXISTS business_day_id INTEGER REFERENCES business_days(id) ON DELETE RESTRICT;
+
+ALTER TABLE wastage_log
+  ADD COLUMN IF NOT EXISTS business_day_id INTEGER REFERENCES business_days(id) ON DELETE RESTRICT;
+
+-- Order-linked stock deductions/restores inherit the order's business day.
+UPDATE stock_movements sm
+SET business_day_id = o.business_day_id
+FROM orders o
+WHERE sm.business_day_id IS NULL
+  AND sm.change_type IN ('order_deduction', 'order_void')
+  AND sm.reference_id IS NOT NULL
+  AND sm.reference_id ~ '^\d+$'
+  AND o.id = CAST(sm.reference_id AS INTEGER)
+  AND o.business_day_id IS NOT NULL;
+
+-- Legacy non-order movements are attributed to the closed historical business
+-- day matching their Nepal calendar date. This is reporting attribution only.
+UPDATE stock_movements sm
+SET business_day_id = bd.id
+FROM business_days bd
+WHERE sm.business_day_id IS NULL
+  AND bd.status = 'closed'
+  AND bd.business_date = CAST((sm.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kathmandu') AS DATE);
+
+UPDATE wastage_log w
+SET business_day_id = bd.id
+FROM business_days bd
+WHERE w.business_day_id IS NULL
+  AND bd.status = 'closed'
+  AND bd.business_date = CAST((w.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kathmandu') AS DATE);
+
+CREATE INDEX IF NOT EXISTS idx_stock_movements_business_day
+  ON stock_movements(business_day_id, change_type);
+
+CREATE INDEX IF NOT EXISTS idx_wastage_log_business_day
+  ON wastage_log(business_day_id, reason);
+
+-- ---- migrations/036_savings_deposits.sql ----
+INSERT INTO accounts (code, name, type, subtype, parent_id, is_active, is_system)
+SELECT '1040', 'Savings & Deposits', 'asset', 'savings', id, 1, 1
+FROM accounts WHERE code = '1000'
+ON CONFLICT (code) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS savings_deposits (
+  id SERIAL PRIMARY KEY,
+  deposit_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  deposit_type TEXT NOT NULL DEFAULT 'bank',
+  destination_name TEXT NOT NULL,
+  source_account TEXT NOT NULL CHECK (source_account IN ('cash','online')),
+  amount NUMERIC(14,2) NOT NULL CHECK (amount > 0),
+  reference_number TEXT,
+  notes TEXT,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','voided')),
+  journal_id INTEGER REFERENCES journal_entries(id) ON DELETE SET NULL,
+  business_day_id INTEGER REFERENCES business_days(id) ON DELETE SET NULL,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  voided_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  voided_at TIMESTAMP,
+  void_reason TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_savings_deposits_date ON savings_deposits(deposit_date DESC);
+CREATE INDEX IF NOT EXISTS idx_savings_deposits_status ON savings_deposits(status);
+
+-- ---- migrations/037_business_day_stale_ack.sql ----
+-- 037: acknowledgement flag for continuing a business day that has rolled past
+-- the current Nepal calendar date without being closed.
+
+ALTER TABLE business_days ADD COLUMN IF NOT EXISTS stale_ack_date DATE;
+
+-- ---- migrations/038_role_permissions.sql ----
+-- 038: admin-configurable permission matrix for a curated set of sensitive
+-- actions (cancel order/item/KOT, void/refund/reopen/discount a bill).
+-- Rows are seeded lazily on first read/write by lib/permissions.js; an
+-- absent row falls back to the hardcoded default for that role/key.
+
+CREATE TABLE IF NOT EXISTS role_permissions (
+  role TEXT NOT NULL,
+  permission_key TEXT NOT NULL,
+  allowed INTEGER NOT NULL DEFAULT 0,
+  updated_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (role, permission_key)
+);
+
+CREATE TABLE IF NOT EXISTS permission_audit (
+  id SERIAL PRIMARY KEY,
+  role TEXT NOT NULL,
+  permission_key TEXT NOT NULL,
+  previous_value INTEGER,
+  new_value INTEGER NOT NULL,
+  actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  actor_name TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_permission_audit_created ON permission_audit(created_at DESC, id DESC);
+
+-- ---- migrations/039_waiter_requests.sql ----
+CREATE TABLE IF NOT EXISTS waiter_requests (
+  id SERIAL PRIMARY KEY,
+  table_id INTEGER NOT NULL REFERENCES tables(id) ON DELETE CASCADE,
+  request_type TEXT NOT NULL DEFAULT 'service'
+    CHECK (request_type IN ('service', 'order', 'bill', 'water')),
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'acknowledged', 'completed', 'cancelled')),
+  requested_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  acknowledged_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  acknowledged_at TIMESTAMP,
+  completed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  completed_at TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_waiter_requests_one_active_table
+  ON waiter_requests(table_id) WHERE status IN ('pending', 'acknowledged');
+CREATE INDEX IF NOT EXISTS idx_waiter_requests_active ON waiter_requests(status, requested_at);
+CREATE INDEX IF NOT EXISTS idx_waiter_requests_history ON waiter_requests(requested_at DESC, id DESC);

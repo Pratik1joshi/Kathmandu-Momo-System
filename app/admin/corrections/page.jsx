@@ -7,6 +7,7 @@ import { useToast } from '@/components/ui/toast';
 import { friendlyMessage, friendlyFromError } from '@/lib/friendly-message';
 import { apiJson } from '@/lib/authed-fetch';
 import { money } from '@/components/accounting/ledger-table';
+import { formatNepalTime } from '@/lib/time-utils';
 
 const METHODS = ['cash', 'bank', 'card', 'esewa', 'khalti', 'qr', 'online'];
 
@@ -105,7 +106,7 @@ export default function CorrectionsPage() {
                   <td className="px-5 py-2.5 font-medium text-gray-900">{h.bill_number || '—'}</td>
                   <td className="px-5 py-2.5 text-gray-600">{h.reason}{h.restocked ? ' · restocked' : ''}</td>
                   <td className="px-5 py-2.5 text-right tabular-nums text-gray-900">{money(h.amount)}</td>
-                  <td className="px-5 py-2.5 text-right text-xs text-gray-500">{new Date(h.created_at).toLocaleString()}{h.by_name ? ` · ${h.by_name}` : ''}</td>
+                  <td className="px-5 py-2.5 text-right text-xs text-gray-500">{formatNepalTime(h.created_at)}{h.by_name ? ` · ${h.by_name}` : ''}</td>
                 </tr>
               ))}
               {history.length === 0 && <tr><td colSpan={5} className="px-5 py-8 text-center text-gray-500">No refunds or voids yet.</td></tr>}

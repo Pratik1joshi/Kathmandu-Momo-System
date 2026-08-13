@@ -3,10 +3,11 @@ import Database from '@/lib/db/index';
 import { requireAuth, handleRouteError } from '@/lib/api-guard.js';
 import { ensureRecipeTables } from '@/lib/recipes.js';
 import { getPurchase, updatePurchase, voidPurchase, deletePurchase } from '@/lib/purchases.js';
+import { isPermissionAllowedSync } from '@/lib/permissions.js';
 
 export async function GET(request, { params }) {
   try {
-    const auth = await requireAuth(request, { roles: ['admin'] });
+    const auth = await requireAuth(request, { roles: ['admin', 'cashier'], permission: 'purchases.view' });
     if (auth.error) return auth.error;
 
     const { id } = await params;
@@ -23,17 +24,31 @@ export async function GET(request, { params }) {
 
 export async function PUT(request, { params }) {
   try {
-    const auth = await requireAuth(request, { roles: ['admin'] });
+    const auth = await requireAuth(request, { roles: ['admin', 'cashier'], permission: 'purchases.edit' });
     if (auth.error) return auth.error;
 
     const { id } = await params;
     const data = await request.json();
     const db = Database.getInstance();
     await ensureRecipeTables(db);
+    const supplierName = data.supplier || data.supplier_name;
+    if (auth.user?.role === 'cashier' && String(supplierName || '').trim()) {
+      const existingSupplier = await db.get(
+        `SELECT id FROM suppliers WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) LIMIT 1`,
+        [String(supplierName).trim()]
+      );
+      if (!existingSupplier && !isPermissionAllowedSync(auth.user.role, 'suppliers.manage')) {
+        return NextResponse.json(
+          { error: 'Ask an admin to add this supplier or grant supplier-management permission.' },
+          { status: 403 }
+        );
+      }
+    }
 
     const purchase = await updatePurchase(db, id, {
       ...data,
-      received_by: data.received_by ?? auth.user?.id ?? null,
+      // Cashiers cannot re-attribute a historical delivery to another user.
+      received_by: auth.user?.role === 'cashier' ? undefined : data.received_by ?? auth.user?.id ?? null,
     });
     return NextResponse.json({ message: 'Purchase updated and stock re-applied.', purchase });
   } catch (error) {
@@ -48,7 +63,7 @@ export async function PUT(request, { params }) {
  */
 export async function DELETE(request, { params }) {
   try {
-    const auth = await requireAuth(request, { roles: ['admin'] });
+    const auth = await requireAuth(request, { roles: ['admin', 'cashier'], permission: 'purchases.void' });
     if (auth.error) return auth.error;
 
     const { id } = await params;
@@ -57,6 +72,9 @@ export async function DELETE(request, { params }) {
     await ensureRecipeTables(db);
 
     if (q.get('hard') === '1') {
+      if (auth.user.role !== 'admin') {
+        return NextResponse.json({ error: 'Only an admin can permanently delete a purchase record.' }, { status: 403 });
+      }
       return NextResponse.json(await deletePurchase(db, id));
     }
 

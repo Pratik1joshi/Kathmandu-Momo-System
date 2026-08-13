@@ -11,7 +11,7 @@ export async function GET(request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     const user = await authService.verifySession(token);
-    if (!user || !['admin', 'waiter'].includes(user.role)) {
+    if (!user || !['admin', 'waiter', 'cashier'].includes(user.role)) {
       return NextResponse.json({ error: 'Access denied' }, { status: 403 });
     }
 
@@ -22,8 +22,8 @@ export async function GET(request) {
     }
 
     const data = await getReservationAlerts();
-    // Waiters only see arrived / VIP / special / arriving soon — not cancel tooling
-    if (user.role === 'waiter') {
+    // Waiters/cashiers only see arrived / VIP / special / arriving soon — not cancel tooling
+    if (user.role === 'waiter' || user.role === 'cashier') {
       data.alerts = (data.alerts || []).filter((a) =>
         [
           'arriving_soon',

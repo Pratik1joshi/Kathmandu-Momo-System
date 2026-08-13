@@ -6,6 +6,7 @@ import { ArrowRight } from 'lucide-react';
 import { useToast } from '@/components/ui/toast';
 import { friendlyMessage, friendlyFromError } from '@/lib/friendly-message';
 import { apiJson } from '@/lib/authed-fetch';
+import { formatNepalTime } from '@/lib/time-utils';
 
 const METHODS = ['cash', 'bank', 'card', 'esewa', 'khalti', 'qr', 'online'];
 
@@ -77,7 +78,7 @@ export default function CashExchangePage() {
             {recent.map((r) => (
               <div key={r.id} className="flex items-center justify-between px-5 py-3">
                 <span className="text-sm text-gray-900">{r.memo}</span>
-                <span className="text-xs text-gray-500">{new Date(r.created_at).toLocaleString()}{r.by_name ? ` · ${r.by_name}` : ''}</span>
+                <span className="text-xs text-gray-500">{formatNepalTime(r.created_at)}{r.by_name ? ` · ${r.by_name}` : ''}</span>
               </div>
             ))}
             {recent.length === 0 && <p className="px-5 py-8 text-center text-sm text-gray-500">No exchanges yet.</p>}

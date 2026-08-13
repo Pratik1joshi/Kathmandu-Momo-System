@@ -1,5 +1,7 @@
 'use client';
 
+import { formatNepalDate } from '@/lib/time-utils';
+
 /**
  * Debit/credit table with a running balance, shared by the General Ledger,
  * Cash Book and Bank Book. `lines` are oldest-first; the balance runs down.
@@ -49,7 +51,7 @@ export default function LedgerTable({ lines = [], debitNormal = true, opening = 
             )}
             {rows.map((l, i) => (
               <tr key={i} className="hover:bg-gray-50">
-                <td className="px-4 py-2 text-gray-600">{l.entry_date ? new Date(l.entry_date).toLocaleDateString() : '—'}</td>
+                <td className="px-4 py-2 text-gray-600">{l.entry_date ? formatNepalDate(l.entry_date) : '—'}</td>
                 <td className="px-4 py-2">
                   <span className="text-gray-900">{l.memo || l.line_memo || '—'}</span>
                   {l.source_type && <span className="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] uppercase text-gray-500">{l.source_type}</span>}

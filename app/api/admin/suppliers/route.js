@@ -7,7 +7,7 @@ import { readListParams } from '@/lib/paginate.js';
 
 export async function GET(request) {
   try {
-    const auth = await requireAuth(request, { roles: ['admin'] });
+    const auth = await requireAuth(request, { roles: ['admin', 'cashier'], permission: 'suppliers.view' });
     if (auth.error) return auth.error;
 
     const db = Database.getInstance();
@@ -26,7 +26,7 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    const auth = await requireAuth(request, { roles: ['admin'] });
+    const auth = await requireAuth(request, { roles: ['admin', 'cashier'], permission: 'suppliers.manage' });
     if (auth.error) return auth.error;
 
     const data = await request.json();
@@ -50,7 +50,7 @@ export async function POST(request) {
  */
 export async function PUT(request) {
   try {
-    const auth = await requireAuth(request, { roles: ['admin'] });
+    const auth = await requireAuth(request, { roles: ['admin', 'cashier'], permission: 'suppliers.manage' });
     if (auth.error) return auth.error;
 
     const data = await request.json();
@@ -58,6 +58,9 @@ export async function PUT(request) {
     await ensureLedgerSchema(db);
 
     if (data.action === 'merge') {
+      if (auth.user.role !== 'admin') {
+        return NextResponse.json({ error: 'Only an admin can merge supplier records.' }, { status: 403 });
+      }
       const supplier = await mergeSuppliers(db, data.target_id, data.source_ids);
       return NextResponse.json({ message: 'Suppliers merged.', supplier });
     }

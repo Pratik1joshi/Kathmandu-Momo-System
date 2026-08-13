@@ -1,6 +1,6 @@
 -- =====================================================================
 -- Default operational seed  (Postgres)
--- Run AFTER seed_menu.sql (needs menu_items / menu_categories).
+-- Run AFTER seed_sundar_menu.sql (needs menu_items / menu_categories).
 --
 -- Adds:
 --   1. Table floors + table types (the "hardcoded" defaults, now in DB

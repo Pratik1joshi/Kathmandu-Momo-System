@@ -3,6 +3,7 @@ import Database from '@/lib/db/index';
 import { requireAuth, handleRouteError } from '@/lib/api-guard.js';
 import { ensureAccountingSchema } from '@/lib/accounting.js';
 import { listDrawers, listSessions, openSession, closeSession, createDrawer } from '@/lib/accounting-cash.js';
+import { currentBusinessDayId } from '@/lib/business-days.js';
 
 export async function GET(request) {
   try {
@@ -32,7 +33,8 @@ export async function POST(request) {
     if (data.action === 'add_drawer') {
       return NextResponse.json({ drawer: await createDrawer(db, data.name) }, { status: 201 });
     }
-    const session = await openSession(db, { ...data, opened_by: auth.user?.id || null });
+    const businessDayId = await currentBusinessDayId(db, { required: true });
+    const session = await openSession(db, { ...data, opened_by: auth.user?.id || null, business_day_id: businessDayId });
     return NextResponse.json({ message: 'Drawer opened.', session }, { status: 201 });
   } catch (error) {
     return handleRouteError(error, 'Failed to open drawer');
@@ -45,6 +47,7 @@ export async function PUT(request) {
     if (auth.error) return auth.error;
     const db = Database.getInstance();
     await ensureAccountingSchema(db);
+    await currentBusinessDayId(db, { required: true });
     const data = await request.json();
     const session = await closeSession(db, { ...data, closed_by: auth.user?.id || null });
     return NextResponse.json({ message: 'Drawer closed.', session });

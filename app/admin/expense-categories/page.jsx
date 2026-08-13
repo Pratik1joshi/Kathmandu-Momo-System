@@ -4,11 +4,13 @@ import { useEffect, useState } from 'react';
 import AdminLayout from '@/components/admin/admin-layout';
 import { Plus, Edit, Trash2, Wallet } from 'lucide-react';
 import { useToast } from '@/components/ui/toast';
+import { useConfirm } from '@/components/ui/confirm';
 import { friendlyMessage, friendlyFromError } from '@/lib/friendly-message';
 import { apiJson } from '@/lib/authed-fetch';
 
 export default function ExpenseCategoriesPage() {
   const { addToast } = useToast();
+  const { confirm } = useConfirm();
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -39,7 +41,11 @@ export default function ExpenseCategoriesPage() {
   };
 
   const remove = async (c) => {
-    if (!confirm(`Delete "${c.name}"?`)) return;
+    const ok = await confirm({
+      title: `Delete "${c.name}"?`,
+      tone: 'delete',
+    });
+    if (!ok) return;
     try { await apiJson(`/api/admin/expense-categories?id=${c.id}`, { method: 'DELETE' }); load(); }
     catch (error) { addToast(friendlyFromError(error, 'delete_failed')); }
   };

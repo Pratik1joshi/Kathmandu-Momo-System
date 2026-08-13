@@ -1,105 +1,175 @@
-# Kathmandu Momo — Restaurant POS
+# 🍽️ Restaurant POS System
 
-Point-of-sale, kitchen, billing, inventory and accounting for **Kathmandu Momo**,
-Birendranagar, Surkhet — plus the public marketing site, live menu and online
-reservations, all from one Next.js app.
+A modern, offline-first **Hybrid Point of Sale System** designed specifically for restaurant operations with multi-role support, real-time synchronization, and comprehensive management features.
 
-## Quick start (local)
+## 📋 Quick Links
 
+- **[Getting Started](GETTING_STARTED.md)** - Installation and setup guide
+- **[API Testing](API_TESTING.md)** - Complete API endpoint documentation
+- **[Project Overview](PROJECT_OVERVIEW.md)** - Comprehensive project details
+- **[Build Status](BUILD_STATUS.md)** - Current development status
+
+## 🎯 Current Status
+
+### ✅ Phase 1: Backend Infrastructure (COMPLETE)
+- Complete database schema with 20+ tables
+- 5 repository classes for data access
+- 8 REST API endpoints
+- PIN-based authentication system
+- Role-based access control (RBAC)
+- Seeded with realistic sample data
+
+### ⏳ Phase 2: Frontend UI (Next)
+- UI component library
+- Login interface
+- Waiter app
+- Kitchen display system
+- Cashier/billing system
+- Admin dashboard
+
+## 🚀 Quick Start
+
+### 1. Install Dependencies
 ```bash
 npm install
+```
+
+### 2. Initialize Database
+```bash
+npm run db:seed
+```
+
+This creates `pos_restaurant.db` with:
+- 5 default users
+- 10 restaurant tables
+- 32 menu items
+- System settings
+
+### 3. Start Development Server
+```bash
 npm run dev
 ```
 
-Dev server: **http://localhost:3002**
+Server runs at: **http://localhost:3000**
 
-Local development uses SQLite (`better-sqlite3`) with a demo seed. Production
-runs on PostgreSQL — see [deploy/INSTALL.md](deploy/INSTALL.md).
+## 🔑 Default Login Credentials
 
-## Routes
+| Role | Username | PIN | Access Level |
+|------|----------|-----|--------------|
+| **Admin** | admin | 123456 | Full system access |
+| **Waiter** | john | 1234 | Orders, tables, menu |
+| **Waiter** | ram | 4567 | Orders, tables, menu |
+| **Cashier** | sita | 7890 | Bills, payments, orders |
+| **Kitchen** | chef | 1111 | KOTs, order status |
 
-| Route | Who | What |
-|---|---|---|
-| `/` | Public | Marketing landing page (`public/kathmandu-momo.html`) |
-| `/menu` | Public | Live menu, straight from the POS |
-| `/order/[token]` | Public | QR table ordering |
-| `/login` | Staff | PIN login |
-| `/waiter` | Waiter | Tables, orders, reservations |
-| `/kitchen` | Kitchen | KOT display |
-| `/cashier` | Cashier | Billing, payments, receipts |
-| `/admin` | Admin | Menu, inventory, purchases, payroll, accounting, reports |
+## 📡 API Endpoints
 
-## Database
+### Authentication
+- `POST /api/auth/login` - User authentication
+- `POST /api/auth/logout` - End session
+- `POST /api/auth/verify` - Verify token
 
-```bash
-npm run db:migrate      # incremental migrations (Postgres)
-npm run db:seed         # admin user + system settings + baseline tables
-npm run db:pg:init      # migrate + seed in one go
-npm run health          # connectivity / schema check
+### Restaurant Operations
+- `/api/restaurant/menu` - Menu management
+- `/api/restaurant/tables` - Table operations
+- `/api/restaurant/orders` - Order management
+- `/api/restaurant/kots` - Kitchen order tickets
+- `/api/restaurant/bills` - Billing & payments
+
+**Full API documentation**: See [API_TESTING.md](API_TESTING.md)
+
+## 🏗️ Tech Stack
+
+- **Frontend**: Next.js 16, React 19, TailwindCSS, Radix UI
+- **Backend**: Next.js API Routes (App Router)
+- **Database**: SQLite with Better-SQLite3
+- **Auth**: PIN-based with SHA-256 hashing
+- **Real-time**: Socket.io (planned)
+- **Offline**: IndexedDB (planned)
+
+## 🎨 Features
+
+### Implemented ✅
+- Multi-user authentication with PIN
+- Role-based permissions (Admin, Cashier, Waiter, Kitchen)
+- Order management with status tracking
+- Table assignment and management
+- Kitchen Order Ticket (KOT) system
+- Bill generation with auto-calculation
+- Menu management with categories
+- Payment processing
+- Sales reporting
+
+### Planned 📅
+- Real-time WebSocket synchronization
+- Offline mode with IndexedDB
+- Receipt printing
+- Multi-branch support
+- Advanced analytics
+- Hardware integration (printers, scanners)
+
+## 🧪 Quick Test (PowerShell)
+
+```powershell
+# Login
+$response = Invoke-RestMethod -Uri "http://localhost:3000/api/auth/login" `
+  -Method POST -ContentType "application/json" `
+  -Body '{"username":"admin","pin":"123456","deviceId":"test-device"}'
+
+$token = $response.token
+
+# Get Menu
+Invoke-RestMethod -Uri "http://localhost:3000/api/restaurant/menu" `
+  -Method GET -Headers @{Authorization="Bearer $token"}
 ```
 
-Production install (schema, seed, menu pack, cPanel setup):
-**[deploy/INSTALL.md](deploy/INSTALL.md)**
+## 📚 Documentation
 
-Seed files:
+- **[SYSTEM_ARCHITECTURE.md](SYSTEM_ARCHITECTURE.md)** - Complete system design
+- **[DATABASE_SCHEMA.md](DATABASE_SCHEMA.md)** - Database structure
+- **[UI_UX_WIREFRAMES.md](UI_UX_WIREFRAMES.md)** - Interface designs
+- **[WORKFLOW_MAP.md](WORKFLOW_MAP.md)** - Operational workflows
+- **[IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md)** - 20-week plan
 
-| File | Contents |
-|---|---|
-| `deploy/production_schema.sql` | All tables, indexes, constraints |
-| `deploy/production_seed.sql` | Chart of Accounts, cash drawer, bank, **Kathmandu Momo settings**, first admin |
-| `deploy/menu-pack/seed_menu.sql` | Menu categories + items + image URLs |
-| `deploy/default_seed.sql` | Floors, table types, unit conversions, inventory, recipes |
-
-Run order: `production_schema` → `production_seed` → `seed_menu` → `default_seed`.
-
-## Branding
-
-Everything customer-facing is in a handful of places:
-
-| What | Where |
-|---|---|
-| Landing page | `public/kathmandu-momo.html` (served at `/` via `middleware.js` + `next.config.mjs`) |
-| Photography | `public/images/kathmandu-momo/` — see the README in that folder |
-| Icons / favicon | `npm run build:icons` regenerates them from `scripts/build-brand-icons.mjs` |
-| Browser title, SEO, Open Graph | `app/layout.js` |
-| PWA name | `app/manifest.js` |
-| Receipt header / footer | Admin → Settings (seeded by `deploy/production_seed.sql`) |
-| Menu page header | `components/menu-book/menu-book.jsx` |
-
-Receipts, bills and KOTs read the business name, address, phone and footer from
-**system settings** — change them in Admin → Settings, not in code.
-
-## Tech
-
-Implementation and release handoff: **[docs/AI_HANDOFF_CONTEXT.md](docs/AI_HANDOFF_CONTEXT.md)**
-
-- **Framework**: Next.js 16 (App Router), React 19
-- **UI**: TailwindCSS 4, Radix UI, lucide-react
-- **Database**: PostgreSQL in production, SQLite locally
-- **Auth**: PIN login, bcrypt hashes, HTTP-only sessions, CSRF tokens
-- **Printing**: shared thermal receipt system, 58mm / 80mm (`lib/print-receipt.js`)
-
-## Scripts
+## 🛠️ NPM Scripts
 
 ```bash
-npm run dev             # dev server (port 3002)
-npm run build           # production build
-npm run start           # production server (server.js)
-npm run lint            # eslint
-npm run build:menu-pack # rebuild deploy/menu-pack (images + seed SQL)
-npm run build:icons     # regenerate the KM monogram icons
+npm run dev        # Start development server
+npm run build      # Build for production
+npm run start      # Start production server
+npm run db:seed    # Initialize database
+npm run db:reset   # Reset database
 ```
 
-## Docs
+## 📈 Metrics
 
-- [docs/README.md](docs/README.md) — complete documentation index
-- [docs/QA_CHECKLIST.md](docs/QA_CHECKLIST.md) — full production-readiness QA plan
-- [docs/LAUNCH_CHECKLIST.md](docs/LAUNCH_CHECKLIST.md) — final go/no-go sign-off
-- [deploy/INSTALL.md](deploy/INSTALL.md) — production install
-- [SYSTEM_OVERVIEW.md](SYSTEM_OVERVIEW.md) — modules and data flow
-- [docs/CPANEL_DEPLOYMENT.md](docs/CPANEL_DEPLOYMENT.md) — cPanel specifics
-- [docs/PRODUCTION_AUDIT.md](docs/PRODUCTION_AUDIT.md) — security / readiness audit
+- **Backend**: 100% Complete ✅
+- **Database Tables**: 20+
+- **API Endpoints**: 8
+- **Code Lines**: ~3,500+
+- **Sample Records**: 66
 
-## Default login
+## 🎊 What's Built
 
-`admin` / PIN `1234` — **change it on first sign-in.**
+✅ Complete database with 20+ tables  
+✅ 5 repository classes for clean data access  
+✅ 8 REST API endpoints with authentication  
+✅ PIN-based auth with role-based permissions  
+✅ Seeded with realistic restaurant data  
+✅ Comprehensive documentation  
+
+## 🚀 What's Next
+
+⏳ UI component library  
+⏳ Login screen with PIN pad  
+⏳ Waiter app interface  
+⏳ Kitchen display system  
+⏳ Cashier/billing interface  
+⏳ Admin dashboard  
+
+---
+
+**Status**: Backend Complete ✅ | Ready for UI Development  
+**Version**: 1.0.0 (Phase 1)  
+
+🍽️ **Built for restaurants, by developers who care!**

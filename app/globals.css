@@ -145,6 +145,33 @@
 .admin-page-content {
   word-wrap: break-word;
   overflow-wrap: anywhere;
+  max-width: 100%;
+  overflow-x: clip;
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+/* Roomier admin modals / legacy inline forms */
+.admin-form-shell {
+  width: 100%;
+  max-width: 42rem;
+  border-radius: 1rem;
+  background: #fff;
+  padding: 1.5rem;
+}
+@media (min-width: 640px) {
+  .admin-form-shell {
+    padding: 2rem 2.5rem;
+  }
+}
+
+.admin-form-stack > * + * {
+  margin-top: 1.5rem;
+}
+
+@media (max-width: 639px) {
+  .admin-page-content .overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+  }
 }
 
 /* POS System Specific Styles */
@@ -173,3 +200,43 @@
   body { background: #fff !important; }
   .no-print { display: none !important; }
 }
+
+/* ─────────────────────────────────────────────────────────────
+   Dim Sum Puri public website theme (Phase 6 tokens).
+   Namespaced under .dsp-site so the admin/POS theme is untouched.
+   Swap these values to rebrand the public site in one place.
+   ───────────────────────────────────────────────────────────── */
+.dsp-site {
+  --dsp-bg: #F7F3EC;
+  --dsp-surface: #FFFDF9;
+  --dsp-brand: #8F3F2D;
+  --dsp-brand-dark: #6F2F23;
+  --dsp-accent: #D19A52;
+  --dsp-ink: #211A17;
+  --dsp-muted: #6C625C;
+  --dsp-border: #E6DED5;
+  --dsp-success: #2F7658;
+  --dsp-danger: #B34136;
+
+  background: var(--dsp-bg);
+  color: var(--dsp-ink);
+  --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
+}
+.dsp-site ::selection { background: color-mix(in srgb, var(--dsp-accent) 40%, transparent); }
+.dsp-display { font-family: var(--font-display); letter-spacing: -0.01em; }
+.dsp-focus:focus-visible { outline: 3px solid var(--dsp-brand); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .dsp-site * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+}
+
+/* ── Dim Sum Puri public motion (emil-design-eng pass) ──────────────
+   Restrained, purposeful: press feedback + a single mobile-menu entrance.
+   Transforms/opacity only. Reduced-motion is neutralized by the rule above. */
+.dsp-site { --dsp-ease-out: cubic-bezier(0.23, 1, 0.32, 1); }
+.dsp-site :is(button, a):not(:disabled) { transition: transform 160ms var(--dsp-ease-out), background-color 160ms ease, color 160ms ease, border-color 160ms ease; }
+@media (hover: hover) and (pointer: fine) {
+  .dsp-site :is(button, a):not(:disabled):active { transform: scale(0.97); }
+}
+.dsp-menu-enter { animation: dspMenuIn 180ms var(--dsp-ease-out) both; }
+@keyframes dspMenuIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }

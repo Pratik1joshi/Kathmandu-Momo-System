@@ -8,7 +8,7 @@ import { completeReservationForOrder } from '@/lib/leads.js';
 import { handleRouteError } from '@/lib/api-guard.js';
 import { logger } from '@/lib/logger.js';
 import { ensureAccountingSchema, postSaleJournal } from '@/lib/accounting.js';
-import { ensureCan } from '@/lib/permissions.js';
+import { currentBusinessDayId } from '@/lib/business-days.js';
 
 const orderRepo = new OrderRepository();
 const authService = new AuthService();
@@ -63,9 +63,6 @@ export async function POST(request, { params }) {
     await orderRepo.ensureCustomerIdColumn();
     const db = Database.getInstance();
 
-    // Permission gate — admin/cashier configurable; waiters usually hand off.
-    await ensureCan(db, user, 'complete_payments');
-
     // Pre-load settings outside the hot lock (read-only)
     const settingsArray = await db.all('SELECT setting_key, setting_value FROM system_settings');
     const settings = {};
@@ -95,6 +92,12 @@ export async function POST(request, { params }) {
       if (!order) {
         const err = new Error('This order could not be found.');
         err.status = 404;
+        throw err;
+      }
+      const businessDayId = await currentBusinessDayId(tx, { required: true, allowStale: true });
+      if (Number(order.business_day_id || 0) !== Number(businessDayId)) {
+        const err = new Error('This order does not belong to the current business day.');
+        err.status = 409;
         throw err;
       }
 
@@ -222,6 +225,7 @@ export async function POST(request, { params }) {
         customer_name: customerInfo.customer_name,
         customer_phone: customerInfo.customer_phone,
         reference_number: `PAY-${Date.now()}`,
+        business_day_id: businessDayId,
       };
 
       let bill;
@@ -259,6 +263,7 @@ export async function POST(request, { params }) {
         bill_number: bill.bill_number,
         parts,
         created_by: user.id,
+        business_day_id: businessDayId,
       });
 
       await tx.run(
@@ -276,23 +281,6 @@ export async function POST(request, { params }) {
           orderId,
         ]
       );
-
-      if (order.online_request_id) {
-        await tx.run(`UPDATE orders SET payment_status='PAID' WHERE id=?`, [orderId]);
-        await tx.run(
-          `UPDATE online_order_requests
-           SET status='COMPLETED', payment_status='PAID', completed_at=CURRENT_TIMESTAMP,
-               updated_at=CURRENT_TIMESTAMP
-           WHERE id=? AND status IN ('ACCEPTED','READY')`,
-          [order.online_request_id]
-        );
-        await tx.run(
-          `INSERT INTO online_order_audit
-           (request_id, action, from_status, to_status, actor_id, metadata_json, created_at)
-           VALUES (?, 'COMPLETED_AND_PAID', NULL, 'COMPLETED', ?, ?, CURRENT_TIMESTAMP)`,
-          [order.online_request_id, user.id, JSON.stringify({ bill_id: bill.id, payment_id: payment.id })]
-        );
-      }
 
       if (order.table_id) {
         await tx.run(

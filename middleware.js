@@ -1,17 +1,23 @@
 import { NextResponse } from 'next/server';
+import { LEGACY_ROLE_ROUTES, PRIMARY_ROUTE, FEATURES } from './lib/deployment.js';
 
 /**
- * Security headers + landing rewrite.
+ * Security headers + landing rewrite + legacy-role route guard.
  */
 export async function middleware(request) {
   const { pathname } = request.nextUrl;
 
-  let response;
-  if (pathname === '/') {
-    response = NextResponse.rewrite(new URL('/kathmandu-momo.html', request.url));
-  } else {
-    response = NextResponse.next();
+  // Disabled staff-role surfaces (waiter/kitchen/cashier) are not reachable in
+  // this single-admin deployment. Redirect them to the counter sale screen.
+  if (
+    !FEATURES.staffRoleLogin &&
+    LEGACY_ROLE_ROUTES.some((r) => pathname === r || pathname.startsWith(`${r}/`))
+  ) {
+    return NextResponse.redirect(new URL(PRIMARY_ROUTE, request.url));
   }
+
+  // Public landing is static HTML via next.config rewrite → /kathmandu-momo.html.
+  const response = NextResponse.next();
 
   response.headers.set('X-Content-Type-Options', 'nosniff');
   response.headers.set('X-Frame-Options', 'DENY');
@@ -47,5 +53,8 @@ export async function middleware(request) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  // Skip Next internals + static public assets (icons/images/html/manifest).
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:ico|png|jpg|jpeg|gif|webp|svg|html|txt|xml|webmanifest|js|css|map|woff2?)$).*)',
+  ],
 };

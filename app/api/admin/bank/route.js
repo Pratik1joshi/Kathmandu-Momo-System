@@ -3,6 +3,7 @@ import Database from '@/lib/db/index';
 import { requireAuth, handleRouteError } from '@/lib/api-guard.js';
 import { ensureAccountingSchema } from '@/lib/accounting.js';
 import { listBankAccounts, createBankAccount, recordBankMovement } from '@/lib/accounting-cash.js';
+import { currentBusinessDayId } from '@/lib/business-days.js';
 
 export async function GET(request) {
   try {
@@ -27,6 +28,7 @@ export async function POST(request) {
     if (data.action === 'add_account') {
       return NextResponse.json({ bank: await createBankAccount(db, data) }, { status: 201 });
     }
+    await currentBusinessDayId(db, { required: true });
     const result = await recordBankMovement(db, { ...data, kind: data.action, created_by: auth.user?.id || null });
     return NextResponse.json({ message: 'Recorded.', ...result }, { status: 201 });
   } catch (error) {

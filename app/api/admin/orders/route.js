@@ -2,19 +2,34 @@ import { NextResponse } from 'next/server';
 import Database from '@/lib/db/index';
 import { requireAuth, handleRouteError } from '@/lib/api-guard.js';
 import { readListParams, resolveOrderBy, buildSearch, paginateQuery } from '@/lib/paginate.js';
+import { ensureOrderColumns } from '@/lib/online-orders.js';
+import { ensureColumn } from '@/lib/db/schema-helpers.js';
 
 const ORDER_COLUMNS = `
   o.*,
-  b.grand_total as total,
+  COALESCE(
+    b.grand_total,
+    (SELECT COALESCE(SUM(oi.subtotal), 0) FROM order_items oi
+     WHERE oi.order_id = o.id AND COALESCE(oi.status,'') NOT IN ('voided','cancelled')) + COALESCE(o.delivery_fee, 0)
+  ) as total,
   b.subtotal,
   b.tax,
   b.discount_amount,
   b.service_charge,
+  COALESCE(b.delivery_fee, o.delivery_fee, 0) AS delivery_fee,
   b.bill_number,
-  (SELECT COUNT(oi.id) FROM order_items oi WHERE oi.order_id = o.id) as item_count
+  b.id as bill_id,
+  b.status as bill_status,
+  COALESCE(b.payment_status, 'unpaid') as payment_status,
+  COALESCE(b.outstanding_amount, 0) as outstanding_amount,
+  COALESCE(b.grand_total, 0) - COALESCE(b.outstanding_amount, 0) as amount_paid,
+  (SELECT COUNT(oi.id) FROM order_items oi
+   WHERE oi.order_id = o.id AND COALESCE(oi.status,'') NOT IN ('voided','cancelled')) as item_count
 `;
 
-const ORDER_FROM = `orders o LEFT JOIN bills b ON b.order_id = o.id`;
+const ORDER_FROM = `orders o LEFT JOIN bills b ON b.order_id = o.id AND b.id = (
+  SELECT MAX(b2.id) FROM bills b2 WHERE b2.order_id = o.id
+)`;
 
 /** Sortable columns, by design an allowlist — the key arrives in the URL. */
 const ORDER_SORTS = {
@@ -31,10 +46,14 @@ const ORDER_SEARCH_COLUMNS = ['o.order_number', 'o.table_number', 'o.customer_na
 
 export async function GET(request) {
   try {
-    const auth = await requireAuth(request, { roles: ['admin'] });
+    const auth = await requireAuth(request, { roles: ['admin', 'cashier'] });
     if (auth.error) return auth.error;
 
     const db = Database.getInstance();
+    await ensureOrderColumns(db);
+    await ensureColumn(db, 'bills', 'payment_status', "TEXT DEFAULT 'unpaid'").catch(() => {});
+    await ensureColumn(db, 'bills', 'outstanding_amount', 'REAL DEFAULT 0').catch(() => {});
+
     const { searchParams } = new URL(request.url);
     const { page, pageSize, exportAll, sort, dir, search } = readListParams(searchParams);
 
@@ -53,12 +72,12 @@ export async function GET(request) {
     }
     const from = searchParams.get('from');
     if (from) {
-      conditions.push('date(o.created_at) >= date(?)');
+      conditions.push("date(o.created_at, '+5 hours', '+45 minutes') >= date(?)");
       params.push(from);
     }
     const to = searchParams.get('to');
     if (to) {
-      conditions.push('date(o.created_at) <= date(?)');
+      conditions.push("date(o.created_at, '+5 hours', '+45 minutes') <= date(?)");
       params.push(to);
     }
 
@@ -75,16 +94,12 @@ export async function GET(request) {
       from: ORDER_FROM,
       where,
       params,
-      // o.id breaks ties so a run of same-second orders cannot repeat across pages.
       orderBy: resolveOrderBy(sort, dir, ORDER_SORTS, 'created_at', 'o.id'),
       page,
       pageSize,
       exportAll,
     });
 
-    // Summed over the whole filtered set, not the page. The page used to add up
-    // whatever it had in memory, which was every order; now that it holds fifty,
-    // totalling client-side would quietly report the wrong revenue.
     const summary = await db.get(
       `SELECT COUNT(*) AS orders,
               COALESCE(SUM(b.grand_total), 0) AS revenue,
@@ -123,8 +138,8 @@ export async function PUT(request) {
       WHERE id = ?
     `, [data.status, data.id]);
 
-    return NextResponse.json({ 
-      message: 'Order status updated successfully' 
+    return NextResponse.json({
+      message: 'Order status updated successfully',
     });
   } catch (error) {
     return handleRouteError(error, 'Failed to update order');

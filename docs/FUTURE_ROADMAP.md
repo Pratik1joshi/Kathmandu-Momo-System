@@ -1,42 +1,39 @@
 # Future Roadmap
 
-This roadmap separates production hardening from optional growth. Priority should be revalidated after launch data and staff feedback.
+This roadmap communicates direction, not committed dates. Reprioritize using customer value, restaurant risk, operational effort, and evidence from production.
 
-## P0 — before or immediately at launch
+## Now — stabilize the single-admin launch
 
-- Remove or production-gate `debugMessage`/`debugStack` from API error responses and add regression tests.
-- Add automated integration coverage for authentication/RBAC/CSRF, payment idempotency, journal balance, inventory movement, table operations, bill correction/reopen, and public QR pricing.
-- Establish monitored nightly database/upload backups and a recorded restore drill.
-- Add release identifiers, request correlation IDs, sanitized structured error tracking, and alerts for 5xx/database/financial invariant failures.
-- Baseline production-like performance with realistic menu, order, ledger, and report volumes.
+- Keep menu, public ordering, counter checkout, receipts, inventory movements, and journals reliable.
+- Expand automated coverage for totals, retries/idempotency, refunds/voids, stock reversal, and authorization.
+- Add production observability for latency, error rate, database pool, disk/uploads, backup completion, and business reconciliation exceptions.
+- Remove stale documentation/compatibility endpoints or label them explicitly.
+- Establish routine restore drills and end-of-day reconciliation.
 
-## P1 — operational maturity
+## Next — operational polish
 
-- Generate and validate an OpenAPI contract from route schemas.
-- Add browser E2E tests for the four staff roles and public journeys, including real thermal printer acceptance procedures.
-- Add explicit audit-event UI/export for permission changes, credentials, discounts, payments, voids, refunds, stock adjustments, settings, and table operations.
-- Add scheduled integrity checks for duplicate payments, unbalanced journals, orphan rows, negative/abnormal stock, and stale table/order states.
-- Improve accessibility to documented WCAG 2.2 AA targets and automate key scans.
-- Add retention/privacy policy tooling for customer, employee, sessions, logs, and backups.
+- Faster counter keyboard flows, barcode support, and resilient printer handling.
+- Better order notification/queue experience and explicit online fulfillment controls.
+- Low-stock suggestions, purchase approvals, supplier ageing, and stock-count workflows.
+- Exportable audit reports and clearer correction histories.
+- Accessibility, performance budgets, and deeper mobile/device testing.
+- Structured API schemas and generated reference documentation.
 
-## P2 — business growth
+## Later — controlled staff-role rollout
 
-- Multi-branch architecture with strict tenant isolation, branch-local numbering/settings/inventory, and consolidated reporting.
-- Payment gateway integrations with signed webhooks, idempotency, settlement matching, and no storage of sensitive card data.
-- Delivery/takeaway workflow, delivery zone/fee, customer notification, and aggregator integrations.
-- Reservation confirmation/reminder messages and customer consent/preferences.
-- Offline-resilient order capture with a designed conflict/synchronization model.
-- Forecasting, purchase suggestions, recipe variance, waste trends, and staff scheduling.
+- Re-enable waiter, kitchen, and cashier surfaces only after role permissions and end-to-end workflows are requalified.
+- Add live order/KOT updates with reconnect and conflict behavior.
+- Device/session administration and manager approval for sensitive actions.
+- Kitchen timing, waiter attribution, shift controls, and staff training material.
 
-## P3 — platform evolution
+## Explore
 
-- Native or installable staff applications with device management.
-- Kitchen station routing, coursing, modifier groups, and production forecasting.
-- Loyalty, gift cards, promotions, and CRM segmentation with privacy controls.
-- Fiscal/tax authority integrations after Nepal-specific legal/accounting review.
-- API/webhook ecosystem for approved external integrations.
+- Offline-first counter queue with explicit synchronization and conflict resolution.
+- Multi-branch tenancy, branch-aware permissions, menu, stock, and consolidated reporting.
+- Payment-provider integrations and automated settlement matching.
+- Customer loyalty, offers, delivery zones, and order-status notifications.
+- Native mobile or installable PWA experiences where operational evidence supports them.
 
-## Roadmap entry criteria
+## Entry criteria for roadmap work
 
-Each item needs an owner, user problem, success metric, security/privacy review, data migration/rollback plan, test plan, documentation update, and operational support plan before implementation.
-
+Each initiative needs a problem statement, owner, measurable outcome, security/data review, migration and rollback approach, test plan, documentation update, and operational training/support plan. Financial or stock features also require reconciliation acceptance tests before release.

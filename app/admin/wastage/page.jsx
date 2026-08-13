@@ -18,6 +18,8 @@ import useServerList from '@/lib/use-server-list';
 import AttentionBar from '@/components/admin/attention-bar';
 import { KpiCards, ChartCard, ChartGrid, TrendChart, RankBars } from '@/components/admin/report-kit';
 import WastageModal, { WASTAGE_REASON_LABELS, WASTAGE_REASONS } from '@/components/inventory/wastage-modal';
+import { formatNepalTime } from '@/lib/time-utils';
+import { nepalDateString } from '@/lib/report-dates';
 
 const reasonLabel = (r) => WASTAGE_REASON_LABELS[r] || String(r || 'other').replace(/_/g, ' ');
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
@@ -69,14 +71,14 @@ export default function WastagePage() {
 
   const weekly = useMemo(() => {
     const days = [];
+    const today = nepalDateString();
     for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setHours(0, 0, 0, 0);
-      d.setDate(d.getDate() - i);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const d = new Date(`${today}T12:00:00+05:45`);
+      d.setUTCDate(d.getUTCDate() - i);
+      const key = nepalDateString(d);
       days.push({
-        label: d.toLocaleDateString(undefined, { weekday: 'short' }),
-        sub: d.toLocaleDateString(),
+        label: d.toLocaleDateString('en-US', { timeZone: 'Asia/Kathmandu', weekday: 'short' }),
+        sub: d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kathmandu' }),
         value: totalsByDate.get(key) || 0,
       });
     }
@@ -107,7 +109,7 @@ export default function WastagePage() {
         key: 'created_at',
         label: 'When',
         value: (r) => r.created_at || '',
-        render: (r) => new Date(r.created_at).toLocaleString(),
+        render: (r) => formatNepalTime(r.created_at),
       },
       { key: 'item', label: 'Item', className: 'text-gray-900 font-medium' },
       {

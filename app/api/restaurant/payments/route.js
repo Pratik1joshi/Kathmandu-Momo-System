@@ -23,7 +23,7 @@ export async function GET(request) {
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
 
-    const payments = orderRepo.getAllPayments(startDate, endDate);
+    const payments = await orderRepo.getAllPayments(startDate, endDate);
 
     // Parse notes field for each payment
     const enrichedPayments = payments.map(payment => {

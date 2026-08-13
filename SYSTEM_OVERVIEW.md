@@ -1,4 +1,4 @@
-# Kathmandu Momo POS — Complete System Overview
+# Restaurant POS — Complete System Overview
 
 Full-stack restaurant POS + accounting system. Next.js (App Router) + PostgreSQL.
 Every accounting number is derived from a single double-entry journal; no stored

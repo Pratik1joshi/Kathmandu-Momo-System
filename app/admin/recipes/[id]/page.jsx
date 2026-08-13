@@ -13,6 +13,7 @@ import { ArrowLeft, ChefHat, Clock, Package, Pencil } from 'lucide-react';
 import { useToast } from '@/components/ui/toast';
 import { friendlyFromError } from '@/lib/friendly-message';
 import { apiJson } from '@/lib/authed-fetch';
+import { formatNepalDate } from '@/lib/time-utils';
 import { KpiCards, DataNotes } from '@/components/admin/report-kit';
 import RecipePanel from '@/components/inventory/recipe-panel';
 
@@ -219,10 +220,10 @@ export default function RecipeProfilePage() {
                       <tr key={h.itemId} className="text-gray-600">
                         <td className="px-3 py-2.5 font-medium text-gray-900">{h.name}</td>
                         <td className="px-3 py-2.5">
-                          Rs {h.first.cost.toFixed(3)} <span className="text-xs text-gray-400">· {new Date(h.first.at).toLocaleDateString()}</span>
+                          Rs {h.first.cost.toFixed(3)} <span className="text-xs text-gray-400">· {formatNepalDate(h.first.at)}</span>
                         </td>
                         <td className="px-3 py-2.5">
-                          Rs {h.last.cost.toFixed(3)} <span className="text-xs text-gray-400">· {new Date(h.last.at).toLocaleDateString()}</span>
+                          Rs {h.last.cost.toFixed(3)} <span className="text-xs text-gray-400">· {formatNepalDate(h.last.at)}</span>
                         </td>
                         <td className={`px-3 py-2.5 text-right tabular-nums ${delta > 0 ? 'text-red-600' : delta < 0 ? 'text-emerald-600' : ''}`}>
                           {delta === 0 ? 'flat' : `${delta > 0 ? '+' : ''}Rs ${delta.toFixed(3)}`}

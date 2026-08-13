@@ -4,6 +4,7 @@ import { requireAuth, handleRouteError } from '@/lib/api-guard.js';
 import { ensureSqliteTable } from '@/lib/db/ensure-sqlite-table.js';
 import { ensureColumn } from '@/lib/db/schema-helpers.js';
 import { readListParams, resolveOrderBy, buildSearch, paginateQuery } from '@/lib/paginate.js';
+import { currentBusinessDayId } from '@/lib/business-days.js';
 
 async function ensureExpensesReady(db) {
   await ensureSqliteTable(
@@ -124,7 +125,7 @@ async function buildSummary(db, where, params) {
 
 export async function GET(request) {
   try {
-    const auth = await requireAuth(request, { roles: ['admin'] });
+    const auth = await requireAuth(request, { roles: ['admin', 'cashier'] });
     if (auth.error) return auth.error;
 
     const db = Database.getInstance();
@@ -192,12 +193,13 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    const auth = await requireAuth(request, { roles: ['admin'] });
+    const auth = await requireAuth(request, { roles: ['admin', 'cashier'] });
     if (auth.error) return auth.error;
 
     const data = await request.json();
     const db = Database.getInstance();
     await ensureExpensesReady(db);
+    const businessDayId = await currentBusinessDayId(db, { required: true });
 
     const dateVal = data.purchase_date || data.expense_date || new Date().toISOString().split('T')[0];
 
@@ -211,8 +213,8 @@ export async function POST(request) {
         `
         INSERT INTO expenses (
           description, category, amount, expense_date, purchase_date, supplier, notes,
-          payment_method, logged_by, receipt_url
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          payment_method, logged_by, receipt_url, business_day_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
         [
           data.description,
@@ -225,6 +227,7 @@ export async function POST(request) {
           data.payment_method || 'cash',
           auth.user?.id || null,
           data.receipt_url || null,
+          businessDayId,
         ]
       );
       const row = mapExpenseRow(await tx.get('SELECT * FROM expenses WHERE id = ?', [result.lastInsertRowid]));
@@ -237,6 +240,7 @@ export async function POST(request) {
         expense_date: row.expense_date,
         logged_by: auth.user?.id || null,
         source_type: null,
+        business_day_id: businessDayId,
       });
       return row;
     });
@@ -258,9 +262,14 @@ export async function PUT(request) {
     const data = await request.json();
     const db = Database.getInstance();
     await ensureExpensesReady(db);
+    const businessDayId = await currentBusinessDayId(db, { required: true });
 
     const blocked = await rejectIfLinked(db, data.id);
     if (blocked) return blocked;
+    const existing = await db.get('SELECT business_day_id FROM expenses WHERE id=?', [data.id]);
+    if (Number(existing?.business_day_id || 0) !== Number(businessDayId)) {
+      return NextResponse.json({ error: 'A closed business day expense cannot be edited.' }, { status: 409 });
+    }
 
     const dateVal = data.purchase_date || data.expense_date || new Date().toISOString().split('T')[0];
 
@@ -300,6 +309,7 @@ export async function PUT(request) {
         expense_date: row.expense_date,
         logged_by: row.logged_by || auth.user?.id || null,
         source_type: null,
+        business_day_id: businessDayId,
       });
       return row;
     });
@@ -320,9 +330,14 @@ export async function DELETE(request) {
 
     const db = Database.getInstance();
     await ensureExpensesReady(db);
+    const businessDayId = await currentBusinessDayId(db, { required: true });
 
     const blocked = await rejectIfLinked(db, id);
     if (blocked) return blocked;
+    const existing = await db.get('SELECT business_day_id FROM expenses WHERE id=?', [id]);
+    if (Number(existing?.business_day_id || 0) !== Number(businessDayId)) {
+      return NextResponse.json({ error: 'A closed business day expense cannot be deleted.' }, { status: 409 });
+    }
 
     await db.transaction(async (tx) => {
       // Remove the matching journal so no orphan posting is left behind.

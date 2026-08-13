@@ -7,6 +7,7 @@ import { useToast } from '@/components/ui/toast';
 import { friendlyMessage, friendlyFromError } from '@/lib/friendly-message';
 import { apiJson } from '@/lib/authed-fetch';
 import { money } from '@/components/accounting/ledger-table';
+import { formatNepalDate } from '@/lib/time-utils';
 
 export default function BankReconciliationPage() {
   const { addToast } = useToast();
@@ -98,7 +99,7 @@ export default function BankReconciliationPage() {
                     <td className="px-5 py-2.5 text-right tabular-nums">{money(b.bookBalance)}</td>
                     <td className="px-5 py-2.5 text-right tabular-nums text-emerald-700">{money(b.clearedBalance)}</td>
                     <td className="px-5 py-2.5 text-right tabular-nums">{b.unreconciledCount} · {money(b.unreconciledAmount)}</td>
-                    <td className="px-5 py-2.5 text-gray-600">{b.lastReconciledDate ? `${new Date(b.lastReconciledDate).toLocaleDateString()} (${money(b.lastDifference)})` : 'Never'}</td>
+                    <td className="px-5 py-2.5 text-gray-600">{b.lastReconciledDate ? `${formatNepalDate(b.lastReconciledDate)} (${money(b.lastDifference)})` : 'Never'}</td>
                   </tr>
                 ))}
                 {dashboard.length === 0 && <tr><td colSpan={5} className="px-5 py-8 text-center text-gray-500">No bank accounts.</td></tr>}
@@ -143,7 +144,7 @@ export default function BankReconciliationPage() {
                   {view.lines.map((l) => (
                     <tr key={l.id} className={l.reconciled ? 'bg-emerald-50/40' : ''}>
                       <td className="px-5 py-2"><input type="checkbox" checked={l.reconciled} onChange={() => toggle(l)} className="h-4 w-4 rounded border-gray-300" /></td>
-                      <td className="px-5 py-2 text-gray-600">{l.entry_date ? new Date(l.entry_date).toLocaleDateString() : '—'}</td>
+                      <td className="px-5 py-2 text-gray-600">{l.entry_date ? formatNepalDate(l.entry_date) : '—'}</td>
                       <td className="px-5 py-2 text-gray-900">{l.memo || l.source_type || '—'}</td>
                       <td className="px-5 py-2 text-right tabular-nums text-emerald-700">{l.debit ? money(l.debit) : ''}</td>
                       <td className="px-5 py-2 text-right tabular-nums text-rose-700">{l.credit ? money(l.credit) : ''}</td>

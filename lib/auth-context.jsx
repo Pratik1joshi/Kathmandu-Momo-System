@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { isRoleEnabled, FEATURES, PRIMARY_ROUTE } from '@/lib/deployment'
 
 const AuthContext = createContext({})
 
@@ -75,14 +76,34 @@ export function AuthProvider({ children }) {
       const data = await response.json()
 
       if (response.ok && data.success) {
+        // Single-admin deployment: reject any role not enabled in this profile.
+        if (!isRoleEnabled(data.user.role)) {
+          try {
+            await fetch('/api/auth/logout', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ token: data.token }),
+            })
+          } catch { /* ignore */ }
+          return {
+            success: false,
+            error: 'This account is not permitted to sign in to this system.',
+          }
+        }
+
         localStorage.setItem('pos_token', data.token)
         localStorage.setItem('pos_user', JSON.stringify(data.user))
         setToken(data.token)
         setUser(data.user)
-        
+
+        if (data.user.must_change_password || data.must_change_password) {
+          router.push('/admin/settings?changePin=1')
+          return { success: true, must_change_password: true }
+        }
+
         // Redirect based on role
         redirectByRole(data.user.role)
-        
+
         return { success: true }
       } else {
         return { success: false, error: data.error || 'Login failed' }
@@ -114,22 +135,17 @@ export function AuthProvider({ children }) {
   }
 
   const redirectByRole = (role) => {
-    switch (role) {
-      case 'admin':
-        router.push('/admin')
-        break
-      case 'waiter':
-        router.push('/waiter')
-        break
-      case 'cashier':
-        router.push('/cashier')
-        break
-      case 'kitchen':
-        router.push('/kitchen')
-        break
-      default:
-        router.push('/login')
+    // Counter deployment: admin lands directly on the fast New Sale screen.
+    if (role === 'admin') {
+      router.push(PRIMARY_ROUTE)
+      return
     }
+    if (FEATURES.staffRoleLogin) {
+      const routes = { waiter: '/waiter', cashier: '/cashier', kitchen: '/kitchen' }
+      router.push(routes[role] || '/login')
+      return
+    }
+    router.push('/login')
   }
 
   const apiCall = async (url, options = {}) => {

@@ -1,49 +1,31 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ArrowLeft, Search, Calendar, DollarSign, CreditCard,
-  Download, Filter, Receipt, TrendingUp
+  Download, Filter, Receipt, RefreshCw
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/currency';
-import { getNepaliDateTime } from '@/lib/time-utils';
-import { RotateCcw } from 'lucide-react';
-import ReopenBillModal from '@/components/billing/reopen-bill-modal';
-import { usePermissions } from '@/lib/use-permissions';
+import { formatNepalTime, getNepaliDateTime } from '@/lib/time-utils';
+import AdminLayout from '@/components/admin/admin-layout';
+
+const nepalToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kathmandu' }).format(new Date());
 
 export default function PaymentHistoryPage() {
   const router = useRouter();
-  const { can } = usePermissions();
-  const [reopenOpen, setReopenOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [payments, setPayments] = useState([]);
-  const [filteredPayments, setFilteredPayments] = useState([]);
+  const [error, setError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [filterMethod, setFilterMethod] = useState('all');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const [startDate, setStartDate] = useState(nepalToday);
+  const [endDate, setEndDate] = useState(nepalToday);
 
-  useEffect(() => {
-    // Set default dates (today)
-    const today = new Date().toISOString().split('T')[0];
-    setStartDate(today);
-    setEndDate(today);
-  }, []);
-
-  useEffect(() => {
-    if (startDate && endDate) {
-      fetchPayments();
-    }
-  }, [startDate, endDate]);
-
-  useEffect(() => {
-    applyFilters();
-  }, [payments, searchTerm, filterMethod]);
-
-  const fetchPayments = async () => {
+  const fetchPayments = useCallback(async ({ quiet = false } = {}) => {
     try {
-      setLoading(true);
+      if (!quiet) setLoading(true);
+      setError('');
       const token = localStorage.getItem('pos_token');
       
       // Don't fetch if no valid token
@@ -62,16 +44,26 @@ export default function PaymentHistoryPage() {
       if (response.ok) {
         const data = await response.json();
         setPayments(data.payments || []);
+      } else {
+        const data = await response.json().catch(() => ({}));
+        setError(data.error || 'Could not load payment history.');
       }
-
-      setLoading(false);
     } catch (error) {
       console.error('Error fetching payments:', error);
+      setError('Could not load payment history.');
+    } finally {
       setLoading(false);
     }
-  };
+  }, [startDate, endDate, router]);
 
-  const applyFilters = () => {
+  useEffect(() => {
+    if (!startDate || !endDate) return undefined;
+    fetchPayments();
+    const interval = setInterval(() => fetchPayments({ quiet: true }), 10000);
+    return () => clearInterval(interval);
+  }, [startDate, endDate, fetchPayments]);
+
+  const filteredPayments = useMemo(() => {
     let filtered = [...payments];
 
     // Search filter
@@ -88,21 +80,24 @@ export default function PaymentHistoryPage() {
     if (filterMethod !== 'all') {
       if (filterMethod === 'online') {
         filtered = filtered.filter(p => p.payment_method === 'online' || p.payment_method === 'qr');
+      } else if (filterMethod === 'split') {
+        filtered = filtered.filter(p => Number(p.is_split) === 1);
       } else {
         filtered = filtered.filter(p => p.payment_method === filterMethod);
       }
     }
 
-    setFilteredPayments(filtered);
-  };
+    return filtered;
+  }, [payments, searchTerm, filterMethod]);
 
   const calculateTotals = () => {
-    const total = filteredPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
-    const cash = filteredPayments.filter(p => p.payment_method === 'cash').reduce((sum, p) => sum + (p.amount || 0), 0);
-    const card = filteredPayments.filter(p => p.payment_method === 'card').reduce((sum, p) => sum + (p.amount || 0), 0);
-    const online = filteredPayments.filter(p => p.payment_method === 'online' || p.payment_method === 'qr').reduce((sum, p) => sum + (p.amount || 0), 0);
-    const credit = filteredPayments.filter(p => p.payment_method === 'credit').reduce((sum, p) => sum + (p.amount || 0), 0);
-    const split = filteredPayments.filter(p => p.payment_method === 'split').reduce((sum, p) => sum + (p.amount || 0), 0);
+    const sum = (rows) => rows.reduce((total, payment) => total + Number(payment.amount || 0), 0);
+    const total = sum(filteredPayments);
+    const cash = sum(filteredPayments.filter(p => p.payment_method === 'cash'));
+    const card = sum(filteredPayments.filter(p => p.payment_method === 'card'));
+    const online = sum(filteredPayments.filter(p => p.payment_method === 'online' || p.payment_method === 'qr'));
+    const credit = sum(filteredPayments.filter(p => p.payment_method === 'credit'));
+    const split = sum(filteredPayments.filter(p => Number(p.is_split) === 1));
 
     return { total, cash, card, online, credit, split };
   };
@@ -110,11 +105,11 @@ export default function PaymentHistoryPage() {
   const exportToCSV = () => {
     const headers = ['Date', 'Order #', 'Table', 'Method', 'Amount', 'Customer', 'Phone'];
     const rows = filteredPayments.map(p => [
-      new Date(p.created_at).toLocaleString(),
+      formatNepalTime(p.created_at),
       p.order_number,
       p.table_number || 'N/A',
       p.payment_method,
-      p.amount.toFixed(2),
+      Number(p.amount || 0).toFixed(2),
       p.customer_name || '',
       p.customer_phone || ''
     ]);
@@ -135,7 +130,7 @@ export default function PaymentHistoryPage() {
 
   const totals = calculateTotals();
 
-  if (loading) {
+  if (loading && payments.length === 0 && !error) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center">
         <div className="text-center">
@@ -147,8 +142,15 @@ export default function PaymentHistoryPage() {
   }
 
   return (
+    <AdminLayout>
     <div className="min-h-screen bg-white p-8">
       <div className="max-w-7xl mx-auto">
+        {error && (
+          <div className="mb-4 flex items-center justify-between gap-3 border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            <span>{error}</span>
+            <button type="button" onClick={() => fetchPayments()} className="font-semibold underline">Retry</button>
+          </div>
+        )}
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <button
@@ -162,31 +164,14 @@ export default function PaymentHistoryPage() {
             <Receipt className="w-8 h-8 mr-3 text-blue-600" />
             Payment History
           </h1>
-          <div className="flex items-center gap-3">
-            {can('reopen_bills') && (
-              <button
-                onClick={() => setReopenOpen(true)}
-                className="flex items-center space-x-2 px-4 py-2 border-2 border-amber-200 bg-amber-50 text-amber-800 rounded-lg hover:bg-amber-100 transition-all font-semibold"
-              >
-                <RotateCcw className="w-5 h-5" />
-                <span>Reopen a bill</span>
-              </button>
-            )}
-            <button
-              onClick={exportToCSV}
-              className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all font-semibold"
-            >
-              <Download className="w-5 h-5" />
-              <span>Export CSV</span>
-            </button>
-          </div>
+          <button
+            onClick={exportToCSV}
+            className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all font-semibold"
+          >
+            <Download className="w-5 h-5" />
+            <span>Export CSV</span>
+          </button>
         </div>
-
-        <ReopenBillModal
-          open={reopenOpen}
-          onClose={() => setReopenOpen(false)}
-          buildHref={(id) => `/cashier/order/${id}`}
-        />
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mb-8">
@@ -294,6 +279,9 @@ export default function PaymentHistoryPage() {
             <h2 className="text-xl font-bold text-gray-800">
               Transactions ({filteredPayments.length})
             </h2>
+            <button type="button" onClick={() => fetchPayments()} disabled={loading} title="Refresh payments" aria-label="Refresh payments" className="flex h-10 w-10 items-center justify-center rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50">
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            </button>
           </div>
 
           {filteredPayments.length === 0 ? (
@@ -331,7 +319,7 @@ export default function PaymentHistoryPage() {
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {filteredPayments.map((payment) => (
-                    <tr key={payment.id} className="hover:bg-gray-50 transition-colors">
+                    <tr key={payment.row_key || payment.id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">
                         {formatDateTime(payment.created_at)}
                       </td>
@@ -385,5 +373,6 @@ export default function PaymentHistoryPage() {
         </div>
       </div>
     </div>
+    </AdminLayout>
   );
 }

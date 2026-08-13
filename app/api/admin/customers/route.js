@@ -36,7 +36,7 @@ function friendlyDbError(error, fallback) {
 
 export async function GET(request) {
   try {
-    const auth = await requireAuth(request, { roles: ['admin', 'cashier'] });
+    const auth = await requireAuth(request, { roles: ['admin', 'cashier', 'waiter'] });
     if (auth.error) return auth.error;
 
     const db = Database.getInstance();
@@ -233,7 +233,7 @@ export async function PUT(request) {
 
 export async function DELETE(request) {
   try {
-    const auth = await requireAuth(request, { roles: ['admin', 'cashier'] });
+    const auth = await requireAuth(request, { roles: ['admin'] });
     if (auth.error) return auth.error;
 
     const { searchParams } = new URL(request.url);
@@ -244,6 +244,24 @@ export async function DELETE(request) {
     }
 
     const db = Database.getInstance();
+
+    // customer_id on orders/bills/customer_ledger is ON DELETE SET NULL — a
+    // hard delete would silently strip customer attribution from real order,
+    // billing and credit-ledger history instead of failing loudly.
+    const referenced = await db.get(
+      `SELECT
+         (SELECT COUNT(*) FROM orders WHERE customer_id = ?) +
+         (SELECT COUNT(*) FROM bills WHERE customer_id = ?) +
+         (SELECT COUNT(*) FROM customer_ledger WHERE customer_id = ?) AS n`,
+      [id, id, id]
+    ).catch(() => null);
+    if (Number(referenced?.n || 0) > 0) {
+      return NextResponse.json(
+        { error: 'This customer has order, billing or credit history and cannot be deleted.' },
+        { status: 409 }
+      );
+    }
+
     await db.run('DELETE FROM customers WHERE id = ?', [id]);
 
     return NextResponse.json({

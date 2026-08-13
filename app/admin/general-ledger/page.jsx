@@ -6,6 +6,7 @@ import { useToast } from '@/components/ui/toast';
 import { friendlyFromError } from '@/lib/friendly-message';
 import { apiJson } from '@/lib/authed-fetch';
 import LedgerTable, { money } from '@/components/accounting/ledger-table';
+import { formatNepalDate } from '@/lib/time-utils';
 
 const DEBIT_NORMAL = new Set(['asset', 'expense']);
 
@@ -93,7 +94,7 @@ export default function GeneralLedgerPage() {
                     <span className="text-sm font-semibold text-gray-900">#{j.id} · {j.memo || 'Journal'}</span>
                     {j.source_type && <span className="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] uppercase text-gray-500">{j.source_type}</span>}
                   </div>
-                  <span className="text-xs text-gray-500">{new Date(j.entry_date).toLocaleDateString()}{j.created_by_name ? ` · ${j.created_by_name}` : ''}</span>
+                  <span className="text-xs text-gray-500">{formatNepalDate(j.entry_date)}{j.created_by_name ? ` · ${j.created_by_name}` : ''}</span>
                 </div>
                 <table className="w-full text-sm">
                   <tbody>

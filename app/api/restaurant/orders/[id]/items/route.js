@@ -1,5 +1,7 @@
 import { OrderRepository } from '@/lib/db/repositories/orders.js';
 import { AuthService } from '@/lib/auth/auth.js';
+import Database from '@/lib/db/index.js';
+import { issueKot } from '@/lib/kot-service.js';
 
 async function verifyAuth(request) {
   const token = request.headers.get('authorization')?.split(' ')[1];
@@ -23,7 +25,8 @@ export async function POST(request, context) {
     const user = await verifyAuth(request);
     const { params } = context;
     const { id: orderId } = await params;
-    const { items } = await request.json();
+    const body = await request.json();
+    const { items } = body;
     
     if (!items || items.length === 0) {
       return Response.json(
@@ -56,6 +59,17 @@ export async function POST(request, context) {
     
     // Add items to order
     await orderRepo.addItems(orderId, items);
+    let kot = null;
+    try {
+      const issued = await issueKot(Database.getInstance(), {
+        orderId,
+        actor: user,
+        orderNotes: body.kot_note ?? body.kot_notes ?? null,
+      });
+      kot = issued.kot || null;
+    } catch (e) {
+      if (e?.code !== 'no_unsent_items') throw e;
+    }
 
     // Extra rounds after serving → send back to kitchen
     if (['dining', 'served', 'ready'].includes(order.status)) {
@@ -70,7 +84,8 @@ export async function POST(request, context) {
       success: true,
       message: 'Items added to the order.',
       order: updatedOrder,
-      items: orderItems
+      items: orderItems,
+      kot,
     });
     
   } catch (error) {

@@ -16,8 +16,8 @@ import { readListParams } from '@/lib/paginate.js';
 async function buildSummary(db) {
   const [daily, byItem, byReason, byEmployee, unlinked] = await Promise.all([
     db.all(
-      `SELECT date(w.created_at) AS day, COALESCE(SUM(w.total_cost), 0) AS total, COUNT(*) AS entries
-       FROM wastage_log w GROUP BY date(w.created_at) ORDER BY day`
+      `SELECT date(w.created_at, '+5 hours', '+45 minutes') AS day, COALESCE(SUM(w.total_cost), 0) AS total, COUNT(*) AS entries
+       FROM wastage_log w GROUP BY date(w.created_at, '+5 hours', '+45 minutes') ORDER BY day`
     ),
     db.all(
       `SELECT COALESCE(im.item_name, r.name, 'Unknown item') AS label,

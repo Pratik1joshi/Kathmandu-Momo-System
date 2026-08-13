@@ -1,5 +1,7 @@
 import { OrderRepository } from '@/lib/db/repositories/orders.js';
 import { AuthService } from '@/lib/auth/auth.js';
+import Database from '@/lib/db/index.js';
+import { issueKot } from '@/lib/kot-service.js';
 
 async function verifyAuth(request) {
   const token = request.headers.get('authorization')?.split(' ')[1];
@@ -139,6 +141,16 @@ export async function POST(request) {
 
     const orderRepo = new OrderRepository();
     const result = await orderRepo.create(orderData);
+    let kot = null;
+    if ((orderData.items || []).length) {
+      const db = Database.getInstance();
+      const issued = await issueKot(db, {
+        orderId: result.order_id,
+        actor: user,
+        orderNotes: orderData.kot_note ?? orderData.kot_notes ?? null,
+      });
+      kot = issued.kot || null;
+    }
     
     const order = await orderRepo.getById(result.order_id);
     
@@ -147,6 +159,7 @@ export async function POST(request) {
       order,
       order_id: result.order_id,
       order_number: result.order_number,
+      kot,
       stock: result.stock || null,
     }, { status: 201 });
     

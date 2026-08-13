@@ -4,10 +4,20 @@ import { requireAuth, handleRouteError } from '@/lib/api-guard.js';
 import { ensureRecipeTables } from '@/lib/recipes.js';
 import { createPurchase, listPurchases } from '@/lib/purchases.js';
 import { readListParams } from '@/lib/paginate.js';
+import { isPermissionAllowedSync } from '@/lib/permissions.js';
+
+async function cashierMayUseSupplier(db, user, supplierName) {
+  if (user?.role !== 'cashier' || !String(supplierName || '').trim()) return true;
+  const existing = await db.get(
+    `SELECT id FROM suppliers WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) LIMIT 1`,
+    [String(supplierName).trim()]
+  );
+  return !!existing || isPermissionAllowedSync(user.role, 'suppliers.manage');
+}
 
 export async function GET(request) {
   try {
-    const auth = await requireAuth(request, { roles: ['admin'] });
+    const auth = await requireAuth(request, { roles: ['admin', 'cashier'], permission: 'purchases.view' });
     if (auth.error) return auth.error;
 
     const db = Database.getInstance();
@@ -34,16 +44,24 @@ export async function GET(request) {
  */
 export async function POST(request) {
   try {
-    const auth = await requireAuth(request, { roles: ['admin'] });
+    const auth = await requireAuth(request, { roles: ['admin', 'cashier'], permission: 'purchases.create' });
     if (auth.error) return auth.error;
 
     const data = await request.json();
     const db = Database.getInstance();
     await ensureRecipeTables(db);
+    if (!await cashierMayUseSupplier(db, auth.user, data.supplier || data.supplier_name)) {
+      return NextResponse.json(
+        { error: 'Ask an admin to add this supplier or grant supplier-management permission.' },
+        { status: 403 }
+      );
+    }
 
     const purchase = await createPurchase(db, {
       ...data,
-      received_by: data.received_by ?? auth.user?.id ?? null,
+      received_by: auth.user?.role === 'cashier'
+        ? auth.user.id
+        : data.received_by ?? auth.user?.id ?? null,
     });
     return NextResponse.json({ message: 'Delivery received and stock updated.', purchase }, { status: 201 });
   } catch (error) {

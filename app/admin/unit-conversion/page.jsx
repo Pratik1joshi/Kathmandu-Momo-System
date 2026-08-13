@@ -5,6 +5,7 @@ import AdminLayout from '@/components/admin/admin-layout';
 import UnitSelect from '@/components/ui/unit-select';
 import { Plus, Edit, Trash2, ArrowRight, Ruler } from 'lucide-react';
 import { useToast } from '@/components/ui/toast';
+import { useConfirm } from '@/components/ui/confirm';
 import { friendlyMessage, friendlyFromError } from '@/lib/friendly-message';
 import { apiJson } from '@/lib/authed-fetch';
 import { unitLabel } from '@/lib/units';
@@ -13,6 +14,7 @@ const emptyForm = { from_unit: '', to_unit: '', factor: '', note: '' };
 
 export default function UnitConversionPage() {
   const { addToast } = useToast();
+  const { confirm } = useConfirm();
   const [conversions, setConversions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -72,7 +74,12 @@ export default function UnitConversionPage() {
   };
 
   const remove = async (c) => {
-    if (!confirm(`Delete the ${unitLabel(c.from_unit)} → ${unitLabel(c.to_unit)} conversion?`)) return;
+    const ok = await confirm({
+      title: 'Delete conversion?',
+      message: `Delete the ${unitLabel(c.from_unit)} → ${unitLabel(c.to_unit)} conversion?`,
+      tone: 'delete',
+    });
+    if (!ok) return;
     try {
       await apiJson(`/api/admin/unit-conversions?id=${c.id}`, { method: 'DELETE' });
       load();

@@ -1,6 +1,17 @@
 import { NextResponse } from 'next/server';
 import Database from '@/lib/db/index';
 import { requireAuth, handleRouteError } from '@/lib/api-guard.js';
+import { ensureColumn } from '@/lib/db/schema-helpers.js';
+import { normalizeFoodGroup, DEFAULT_FOOD_GROUP } from '@/lib/food-groups.js';
+
+/** Ensure the master-category ("food group") column exists before we read/write it. */
+async function ensureFoodGroup(db) {
+  try {
+    await ensureColumn(db, 'menu_categories', 'food_group', `TEXT DEFAULT '${DEFAULT_FOOD_GROUP}'`);
+  } catch (e) {
+    console.warn('ensureFoodGroup:', e?.message || e);
+  }
+}
 
 // GET - List all categories
 export async function GET(request) {
@@ -9,14 +20,28 @@ export async function GET(request) {
     if (auth.error) return auth.error;
 
     const db = Database.getInstance();
-    
-    // Get categories from menu_categories table
-    const categories = await db.all(`
-      SELECT id, name, display_order, icon, is_active, created_at
-      FROM menu_categories
-      WHERE is_active = 1
-      ORDER BY display_order ASC, name ASC
-    `);
+    await ensureFoodGroup(db);
+
+    let categories;
+    try {
+      categories = await db.all(`
+        SELECT id, name, display_order, icon, is_active, created_at,
+               COALESCE(food_group, '${DEFAULT_FOOD_GROUP}') AS food_group
+        FROM menu_categories
+        WHERE is_active = 1
+        ORDER BY display_order ASC, name ASC
+      `);
+    } catch (e) {
+      // Column may be missing when app DB user cannot ALTER — still list categories.
+      console.warn('categories food_group select:', e?.message || e);
+      categories = await db.all(`
+        SELECT id, name, display_order, icon, is_active, created_at
+        FROM menu_categories
+        WHERE is_active = 1
+        ORDER BY display_order ASC, name ASC
+      `);
+      categories = (categories || []).map((c) => ({ ...c, food_group: DEFAULT_FOOD_GROUP }));
+    }
 
     return NextResponse.json({ categories });
   } catch (error) {
@@ -30,7 +55,7 @@ export async function POST(request) {
     const auth = await requireAuth(request);
     if (auth.error) return auth.error;
 
-    const { name, icon, display_order } = await request.json();
+    const { name, icon, display_order, food_group } = await request.json();
 
     if (!name || name.trim() === '') {
       return NextResponse.json(
@@ -40,6 +65,7 @@ export async function POST(request) {
     }
 
     const db = Database.getInstance();
+    await ensureFoodGroup(db);
 
     // Check if category name already exists
     const existing = await db.get(
@@ -65,9 +91,9 @@ export async function POST(request) {
 
     // Insert new category
     const result = await db.run(`
-      INSERT INTO menu_categories (name, icon, display_order, is_active)
-      VALUES (?, ?, ?, 1)
-    `, [name.trim(), icon || null, order]);
+      INSERT INTO menu_categories (name, icon, display_order, is_active, food_group)
+      VALUES (?, ?, ?, 1, ?)
+    `, [name.trim(), icon || null, order, normalizeFoodGroup(food_group)]);
 
     const category = await db.get(
       'SELECT * FROM menu_categories WHERE id = ?',
@@ -89,7 +115,7 @@ export async function PUT(request) {
     const auth = await requireAuth(request);
     if (auth.error) return auth.error;
 
-    const { id, name, icon, display_order } = await request.json();
+    const { id, name, icon, display_order, food_group } = await request.json();
 
     if (!id) {
       return NextResponse.json({ error: 'Category ID is required' }, { status: 400 });
@@ -103,6 +129,7 @@ export async function PUT(request) {
     }
 
     const db = Database.getInstance();
+    await ensureFoodGroup(db);
 
     // Check if category exists
     const existing = await db.get(
@@ -133,9 +160,9 @@ export async function PUT(request) {
     // Update category
     await db.run(`
       UPDATE menu_categories
-      SET name = ?, icon = ?, display_order = ?
+      SET name = ?, icon = ?, display_order = ?, food_group = ?
       WHERE id = ?
-    `, [name.trim(), icon || null, display_order || 0, id]);
+    `, [name.trim(), icon || null, display_order || 0, normalizeFoodGroup(food_group), id]);
 
     const category = await db.get(
       'SELECT * FROM menu_categories WHERE id = ?',

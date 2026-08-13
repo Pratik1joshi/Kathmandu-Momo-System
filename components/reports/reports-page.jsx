@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { DownloadCloud, FileText, TrendingUp, TrendingDown, DollarSign, ShoppingCart, Package, Users, Calendar, Clock, Receipt } from 'lucide-react'
+import { formatNepalDate, formatNepalTime } from '@/lib/time-utils'
 
 export default function ReportsPage() {
   const [reportType, setReportType] = useState('alltime')
@@ -209,7 +210,7 @@ export default function ReportsPage() {
                 {recentTransactions.map(transaction => (
                   <tr key={transaction.id} className="border-b border-border hover:bg-muted/30">
                     <td className="py-3 px-4 text-xs">
-                      {new Date(transaction.created_at).toLocaleString()}
+                      {formatNepalTime(transaction.created_at)}
                     </td>
                     <td className="py-3 px-4">
                       <div className="max-w-xs truncate">
@@ -478,7 +479,7 @@ export default function ReportsPage() {
                   <p className="text-xs text-muted-foreground mb-1">Best Day</p>
                   <p className="font-bold text-primary">
                     {transactions.length > 0 
-                      ? new Date(transactions.sort((a, b) => b.total - a.total)[0]?.created_at).toLocaleDateString()
+                      ? formatNepalDate(transactions.sort((a, b) => b.total - a.total)[0]?.created_at)
                       : 'N/A'}
                   </p>
                 </div>

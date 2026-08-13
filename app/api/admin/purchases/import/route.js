@@ -3,6 +3,7 @@ import Database from '@/lib/db/index';
 import { requireAuth, handleRouteError } from '@/lib/api-guard.js';
 import { ensureRecipeTables } from '@/lib/recipes.js';
 import { previewPurchaseImport, commitPurchaseImport } from '@/lib/purchases.js';
+import { isPermissionAllowedSync } from '@/lib/permissions.js';
 
 /**
  * Bulk purchase import. Two steps on purpose:
@@ -15,7 +16,7 @@ import { previewPurchaseImport, commitPurchaseImport } from '@/lib/purchases.js'
  */
 export async function POST(request) {
   try {
-    const auth = await requireAuth(request, { roles: ['admin'] });
+    const auth = await requireAuth(request, { roles: ['admin', 'cashier'], permission: 'purchases.import' });
     if (auth.error) return auth.error;
 
     const data = await request.json();
@@ -27,6 +28,23 @@ export async function POST(request) {
 
     if (data.mode !== 'commit') {
       return NextResponse.json({ mode: 'preview', ...(await previewPurchaseImport(db, rows)) });
+    }
+
+    if (auth.user?.role === 'cashier' && !isPermissionAllowedSync(auth.user.role, 'suppliers.manage')) {
+      const names = [...new Set(rows.map((row) => String(row.supplier || '').trim()).filter(Boolean))];
+      const missing = [];
+      for (const name of names) {
+        const existing = await db.get(
+          `SELECT id FROM suppliers WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) LIMIT 1`,
+          [name]
+        );
+        if (!existing) missing.push(name);
+      }
+      if (missing.length) {
+        return NextResponse.json({
+          error: `These suppliers do not exist yet: ${missing.join(', ')}. Ask an admin to add them or grant supplier-management permission.`,
+        }, { status: 403 });
+      }
     }
 
     // ponytail: each purchase commits in its own transaction, so a mid-import

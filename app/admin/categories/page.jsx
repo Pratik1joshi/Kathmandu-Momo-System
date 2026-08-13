@@ -4,10 +4,13 @@ import { useState, useEffect } from 'react';
 import AdminLayout from '@/components/admin/admin-layout';
 import { Plus, Edit, Trash2, Save, X, FolderOpen, GripVertical } from 'lucide-react';
 import { useToast } from '@/components/ui/toast';
+import { useConfirm } from '@/components/ui/confirm';
 import { friendlyMessage, friendlyFromError } from '@/lib/friendly-message';
+import { FOOD_GROUPS, DEFAULT_FOOD_GROUP, foodGroupLabel } from '@/lib/food-groups.js';
 
 export default function CategoriesPage() {
   const { addToast } = useToast();
+  const { confirm } = useConfirm();
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -15,7 +18,8 @@ export default function CategoriesPage() {
   const [formData, setFormData] = useState({
     name: '',
     icon: '',
-    display_order: 0
+    display_order: 0,
+    food_group: DEFAULT_FOOD_GROUP
   });
 
   useEffect(() => {
@@ -79,13 +83,19 @@ export default function CategoriesPage() {
     setFormData({
       name: category.name,
       icon: category.icon || '',
-      display_order: category.display_order || 0
+      display_order: category.display_order || 0,
+      food_group: category.food_group || DEFAULT_FOOD_GROUP
     });
     setShowForm(true);
   };
 
   const handleDelete = async (id, name) => {
-    if (!confirm(`Are you sure you want to delete "${name}" category?`)) return;
+    const ok = await confirm({
+      title: `Delete "${name}"?`,
+      message: `Are you sure you want to delete the "${name}" category?`,
+      tone: 'delete',
+    });
+    if (!ok) return;
     
     try {
       const token = localStorage.getItem('pos_token');
@@ -114,7 +124,8 @@ export default function CategoriesPage() {
     setFormData({
       name: '',
       icon: '',
-      display_order: 0
+      display_order: 0,
+      food_group: DEFAULT_FOOD_GROUP
     });
   };
 
@@ -149,71 +160,79 @@ export default function CategoriesPage() {
 
           {/* Category Form Modal */}
           {showForm && (
-            <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-              <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
-                <div className="p-6 border-b border-gray-200">
+            <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+              <div className="admin-form-shell max-h-[94dvh] overflow-y-auto rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-2xl">
+                <div className="border-b border-gray-200 pb-5 mb-6">
                   <h2 className="text-2xl font-bold text-gray-800">
                     {editingCategory ? 'Edit Category' : 'Add New Category'}
                   </h2>
                 </div>
 
-                <form onSubmit={handleSubmit} className="p-6 space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Category Name *
-                    </label>
+                <form onSubmit={handleSubmit} className="admin-form-stack">
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-medium text-gray-700">Category Name *</span>
                     <input
                       type="text"
                       value={formData.name}
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="h-11 sm:h-12 w-full rounded-xl border border-gray-300 px-4 text-base focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                       placeholder="e.g., Appetizers, Main Course"
                       required
                     />
-                  </div>
+                  </label>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Icon (Optional)
-                    </label>
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-medium text-gray-700">Master category</span>
+                    <select
+                      value={formData.food_group}
+                      onChange={(e) => setFormData({ ...formData, food_group: e.target.value })}
+                      className="h-11 sm:h-12 w-full rounded-xl border border-gray-300 px-4 text-base focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                    >
+                      {FOOD_GROUPS.map((g) => (
+                        <option key={g.id} value={g.id}>{g.label}</option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-gray-500 mt-2">Groups this category for reports (Food, Beverages, Tobacco…).</p>
+                  </label>
+
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-medium text-gray-700">Icon (Optional)</span>
                     <input
                       type="text"
                       value={formData.icon}
                       onChange={(e) => setFormData({ ...formData, icon: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="h-11 sm:h-12 w-full rounded-xl border border-gray-300 px-4 text-base focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                       placeholder="🍕 (emoji or icon name)"
                     />
-                  </div>
+                  </label>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Display Order
-                    </label>
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-medium text-gray-700">Display Order</span>
                     <input
                       type="number"
                       value={formData.display_order}
                       onChange={(e) => setFormData({ ...formData, display_order: parseInt(e.target.value) || 0 })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="h-11 sm:h-12 w-full rounded-xl border border-gray-300 px-4 text-base focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                       min="0"
                     />
-                    <p className="text-xs text-gray-500 mt-1">Lower numbers appear first</p>
-                  </div>
+                    <p className="text-xs text-gray-500 mt-2">Lower numbers appear first</p>
+                  </label>
 
-                  <div className="flex space-x-3 pt-4">
-                    <button
-                      type="submit"
-                      className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                    >
-                      <Save className="w-4 h-4" />
-                      <span>{editingCategory ? 'Update' : 'Create'}</span>
-                    </button>
+                  <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row">
                     <button
                       type="button"
                       onClick={handleCancel}
-                      className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+                      className="flex-1 flex items-center justify-center gap-2 h-11 sm:h-12 rounded-xl bg-gray-200 text-gray-700 hover:bg-gray-300 font-semibold"
                     >
                       <X className="w-4 h-4" />
                       <span>Cancel</span>
+                    </button>
+                    <button
+                      type="submit"
+                      className="flex-1 flex items-center justify-center gap-2 h-11 sm:h-12 rounded-xl bg-blue-600 text-white hover:bg-blue-700 font-semibold"
+                    >
+                      <Save className="w-4 h-4" />
+                      <span>{editingCategory ? 'Update' : 'Create'}</span>
                     </button>
                   </div>
                 </form>
@@ -248,7 +267,12 @@ export default function CategoriesPage() {
                         <span className="text-2xl flex-shrink-0">{category.icon || '📁'}</span>
                         <div className="min-w-0">
                           <h3 className="font-bold text-gray-900 truncate">{category.name}</h3>
-                          <p className="text-xs text-gray-500">Order: {category.display_order}</p>
+                          <p className="text-xs text-gray-500">
+                            Order: {category.display_order}
+                            <span className="ml-2 inline-flex items-center rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">
+                              {foodGroupLabel(category.food_group)}
+                            </span>
+                          </p>
                         </div>
                       </div>
                     </div>
@@ -273,6 +297,9 @@ export default function CategoriesPage() {
                         Category
                       </th>
                       <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Master category
+                      </th>
+                      <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Icon
                       </th>
                       <th className="px-6 py-4 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -293,6 +320,11 @@ export default function CategoriesPage() {
                           <div className="text-sm font-medium text-gray-900">
                             {category.name}
                           </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">
+                            {foodGroupLabel(category.food_group)}
+                          </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-2xl">

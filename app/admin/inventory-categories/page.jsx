@@ -4,11 +4,13 @@ import { useState, useEffect } from 'react';
 import AdminLayout from '@/components/admin/admin-layout';
 import { Plus, Edit, Trash2, FolderOpen } from 'lucide-react';
 import { useToast } from '@/components/ui/toast';
+import { useConfirm } from '@/components/ui/confirm';
 import { friendlyMessage, friendlyFromError } from '@/lib/friendly-message';
 import { apiJson } from '@/lib/authed-fetch';
 
 export default function InventoryCategoriesPage() {
   const { addToast } = useToast();
+  const { confirm } = useConfirm();
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -70,9 +72,14 @@ export default function InventoryCategoriesPage() {
   const remove = async (c) => {
     const msg =
       c.item_count > 0
-        ? `Delete "${c.name}"? ${c.item_count} item(s) will become uncategorised.`
-        : `Delete "${c.name}"?`;
-    if (!confirm(msg)) return;
+        ? `${c.item_count} item(s) will become uncategorised.`
+        : '';
+    const ok = await confirm({
+      title: `Delete "${c.name}"?`,
+      message: msg || undefined,
+      tone: 'delete',
+    });
+    if (!ok) return;
     try {
       await apiJson(`/api/admin/inventory-categories?id=${c.id}`, { method: 'DELETE' });
       load();
@@ -102,39 +109,39 @@ export default function InventoryCategoriesPage() {
           </div>
 
           {showForm && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-              <div className="w-full max-w-lg rounded-2xl bg-white">
-                <div className="border-b border-gray-200 p-6 sm:px-8">
-                  <h2 className="text-xl font-bold text-gray-800">{editing ? 'Edit Category' : 'Add Category'}</h2>
+            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-4">
+              <div className="admin-form-shell max-h-[94dvh] w-full overflow-y-auto rounded-t-2xl sm:max-w-xl sm:rounded-2xl">
+                <div className="mb-6 border-b border-gray-200 pb-5">
+                  <h2 className="text-2xl font-bold text-gray-800">{editing ? 'Edit Category' : 'Add Category'}</h2>
                 </div>
-                <form onSubmit={submit} className="space-y-4 p-6 sm:p-8" noValidate>
+                <form onSubmit={submit} className="admin-form-stack" noValidate>
                   <label className="block">
-                    <span className="mb-1 block text-sm font-medium text-gray-700">Category name *</span>
+                    <span className="mb-2 block text-sm font-medium text-gray-700">Category name *</span>
                     <input
                       autoFocus
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      className="h-10 w-full rounded-lg border border-gray-300 px-3 text-gray-900"
+                      className="h-11 sm:h-12 w-full rounded-xl border border-gray-300 px-4 text-base text-gray-900"
                       placeholder="e.g. Vegetables"
                     />
                   </label>
-                  <div className="flex gap-3 pt-2">
-                    <button
-                      type="submit"
-                      disabled={saving}
-                      className="flex-1 rounded-lg bg-gray-900 px-6 py-3 text-white hover:bg-gray-800 disabled:opacity-50"
-                    >
-                      {saving ? 'Saving…' : editing ? 'Update' : 'Create'}
-                    </button>
+                  <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row">
                     <button
                       type="button"
                       onClick={() => {
                         setShowForm(false);
                         setEditing(null);
                       }}
-                      className="flex-1 rounded-lg bg-gray-200 px-6 py-3 text-gray-700 hover:bg-gray-300"
+                      className="flex-1 rounded-xl bg-gray-200 px-6 py-3 font-semibold text-gray-700 hover:bg-gray-300"
                     >
                       Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={saving}
+                      className="flex-1 rounded-xl bg-gray-900 px-6 py-3 font-semibold text-white hover:bg-gray-800 disabled:opacity-50"
+                    >
+                      {saving ? 'Saving…' : editing ? 'Update' : 'Create'}
                     </button>
                   </div>
                 </form>

@@ -1,26 +1,90 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { ShoppingBag, Plus, Minus, X, CheckCircle2, Clock, Leaf, Loader2 } from 'lucide-react';
+import {
+  ShoppingBag, Plus, Minus, X, CheckCircle2, Clock, Leaf, Loader2,
+  BellRing, Utensils, ReceiptText, Droplets,
+} from 'lucide-react';
+import DishImage from '@/components/public/dish-image';
+import { compactOrderNumber } from '@/lib/document-display.js';
 
 const rs = (n) => `Rs ${Number(n || 0).toLocaleString()}`;
+
+const WAITER_OPTIONS = [
+  { id: 'service', label: 'Need service', detail: 'I need help at the table', icon: BellRing },
+  { id: 'order', label: 'Ready to order', detail: 'Please send someone to take our order', icon: Utensils },
+  { id: 'bill', label: 'Request bill', detail: 'We are ready for the bill', icon: ReceiptText },
+  { id: 'water', label: 'Need water', detail: 'Please bring water to the table', icon: Droplets },
+];
+
+function MenuCard({ item, qty, onAdd, onDec, orderingEnabled }) {
+  return (
+    <article className="group flex flex-col overflow-hidden rounded-2xl border border-stone-200/80 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+      <div className="relative">
+        <DishImage src={item.image} alt={item.name} rounded="rounded-none" className="aspect-[4/3] w-full" />
+        {item.diet === 'veg' && (
+          <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-md bg-white/90 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 shadow-sm backdrop-blur">
+            <Leaf className="h-3 w-3" /> Veg
+          </span>
+        )}
+        {qty > 0 && (
+          <span className="absolute right-2 top-2 flex h-6 min-w-6 items-center justify-center rounded-full bg-stone-900 px-1.5 text-xs font-bold text-white shadow">
+            {qty}
+          </span>
+        )}
+      </div>
+      <div className="flex flex-1 flex-col gap-1 p-3">
+        <h3 className="text-sm font-semibold leading-snug text-stone-900 sm:text-base">{item.name}</h3>
+        {item.description ? (
+          <p className="line-clamp-2 text-xs leading-relaxed text-stone-500">{item.description}</p>
+        ) : null}
+        <div className="mt-auto flex items-center justify-between gap-2 pt-2">
+          <span className="text-sm font-bold tabular-nums text-amber-700 sm:text-base">{rs(item.price)}</span>
+          {!orderingEnabled ? null : qty === 0 ? (
+            <button
+              type="button"
+              onClick={() => onAdd(item)}
+              className="inline-flex items-center gap-1 rounded-lg bg-stone-900 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-stone-800"
+            >
+              <Plus className="h-3.5 w-3.5" /> Add
+            </button>
+          ) : (
+            <div className="flex items-center gap-2 rounded-lg bg-stone-900 px-1.5 py-1 text-white">
+              <button type="button" onClick={() => onDec(item)} aria-label="Remove one" className="rounded p-0.5 hover:bg-white/10">
+                <Minus className="h-3.5 w-3.5" />
+              </button>
+              <span className="min-w-4 text-center text-xs font-bold">{qty}</span>
+              <button type="button" onClick={() => onAdd(item)} aria-label="Add one" className="rounded p-0.5 hover:bg-white/10">
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </article>
+  );
+}
 
 export default function CustomerOrderPage() {
   const { token } = useParams();
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
-  const [cart, setCart] = useState({}); // id -> {item, qty}
+  const [cart, setCart] = useState({});
   const [showCart, setShowCart] = useState(false);
   const [name, setName] = useState('');
   const [placing, setPlacing] = useState(false);
-  const [placed, setPlaced] = useState(null); // { order_id, order_number }
+  const [placed, setPlaced] = useState(null);
   const [track, setTrack] = useState(null);
   const [activeCat, setActiveCat] = useState('');
+  const [showWaiterCall, setShowWaiterCall] = useState(false);
+  const [waiterRequest, setWaiterRequest] = useState(null);
+  const [callingWaiter, setCallingWaiter] = useState(false);
+  const [waiterError, setWaiterError] = useState('');
   const pollRef = useRef(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       const res = await fetch(`/api/public/order/${token}`);
       const d = await res.json();
@@ -33,10 +97,24 @@ export default function CustomerOrderPage() {
     } finally {
       setLoading(false);
     }
-  };
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [token]);
+  }, [token]);
+  useEffect(() => { load(); }, [load]);
 
-  // Poll order status once an order exists.
+  const loadWaiterRequest = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/public/order/${token}/waiter-request`);
+      const body = await res.json();
+      if (res.ok) setWaiterRequest(body.request || null);
+    } catch { /* keep the menu usable if status polling fails */ }
+  }, [token]);
+
+  useEffect(() => { loadWaiterRequest(); }, [loadWaiterRequest]);
+  useEffect(() => {
+    if (!waiterRequest) return undefined;
+    const timer = setInterval(loadWaiterRequest, 10000);
+    return () => clearInterval(timer);
+  }, [waiterRequest, loadWaiterRequest]);
+
   useEffect(() => {
     if (!placed?.order_id) return undefined;
     const tick = async () => {
@@ -54,6 +132,7 @@ export default function CustomerOrderPage() {
   const items = useMemo(() => Object.values(cart), [cart]);
   const count = items.reduce((s, x) => s + x.qty, 0);
   const total = items.reduce((s, x) => s + x.qty * Number(x.item.price || 0), 0);
+  const orderingEnabled = data?.ordering_enabled !== false;
 
   const add = (item) => setCart((c) => ({ ...c, [item.id]: { item, qty: (c[item.id]?.qty || 0) + 1 } }));
   const dec = (item) => setCart((c) => {
@@ -84,130 +163,234 @@ export default function CustomerOrderPage() {
     }
   };
 
-  if (loading) return <Splash><Loader2 className="h-8 w-8 animate-spin text-amber-500" /></Splash>;
-  if (error) return <Splash><div className="text-center"><p className="text-lg font-semibold text-slate-800">{error}</p><p className="mt-1 text-sm text-slate-500">Please ask a member of staff for help.</p></div></Splash>;
+  const callWaiter = async (requestType) => {
+    setCallingWaiter(true);
+    setWaiterError('');
+    try {
+      const res = await fetch(`/api/public/order/${token}/waiter-request`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ request_type: requestType }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || 'Could not call a waiter.');
+      setWaiterRequest(body.request);
+      setShowWaiterCall(false);
+    } catch (callError) {
+      setWaiterError(callError.message);
+    } finally {
+      setCallingWaiter(false);
+    }
+  };
+
+  if (loading) return <Splash><Loader2 className="h-8 w-8 animate-spin text-amber-600" /></Splash>;
+  if (error) {
+    return (
+      <Splash>
+        <div className="text-center">
+          <p className="text-lg font-semibold text-stone-800">{error}</p>
+          <p className="mt-1 text-sm text-stone-500">Please ask a member of staff for help.</p>
+        </div>
+      </Splash>
+    );
+  }
 
   const cats = data.categories || [];
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-28">
-      <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
-        <div className="mx-auto max-w-2xl px-4 py-3">
-          <p className="text-xs font-medium uppercase tracking-wide text-amber-600">Table {data.table?.number || '—'}{data.table?.floor ? ` · ${data.table.floor}` : ''}</p>
-          <h1 className="text-xl font-bold text-slate-900">Order from your table</h1>
+    <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_#fef3c7_0%,_#f5f0e8_45%,_#fafaf9_100%)] pb-28">
+      <header className="sticky top-0 z-20 border-b border-stone-200/70 bg-white/90 backdrop-blur-md">
+        <div className="mx-auto flex max-w-6xl items-start justify-between gap-3 px-4 py-3 sm:px-6">
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-700">
+              Table {data.table?.number || '—'}{data.table?.floor ? ` · ${data.table.floor}` : ''}
+            </p>
+            <h1 className="truncate font-serif text-2xl font-bold tracking-tight text-stone-900 sm:text-3xl">Kathmandu Momo</h1>
+            <p className="text-sm text-stone-500">Order from your table — kitchen gets it instantly.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => !waiterRequest && setShowWaiterCall(true)}
+            disabled={Boolean(waiterRequest)}
+            className={`flex h-11 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-semibold transition-[background-color,color,transform] duration-150 active:scale-[0.97] ${
+              waiterRequest?.status === 'acknowledged'
+                ? 'bg-emerald-100 text-emerald-800'
+                : waiterRequest
+                  ? 'bg-amber-100 text-amber-900'
+                  : 'bg-stone-900 text-white hover:bg-stone-800'
+            }`}
+          >
+            {waiterRequest?.status === 'acknowledged' ? <CheckCircle2 className="h-4 w-4" /> : <BellRing className="h-4 w-4" />}
+            <span>{waiterRequest?.status === 'acknowledged' ? 'On the way' : waiterRequest ? 'Waiter called' : 'Call waiter'}</span>
+          </button>
         </div>
-        <div className="mx-auto flex max-w-2xl gap-2 overflow-x-auto px-4 pb-2">
+        <div className="mx-auto flex max-w-6xl gap-2 overflow-x-auto px-4 pb-3 sm:px-6">
           {cats.map((c) => (
-            <button key={c.id} onClick={() => { setActiveCat(c.id); document.getElementById(`cat-${c.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
-              className={`shrink-0 rounded-full px-3 py-1.5 text-sm font-medium ${activeCat === c.id ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}>
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => {
+                setActiveCat(c.id);
+                document.getElementById(`cat-${c.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
+              className={`shrink-0 rounded-full px-3.5 py-1.5 text-sm font-medium transition ${
+                activeCat === c.id
+                  ? 'bg-stone-900 text-white shadow-sm'
+                  : 'bg-white text-stone-600 ring-1 ring-stone-200 hover:bg-stone-50'
+              }`}
+            >
               {c.title}
             </button>
           ))}
         </div>
       </header>
 
-      {data.ordering_enabled === false && (
-        <div className="mx-auto max-w-2xl px-4 pt-4">
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+      {!orderingEnabled && (
+        <div className="mx-auto max-w-6xl px-4 pt-4 sm:px-6">
+          <div className="rounded-2xl border border-amber-200 bg-amber-50/90 p-4 text-sm text-amber-900">
             Self-ordering is paused right now. Browse the menu and a member of staff will take your order.
           </div>
         </div>
       )}
 
       {placed && track && (
-        <div className="mx-auto max-w-2xl px-4 pt-4">
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-            <div className="flex items-center gap-2 text-emerald-800">
-              {track.status === 'ready' || track.status === 'served' ? <CheckCircle2 className="h-5 w-5" /> : <Clock className="h-5 w-5" />}
+        <div className="mx-auto max-w-6xl px-4 pt-4 sm:px-6">
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50/90 p-4">
+            <div className="flex items-center gap-2 text-emerald-900">
+              {track.status === 'ready' || track.status === 'served'
+                ? <CheckCircle2 className="h-5 w-5" />
+                : <Clock className="h-5 w-5" />}
               <p className="font-semibold">{track.status_label}</p>
             </div>
-            <p className="mt-1 text-sm text-emerald-700">Order {track.order_number} · {track.items?.reduce((s, i) => s + i.quantity, 0)} item(s). Add more below anytime.</p>
+            <p className="mt-1 text-sm text-emerald-800">
+              Order {compactOrderNumber(track.order_number)} · {track.items?.reduce((s, i) => s + i.quantity, 0)} item(s). Add more below anytime.
+            </p>
           </div>
         </div>
       )}
 
-      <main className="mx-auto max-w-2xl px-4 py-4">
+      <main className="mx-auto max-w-6xl px-4 py-5 sm:px-6">
         {cats.map((cat) => (
-          <section key={cat.id} id={`cat-${cat.id}`} className="mb-6 scroll-mt-28">
-            <h2 className="mb-3 text-lg font-bold text-slate-900">{cat.title}</h2>
-            <div className="space-y-3">
-              {cat.items.map((item) => {
-                const qty = cart[item.id]?.qty || 0;
-                return (
-                  <div key={item.id} className="flex gap-3 rounded-2xl border border-slate-200 bg-white p-3">
-                    {item.image ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={item.image} alt={item.name} className="h-20 w-20 shrink-0 rounded-xl object-cover" />
-                    ) : (
-                      <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-300"><ShoppingBag className="h-6 w-6" /></div>
-                    )}
-                    <div className="flex min-w-0 flex-1 flex-col">
-                      <div className="flex items-start gap-1">
-                        {item.diet === 'veg' && <Leaf className="mt-0.5 h-3.5 w-3.5 shrink-0 text-green-600" />}
-                        <h3 className="font-semibold text-slate-900">{item.name}</h3>
-                      </div>
-                      {item.description && <p className="line-clamp-2 text-xs text-slate-500">{item.description}</p>}
-                      <div className="mt-auto flex items-center justify-between pt-2">
-                        <span className="font-bold text-slate-900">{rs(item.price)}</span>
-                        {qty === 0 ? (
-                          <button onClick={() => add(item)} className="rounded-lg bg-slate-900 px-4 py-1.5 text-sm font-semibold text-white">Add</button>
-                        ) : (
-                          <div className="flex items-center gap-3 rounded-lg bg-slate-900 px-2 py-1 text-white">
-                            <button onClick={() => dec(item)} aria-label="Remove one"><Minus className="h-4 w-4" /></button>
-                            <span className="min-w-4 text-center text-sm font-bold">{qty}</span>
-                            <button onClick={() => add(item)} aria-label="Add one"><Plus className="h-4 w-4" /></button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+          <section key={cat.id} id={`cat-${cat.id}`} className="mb-10 scroll-mt-32">
+            <div className="mb-4 flex items-end justify-between gap-3">
+              <h2 className="font-serif text-xl font-bold text-stone-900 sm:text-2xl">{cat.title}</h2>
+              <span className="text-xs text-stone-400">{cat.items.length} dishes</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">
+              {cat.items.map((item) => (
+                <MenuCard
+                  key={item.id}
+                  item={item}
+                  qty={cart[item.id]?.qty || 0}
+                  onAdd={add}
+                  onDec={dec}
+                  orderingEnabled={orderingEnabled}
+                />
+              ))}
             </div>
           </section>
         ))}
-        {cats.length === 0 && <p className="py-16 text-center text-slate-500">The menu is being updated. Please check back shortly.</p>}
+        {cats.length === 0 && (
+          <p className="py-20 text-center text-stone-500">The menu is being updated. Please check back shortly.</p>
+        )}
       </main>
 
       {count > 0 && (
-        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-          <button onClick={() => setShowCart(true)} className="mx-auto flex w-full max-w-2xl items-center justify-between rounded-xl bg-slate-900 px-5 py-3.5 text-white">
-            <span className="flex items-center gap-2 font-semibold"><ShoppingBag className="h-5 w-5" /> {count} item{count > 1 ? 's' : ''}</span>
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-stone-200/80 bg-white/95 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur">
+          <button
+            type="button"
+            onClick={() => setShowCart(true)}
+            className="mx-auto flex w-full max-w-6xl items-center justify-between rounded-2xl bg-stone-900 px-5 py-3.5 text-white shadow-lg"
+          >
+            <span className="flex items-center gap-2 font-semibold">
+              <ShoppingBag className="h-5 w-5" /> {count} item{count > 1 ? 's' : ''}
+            </span>
             <span className="font-bold">{rs(total)} · Review</span>
           </button>
         </div>
       )}
 
       {showCart && (
-        <div className="fixed inset-0 z-40 flex items-end justify-center">
-          <button className="absolute inset-0 bg-black/40" aria-label="Close" onClick={() => setShowCart(false)} />
-          <div className="relative z-10 max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-t-3xl bg-white p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+        <div className="fixed inset-0 z-40 flex items-end justify-center sm:items-center">
+          <button type="button" className="absolute inset-0 bg-black/40" aria-label="Close" onClick={() => setShowCart(false)} />
+          <div className="relative z-10 max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-white p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-2xl sm:rounded-3xl">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-bold text-slate-900">Your order</h2>
-              <button onClick={() => setShowCart(false)} className="rounded-lg p-1 text-slate-400"><X className="h-6 w-6" /></button>
+              <h2 className="font-serif text-xl font-bold text-stone-900">Your order</h2>
+              <button type="button" onClick={() => setShowCart(false)} className="rounded-lg p-1 text-stone-400 hover:bg-stone-100">
+                <X className="h-6 w-6" />
+              </button>
             </div>
             <div className="space-y-3">
               {items.map((x) => (
                 <div key={x.item.id} className="flex items-center gap-3">
-                  <div className="flex-1"><p className="font-medium text-slate-900">{x.item.name}</p><p className="text-xs text-slate-500">{rs(x.item.price)}</p></div>
-                  <div className="flex items-center gap-3 rounded-lg bg-slate-100 px-2 py-1">
-                    <button onClick={() => dec(x.item)}><Minus className="h-4 w-4 text-slate-700" /></button>
-                    <span className="min-w-4 text-center text-sm font-bold">{x.qty}</span>
-                    <button onClick={() => add(x.item)}><Plus className="h-4 w-4 text-slate-700" /></button>
+                  <div className="flex-1">
+                    <p className="font-medium text-stone-900">{x.item.name}</p>
+                    <p className="text-xs text-stone-500">{rs(x.item.price)}</p>
                   </div>
-                  <span className="w-20 text-right font-semibold text-slate-900">{rs(x.qty * x.item.price)}</span>
+                  <div className="flex items-center gap-3 rounded-lg bg-stone-100 px-2 py-1">
+                    <button type="button" onClick={() => dec(x.item)}><Minus className="h-4 w-4 text-stone-700" /></button>
+                    <span className="min-w-4 text-center text-sm font-bold">{x.qty}</span>
+                    <button type="button" onClick={() => add(x.item)}><Plus className="h-4 w-4 text-stone-700" /></button>
+                  </div>
+                  <span className="w-20 text-right font-semibold text-stone-900">{rs(x.qty * x.item.price)}</span>
                 </div>
               ))}
             </div>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name (optional)" className="mt-4 h-12 w-full rounded-xl border border-slate-300 px-4 text-sm" />
-            <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-4">
-              <span className="text-sm text-slate-500">Total</span>
-              <span className="text-xl font-bold text-slate-900">{rs(total)}</span>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Your name (optional)"
+              className="mt-4 h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-4 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
+            />
+            <div className="mt-4 flex items-center justify-between border-t border-stone-100 pt-4">
+              <span className="text-sm text-stone-500">Total</span>
+              <span className="text-xl font-bold text-stone-900">{rs(total)}</span>
             </div>
-            <button disabled={placing} onClick={place} className="mt-4 h-14 w-full rounded-2xl bg-amber-500 text-lg font-bold text-white disabled:opacity-60">
+            <button
+              type="button"
+              disabled={placing}
+              onClick={place}
+              className="mt-4 h-14 w-full rounded-2xl bg-amber-600 text-lg font-bold text-white shadow-sm transition hover:bg-amber-500 disabled:opacity-60"
+            >
               {placing ? 'Sending…' : placed ? 'Add to my order' : 'Place order'}
             </button>
-            <p className="mt-2 text-center text-xs text-slate-400">Your order goes straight to the kitchen. Pay at the counter or ask staff.</p>
+            <p className="mt-2 text-center text-xs text-stone-400">
+              Your order goes straight to the kitchen. Pay at the counter or ask staff.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {showWaiterCall && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4">
+          <button type="button" className="absolute inset-0 bg-black/40" aria-label="Close waiter request" onClick={() => setShowWaiterCall(false)} />
+          <div className="relative z-10 w-full max-w-md rounded-t-2xl bg-white p-5 shadow-2xl sm:rounded-lg">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-stone-900">Call a waiter</h2>
+                <p className="mt-0.5 text-sm text-stone-500">What can we help with at table {data.table?.number}?</p>
+              </div>
+              <button type="button" onClick={() => setShowWaiterCall(false)} className="rounded-lg p-1.5 text-stone-400 hover:bg-stone-100" aria-label="Close">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {WAITER_OPTIONS.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  disabled={callingWaiter}
+                  onClick={() => callWaiter(option.id)}
+                  className="min-h-[112px] rounded-lg border border-stone-200 bg-stone-50 p-3 text-left transition-[border-color,background-color,transform] duration-150 hover:border-amber-300 hover:bg-amber-50 active:scale-[0.97] disabled:opacity-60"
+                >
+                  <option.icon className="h-5 w-5 text-amber-700" />
+                  <span className="mt-3 block text-sm font-semibold text-stone-900">{option.label}</span>
+                  <span className="mt-1 block text-xs leading-4 text-stone-500">{option.detail}</span>
+                </button>
+              ))}
+            </div>
+            {waiterError && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{waiterError}</p>}
+            {callingWaiter && <p className="mt-3 text-center text-sm text-stone-500">Calling waiter…</p>}
           </div>
         </div>
       )}
@@ -216,5 +399,9 @@ export default function CustomerOrderPage() {
 }
 
 function Splash({ children }) {
-  return <div className="flex min-h-screen items-center justify-center bg-slate-50 p-6">{children}</div>;
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(ellipse_at_top,_#fef3c7_0%,_#f5f0e8_45%,_#fafaf9_100%)] p-6">
+      {children}
+    </div>
+  );
 }

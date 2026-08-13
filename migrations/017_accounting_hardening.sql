@@ -14,6 +14,7 @@ INSERT INTO accounts (code, name, type, subtype, is_system) VALUES
   ('1000','Assets','asset',NULL,1),
   ('1010','Cash on Hand','asset','cash',1),
   ('1020','Bank','asset','bank',1),
+  ('1030','Cash Reserve / Safe','asset','cash_reserve',1),
   ('1100','Card Clearing','asset','clearing',1),
   ('1110','eSewa Clearing','asset','clearing',1),
   ('1120','Khalti Clearing','asset','clearing',1),
@@ -38,7 +39,7 @@ INSERT INTO accounts (code, name, type, subtype, is_system) VALUES
   ('5060','Cash Over / Short','expense','variance',1)
 ON CONFLICT (code) DO NOTHING;
 
-UPDATE accounts SET parent_id = (SELECT id FROM accounts WHERE code='1000') WHERE code IN ('1010','1020','1100','1110','1120','1130','1140','1200','1300') AND parent_id IS NULL;
+UPDATE accounts SET parent_id = (SELECT id FROM accounts WHERE code='1000') WHERE code IN ('1010','1020','1030','1100','1110','1120','1130','1140','1200','1300') AND parent_id IS NULL;
 UPDATE accounts SET parent_id = (SELECT id FROM accounts WHERE code='2000') WHERE code IN ('2010') AND parent_id IS NULL;
 UPDATE accounts SET parent_id = (SELECT id FROM accounts WHERE code='3000') WHERE code IN ('3010','3020') AND parent_id IS NULL;
 UPDATE accounts SET parent_id = (SELECT id FROM accounts WHERE code='4000') WHERE code IN ('4010','4020') AND parent_id IS NULL;

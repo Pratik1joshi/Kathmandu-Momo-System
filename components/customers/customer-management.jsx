@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { Plus, Edit2, Trash2, Phone, User, MapPin, ShoppingBag, DollarSign, Search, Calendar } from 'lucide-react'
+import { formatNepalDate, formatNepalTime } from '@/lib/time-utils'
 
 export default function CustomerManagement() {
   const [customers, setCustomers] = useState([])
@@ -558,7 +559,7 @@ export default function CustomerManagement() {
                       <tbody>
                         {creditPayments.map(payment => (
                           <tr key={payment.id} className="border-b border-border">
-                            <td className="py-2 px-3">{new Date(payment.created_at).toLocaleString()}</td>
+                            <td className="py-2 px-3">{formatNepalTime(payment.created_at)}</td>
                             <td className="py-2 px-3 text-right font-bold text-green-600">
                               Rs {parseFloat(payment.amount || 0).toFixed(2)}
                             </td>
@@ -591,7 +592,7 @@ export default function CustomerManagement() {
                       <tbody>
                         {customerTransactions.map(txn => (
                           <tr key={txn.id} className="border-b border-border">
-                            <td className="py-2 px-3">{new Date(txn.created_at).toLocaleDateString()}</td>
+                            <td className="py-2 px-3">{formatNepalDate(txn.created_at)}</td>
                             <td className="py-2 px-3 font-mono text-xs">#{txn.transaction_number}</td>
                             <td className="py-2 px-3 text-right font-bold">Rs {parseFloat(txn.final_total || 0).toFixed(2)}</td>
                             <td className="py-2 px-3">{txn.payment_method || 'Cash'}</td>

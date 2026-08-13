@@ -59,6 +59,17 @@ export async function DELETE(request, context) {
     const { id } = await context.params;
     const db = Database.getInstance();
 
+    // Deleting a menu item with order history would silently orphan those
+    // order_items (menu_item_id is ON DELETE SET NULL) and drop them out of
+    // any report that joins on menu_items. Mark it unavailable instead.
+    const ordered = await db.get('SELECT 1 AS n FROM order_items WHERE menu_item_id = ? LIMIT 1', [id]);
+    if (ordered) {
+      return NextResponse.json(
+        { error: 'This item has order history and cannot be deleted. Mark it unavailable instead to hide it from the menu.' },
+        { status: 409 }
+      );
+    }
+
     await db.run('DELETE FROM menu_items WHERE id = ?', [id]);
 
     return NextResponse.json({

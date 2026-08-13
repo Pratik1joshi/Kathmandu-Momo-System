@@ -3,6 +3,7 @@ import Database from '@/lib/db/index';
 import { requireAuth, handleRouteError } from '@/lib/api-guard.js';
 import { ensureAccountingSchema } from '@/lib/accounting.js';
 import { recordCashExchange } from '@/lib/accounting-cash.js';
+import { currentBusinessDayId } from '@/lib/business-days.js';
 
 export async function GET(request) {
   try {
@@ -27,6 +28,7 @@ export async function POST(request) {
     if (auth.error) return auth.error;
     const db = Database.getInstance();
     await ensureAccountingSchema(db);
+    await currentBusinessDayId(db, { required: true });
     const result = await recordCashExchange(db, { ...(await request.json()), created_by: auth.user?.id || null });
     return NextResponse.json({ message: 'Exchange recorded.', ...result }, { status: 201 });
   } catch (error) {

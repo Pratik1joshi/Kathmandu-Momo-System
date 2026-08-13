@@ -1,4 +1,4 @@
-# Kathmandu Momo POS — Production Install (cPanel + PostgreSQL + Node.js)
+# Restaurant POS — Production Install (cPanel + PostgreSQL + Node.js)
 
 Fresh install from scratch. ~15 minutes.
 
@@ -17,23 +17,29 @@ psql -h localhost -U DBUSER -d DBNAME -f deploy/production_schema.sql
 psql -h localhost -U DBUSER -d DBNAME -f deploy/production_seed.sql
 ```
 
-That creates all 44 tables + indexes + constraints and loads the Chart of
-Accounts, default cash drawer, default bank, restaurant settings (already branded
-**Kathmandu Momo**, Birendranagar, Surkhet) and the first admin. (No
-`npm run db:migrate` needed — the seed marks every migration applied.)
+`production_schema.sql` is a baseline snapshot, not the final schema contract.
+`production_seed.sql` loads the Chart of Accounts, default cash drawer and bank, Kathmandu
+Momo restaurant settings, the first admin (login **PIN 984898**), floors /
+table types / tables `T-01..T-12`, unit conversions, the real menu (15
+categories, 178 items — no photos or recipe ingredient lines yet, add those
+via Admin → Products / Recipes), the ingredient master (opening stock **0**
+— the client enters real stock later) and an empty recipe shell per item. It
+also marks migrations `001`-`038` applied.
 
-Then load the operational defaults and the menu:
+**Always run this immediately after loading both SQL files:**
 
 ```bash
-psql -h localhost -U DBUSER -d DBNAME -f deploy/menu-pack/seed_menu.sql
-psql -h localhost -U DBUSER -d DBNAME -f deploy/default_seed.sql
+npm run db:migrate
 ```
 
-`seed_menu.sql` must run **before** `default_seed.sql` (recipes reference menu
-items). See `deploy/menu-pack/README.txt` for uploading the matching dish photos.
+At the time of this guide the migration source of truth continues through
+`043_delivery_pricing`. The command is safe to repeat and must also run after
+every future release. Skipping it causes runtime errors such as missing KOT,
+kitchen timing, salary advance, or delivery pricing columns.
 
-> Alternative for a live/existing DB: `npm run db:pg:init` runs the incremental
-> migrations + admin seed instead of the two files above.
+> Alternative for a live/existing DB: run `npm run db:migrate` (applies the
+> incremental `migrations/*.sql`) and then load only `deploy/production_seed.sql`
+> for the master data. Both paths converge on the same schema level.
 
 ## 2. Upload the app
 Upload the project (without `node_modules`, `.next`, `.env`, `uploads/*`) to a
@@ -54,6 +60,10 @@ Copy `.env.example` → `.env` and set real values. Minimum required:
 | `UPLOADS_DIR` | `./uploads` (or an absolute persistent path) |
 | `PGSSL` | `false` (usually, for local cPanel Postgres) |
 
+Keep PostgreSQL sessions in UTC (`ALTER ROLE your_app_user SET timezone TO
+'UTC';`). The application stores operational timestamps in UTC and converts
+display and report boundaries to Nepal time (`Asia/Kathmandu`).
+
 Optional: `PG_POOL_MAX=5`, `LOG_LEVEL=info`, `RATE_LIMIT_LOGIN=10`,
 `RATE_LIMIT_PUBLIC=8`. **Do not** set `PORT` — cPanel injects it.
 
@@ -67,11 +77,11 @@ Optional: `PG_POOL_MAX=5`, `LOG_LEVEL=info`, `RATE_LIMIT_LOGIN=10`,
 - Start / Restart the app. cPanel proxies your domain to it.
 
 ## 5. Verify
-- `npm run health` (or open the site). Log in at `/login` with **admin, PIN 1234**.
-- **Immediately** change the admin password (you are forced to on first login).
-- Settings → confirm Business info (pre-seeded), add VAT/PAN, set receipt paper
-  size (58/80mm).
-- Open `/` — the Kathmandu Momo landing page — and `/menu` for the live menu.
+- `npm run health` (or open the site). Log in at `/login` with **admin, PIN 984898**.
+- Confirm `SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1;`
+  returns at least `043_delivery_pricing` for this release.
+- **Immediately** change the admin PIN (you are forced to on first login).
+- Settings → fill Business info, VAT/PAN, receipt paper size (58/80mm).
 
 ## 6. Uploads & static
 - Menu/receipt images are written to `UPLOADS_DIR` and served via `/api/media`.
@@ -93,4 +103,4 @@ Also back up the `uploads/` folder. Keep 7–30 days.
 - [ ] `deploy/production_*.sql` not web-served.
 
 ## Default login
-`admin` / PIN `1234` — **change on first sign-in.**
+`admin` / PIN `984898` — **change on first sign-in.**

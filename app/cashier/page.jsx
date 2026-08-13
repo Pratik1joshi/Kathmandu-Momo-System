@@ -6,12 +6,13 @@ import {
   DollarSign, Receipt, Clock, CheckCircle, TrendingUp,
   Calendar, CreditCard, AlertCircle, Users, ShoppingBag, Trash2, ClipboardList
 } from 'lucide-react';
-import { getNepaliDateString } from '@/lib/time-utils';
+import { formatNepalClock, getNepaliDateString } from '@/lib/time-utils';
 import { isOpenOrder, canCashierBill, normalizeOrderStatus } from '@/lib/restaurant-status';
 import LogoutButton from '@/components/ui/logout-button';
 import { authedRequest } from '@/lib/authed-fetch';
 import WastageModal from '@/components/inventory/wastage-modal';
 import WastageHistoryModal from '@/components/inventory/wastage-history-modal';
+import AdminLayout from '@/components/admin/admin-layout';
 
 function orderAmount(order) {
   const n = Number(order?.total_amount ?? order?.grand_total ?? 0);
@@ -119,32 +120,16 @@ export default function CashierDashboard() {
       const ordersData = await ordersRes.json();
       const allOrders = ordersData.orders || [];
 
-      // One open order per table (takeaways keep all).
-      const dedupeByTable = (list) => {
-        const byTable = new Map();
-        const takeaways = [];
-        for (const o of list) {
-          const tid = o.table_id;
-          if (!tid) {
-            takeaways.push(o);
-            continue;
-          }
-          const prev = byTable.get(tid);
-          const oid = o.order_id || o.id;
-          const prevId = prev ? (prev.order_id || prev.id) : 0;
-          if (!prev || oid > prevId) byTable.set(tid, o);
-        }
-        return [...byTable.values(), ...takeaways];
-      };
-
       const isBillable = (o) => canCashierBill(o.status);
       const isActive = (o) => isOpenOrder(o.status);
 
       let filteredOrders = allOrders;
       if (filter === 'ready') {
-        filteredOrders = dedupeByTable(allOrders.filter(isBillable));
+        filteredOrders = allOrders.filter(isBillable);
       } else if (filter === 'active') {
-        filteredOrders = dedupeByTable(allOrders.filter(isActive));
+        // A table may contain multiple parties, each with its own order and
+        // bill. Never collapse open orders by table_id here.
+        filteredOrders = allOrders.filter(isActive);
       } else if (filter === 'completed') {
         filteredOrders = allOrders.filter(completedToday);
       }
@@ -154,17 +139,17 @@ export default function CashierDashboard() {
       const todayCreated = allOrders.filter((o) => isNepaliToday(o.created_at));
       const paidToday = allOrders.filter(completedToday);
       const todaySales = paidToday.reduce((sum, o) => sum + orderAmount(o), 0);
-      const billableUnique = dedupeByTable(allOrders.filter(isBillable));
-      const activeUnique = dedupeByTable(allOrders.filter(isActive));
+      const billableOrders = allOrders.filter(isBillable);
+      const activeOrders = allOrders.filter(isActive);
 
       setStats({
         todaySales,
         todayOrders: todayCreated.length || paidToday.length,
-        pendingBills: billableUnique.length,
+        pendingBills: billableOrders.length,
         completedBills: paidToday.length,
         averageOrderValue: paidToday.length > 0 ? todaySales / paidToday.length : 0,
-        readyCount: billableUnique.length,
-        activeCount: activeUnique.length,
+        readyCount: billableOrders.length,
+        activeCount: activeOrders.length,
         completedTodayCount: paidToday.length,
         allOrdersCount: allOrders.length,
       });
@@ -218,8 +203,7 @@ export default function CashierDashboard() {
 
   const formatTime = (dateString) => {
     if (!dateString) return 'N/A';
-    const date = new Date(dateString);
-    return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    return formatNepalClock(dateString);
   };
 
   if (loading) {
@@ -234,6 +218,7 @@ export default function CashierDashboard() {
   }
 
   return (
+    <AdminLayout>
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white border-b shadow-sm">
@@ -250,11 +235,10 @@ export default function CashierDashboard() {
             </div>
             <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap justify-end">
               <button
-                onClick={() => router.push('/cashier/console')}
-                className="px-2.5 py-2 sm:px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all text-xs sm:text-base font-semibold"
+                onClick={() => router.push('/cashier/pos')}
+                className="px-2.5 py-2 sm:px-4 bg-gray-950 text-white rounded-lg hover:bg-black transition-all text-xs sm:text-base font-semibold"
               >
-                <span className="sm:hidden">Tables</span>
-                <span className="hidden sm:inline">Console / Tables</span>
+                Full POS
               </button>
               <button
                 onClick={() => router.push('/cashier/billing')}
@@ -262,13 +246,6 @@ export default function CashierDashboard() {
               >
                 <span className="sm:hidden">Bill</span>
                 <span className="hidden sm:inline">Walk-in Bill</span>
-              </button>
-              <button
-                onClick={() => router.push('/cashier/online-orders')}
-                className="px-2.5 py-2 sm:px-4 bg-slate-900 text-white rounded-lg hover:bg-slate-800 text-xs sm:text-base font-semibold"
-              >
-                <span className="sm:hidden">Online</span>
-                <span className="hidden sm:inline">Online Orders</span>
               </button>
               <button
                 onClick={() => setShowWastageHistory(true)}
@@ -410,7 +387,8 @@ export default function CashierDashboard() {
                       <div>
                         <p className="font-mono font-bold text-gray-900">#{order.id.toString().padStart(4, '0')}</p>
                         <p className="text-sm text-gray-600">
-                          {order.table_number ? `Table ${order.table_number}` : 'Takeaway'} · {formatTime(order.created_at)}
+                          {order.table_number ? `Table ${order.table_number}` : 'Takeaway'}
+                          {order.party_label ? ` · ${order.party_label}` : ''} · {formatTime(order.created_at)}
                         </p>
                       </div>
                       <span className={`px-2.5 py-1 rounded-full text-xs font-semibold border shrink-0 ${getStatusColor(order.status)}`}>
@@ -469,7 +447,8 @@ export default function CashierDashboard() {
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="font-semibold text-gray-900">{order.table_number}</span>
+                        <span className="font-semibold text-gray-900">{order.table_number || 'Takeaway'}</span>
+                        {order.party_label && <span className="block text-xs text-gray-500">{order.party_label}</span>}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                         {formatTime(order.created_at)}
@@ -509,5 +488,6 @@ export default function CashierDashboard() {
       {showWastageLog && <WastageModal request={authedRequest} onClose={() => setShowWastageLog(false)} />}
       {showWastageHistory && <WastageHistoryModal request={authedRequest} onClose={() => setShowWastageHistory(false)} />}
     </div>
+    </AdminLayout>
   );
 }

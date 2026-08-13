@@ -14,6 +14,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowUpDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Download, Printer, Search } from 'lucide-react';
 import { toCsv } from '@/lib/csv';
+import { formatNepalTime } from '@/lib/time-utils.js';
 
 /** Value used for sorting/searching a column: explicit `value()` or row[key]. */
 function cellValue(col, row) {
@@ -38,7 +39,7 @@ export function printRows(title, columns, rows) {
       th,td{border-bottom:1px solid #e5e7eb;padding:6px 8px;text-align:left}
       th{color:#6b7280;font-size:10px;text-transform:uppercase;letter-spacing:.04em}
      </style>
-     <h1>${title}</h1><p>${rows.length} row(s) — ${new Date().toLocaleString()}</p>
+     <h1>${title}</h1><p>${rows.length} row(s) — ${formatNepalTime(new Date())} NPT</p>
      <table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`
   );
   frame.contentDocument.close();
@@ -154,6 +155,8 @@ export default function DataGrid({
   rowClassName,
   defaultSort,
   maxHeight = 'max-h-[640px]',
+  /** Tailwind min-width class for the table (default keeps most pages from wrapping badly). */
+  minTableWidth = 'min-w-[720px]',
   footNote,
   server,
 }) {
@@ -321,7 +324,7 @@ export default function DataGrid({
         </p>
       ) : (
         <div className={`overflow-auto ${maxHeight} ${loading ? 'opacity-60' : ''}`}>
-          <table className="w-full min-w-[860px] text-sm">
+          <table className={`w-full text-sm ${minTableWidth || 'min-w-[720px]'}`}>
             <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_0_0_#e5e7eb]">
               <tr className="text-left text-xs uppercase tracking-wide text-gray-400">
                 {selectable && (

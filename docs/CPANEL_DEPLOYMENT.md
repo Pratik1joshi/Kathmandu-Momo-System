@@ -51,10 +51,13 @@ DATABASE_URL=postgresql://account_posuser:p%40ssw0rd@localhost:5432/account_pos
 | `CSRF_SECRET` | long random string |
 | `FORCE_SECURE_COOKIES` | `1` |
 | `LOG_LEVEL` | `info` |
-| `ADMIN_USERNAME` | for seed only |
-| `ADMIN_PASSWORD` | min 8 chars, for seed only |
 
 Copy `.env.example` as a checklist. Do **not** commit `.env`.
+
+The seeded admin login is **admin / PIN 984898** (loaded by
+`deploy/production_seed.sql`, forced to change on first sign-in). You only need
+`ADMIN_USERNAME` / `ADMIN_PASSWORD` if you seed via the `npm run db:seed`
+alternative in step 4 instead of the SQL files.
 
 ## 3. Writable uploads directory
 
@@ -67,16 +70,33 @@ Set `UPLOADS_DIR` to that absolute path. Files are served via `/uploads/*` → `
 
 Include `~/pos-uploads` in backups.
 
-## 4. Install, migrate, seed, build
+## 4. Load the database, install, build
 
-In SSH / Terminal, from the application root (activate the Node.js virtual env if cPanel provides a button/command):
+In SSH / Terminal, from the application root (activate the Node.js virtual env if cPanel provides a button/command).
+
+Load the schema + seed once, on the fresh database:
+
+```bash
+export PGPASSWORD='your_db_password'
+psql -h localhost -U DBUSER -d DBNAME -f deploy/production_schema.sql
+psql -h localhost -U DBUSER -d DBNAME -f deploy/production_seed.sql
+```
+
+This creates every table through migration `028` and loads the Chart of
+Accounts, restaurant settings, the admin (login **PIN 984898**), tables, unit
+conversions, the full 103-item menu with variants, the ingredient master
+(opening stock **0**) and a recipe for every menu item.
+
+> Alternative for a live/existing DB: `npm run db:migrate` applies the
+> incremental migrations; then load only `deploy/production_seed.sql` for the
+> master data, or use `ADMIN_USERNAME=... ADMIN_PASSWORD='...' npm run db:seed`
+> for a minimal admin-only seed.
+
+Then install and build:
 
 ```bash
 npm ci
 # or: npm install --omit=dev   # after a successful local lockfile sync
-
-npm run db:migrate
-ADMIN_USERNAME=admin ADMIN_PASSWORD='YourStrongPasswordHere' npm run db:seed
 
 npm run build
 # Uses Webpack (not Turbopack) — required on cPanel because node_modules is a symlink
@@ -91,16 +111,20 @@ curl -sS "$APP_URL/api/health"
 # expect: {"ok":true,"database":"up",...}
 ```
 
-Checklist:
+Checklist (counter / ready-to-serve profile):
 
-- [ ] Login as seeded admin; change password if `must_change_password`
-- [ ] Create waiter / cashier / kitchen users
-- [ ] Public reservation form works; rate limit returns 429 when abused
-- [ ] Waiter opens table / order; kitchen board updates without N+1 storms
-- [ ] Cashier takes payment; second payment on same order fails
-- [ ] Admin dashboard loads; reports load
-- [ ] Menu image upload (admin) succeeds; image appears on menu
+- [ ] Login as seeded admin (**admin / PIN 984898**); system forces PIN change (`must_change_password` → Settings)
+- [ ] After PIN change, land on **New Sale** (`/admin/pos`)
+- [ ] Complete a cash sale → receipt prints; bill appears under Bills as paid
+- [ ] Complete a QR / credit / split sale; second identical checkout key is rejected (idempotent)
+- [ ] Reopen a paid bill → opens same cart in POS with prior items; collect delta only; original sale journal kept
+- [ ] Print KOT on a live/reopened order only covers **new** (unsent) lines; does not abandon a reopened bill
+- [ ] Admin dashboard loads with sales, avg ticket, payment mix, top items
+- [ ] Reports load (sales / inventory as enabled)
+- [ ] Menu image upload (admin) succeeds when used
 - [ ] `/api/health` returns 200 after restart
+
+> Waiter / kitchen display / public reservations are **disabled** in this deployment profile (`lib/deployment.js`). Skip those checks unless you re-enable the flags.
 
 ## 6. Release updates
 

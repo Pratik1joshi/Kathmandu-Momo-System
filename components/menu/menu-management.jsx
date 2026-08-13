@@ -216,16 +216,32 @@ export default function MenuManagement() {
                   className="w-full px-3 py-2 border border-border rounded-lg bg-input"
                 />
               </div>
-              <div className="flex items-center gap-4 pt-6">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={formData.is_vegetarian}
-                    onChange={(e) => setFormData({ ...formData, is_vegetarian: e.target.checked })}
-                    className="w-4 h-4"
-                  />
-                  <span className="text-sm">Vegetarian</span>
-                </label>
+              <div className="flex flex-wrap items-center gap-4 pt-6">
+                <fieldset className="flex items-center gap-2">
+                  <legend className="sr-only">Food type</legend>
+                  {[
+                    { label: 'Veg', value: true },
+                    { label: 'Non-Veg', value: false },
+                  ].map((option) => (
+                    <label
+                      key={option.label}
+                      className={`inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium ${
+                        formData.is_vegetarian === option.value
+                          ? 'border-gray-900 bg-gray-900 text-white'
+                          : 'border-border hover:bg-muted'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="food_type"
+                        checked={formData.is_vegetarian === option.value}
+                        onChange={() => setFormData({ ...formData, is_vegetarian: option.value })}
+                        className="sr-only"
+                      />
+                      {option.label}
+                    </label>
+                  ))}
+                </fieldset>
                 <label className="flex items-center gap-2">
                   <input
                     type="checkbox"
