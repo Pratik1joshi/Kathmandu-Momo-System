@@ -6,6 +6,7 @@ import { useToast } from '@/components/ui/toast';
 import { friendlyFromError } from '@/lib/friendly-message';
 import { apiJson } from '@/lib/authed-fetch';
 import { money } from '@/components/accounting/ledger-table';
+import DateInput from '@/components/ui/date-input.jsx';
 
 const TABS = [
   { id: 'pnl', label: 'Profit & Loss' },
@@ -48,9 +49,9 @@ export default function FinancialReportsPage() {
             ))}
           </div>
           {(tab === 'pnl' || tab === 'cash-flow') && (
-            <label className="block"><span className="mb-1 block text-xs font-medium text-gray-500">From</span><input type="date" value={range.from} onChange={(e) => setRange((r) => ({ ...r, from: e.target.value }))} className="h-10 rounded-lg border border-gray-300 px-3 text-sm" /></label>
+            <label className="block"><span className="mb-1 block text-xs font-medium text-gray-500">From</span><DateInput value={range.from} onChange={(v) => setRange((r) => ({ ...r, from: v }))} className="h-10 rounded-lg border border-gray-300 px-3 text-sm" /></label>
           )}
-          <label className="block"><span className="mb-1 block text-xs font-medium text-gray-500">{tab === 'pnl' || tab === 'cash-flow' ? 'To' : 'As of'}</span><input type="date" value={range.to} onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))} className="h-10 rounded-lg border border-gray-300 px-3 text-sm" /></label>
+          <label className="block"><span className="mb-1 block text-xs font-medium text-gray-500">{tab === 'pnl' || tab === 'cash-flow' ? 'To' : 'As of'}</span><DateInput value={range.to} onChange={(v) => setRange((r) => ({ ...r, to: v }))} className="h-10 rounded-lg border border-gray-300 px-3 text-sm" /></label>
           <button type="button" onClick={() => window.print()} className="ml-auto h-10 rounded-lg border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Print / PDF</button>
         </div>
 

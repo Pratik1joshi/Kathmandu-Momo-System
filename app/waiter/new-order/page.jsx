@@ -11,7 +11,6 @@ import CustomerModePicker, {
   emptyCustomerSelection,
   validateCustomerSelection,
 } from '@/components/billing/customer-mode-picker'
-import { printKot } from '@/lib/pos-print.js'
 
 const takeawayCustomerEmpty = {
   ...emptyCustomerSelection,
@@ -40,8 +39,8 @@ function NewOrderContent() {
   const [existingOrderId, setExistingOrderId] = useState(null)
   const [kotNote, setKotNote] = useState('')
   const [pulseId, setPulseId] = useState(null)
+  const [variantPicker, setVariantPicker] = useState(null) // menu item with variants, awaiting a pick
   const pulseTimer = useRef(null)
-  const [settings, setSettings] = useState({})
 
   useEffect(() => {
     fetchMenuAndTables()
@@ -52,7 +51,6 @@ function NewOrderContent() {
       setExistingOrderId(orderId)
       fetchExistingOrder(orderId)
     }
-    apiCall('/api/admin/settings').then((r) => r.json()).then((d) => setSettings(d.settings || {})).catch(() => {})
   }, [])
 
   const fetchMenuAndTables = async () => {
@@ -128,22 +126,29 @@ function NewOrderContent() {
     pulseTimer.current = setTimeout(() => setPulseId(null), 280)
   }
 
-  const addToCart = (item) => {
+  const addToCart = (item, variant = null) => {
     const itemId = item.item_id || item.id
+    const variantName = variant?.variant_name || null
+    const cartKey = `${itemId}::${variantName || ''}`
+    const baseName = item.item_name || item.name
+    const price = variant ? Number(variant.price ?? 0) : Number(item.price ?? 0)
     flash(itemId)
     setCart((prev) => {
-      const existing = prev.find((i) => (i.item_id || i.id) === itemId)
+      const existing = prev.find((i) => i.cart_key === cartKey)
       if (existing) {
         return prev.map((i) =>
-          (i.item_id || i.id) === itemId ? { ...i, quantity: i.quantity + 1 } : i
+          i.cart_key === cartKey ? { ...i, quantity: i.quantity + 1 } : i
         )
       }
       return [
         ...prev,
         {
           ...item,
+          cart_key: cartKey,
           item_id: itemId,
-          item_name: item.item_name || item.name,
+          item_name: variantName ? `${baseName} (${variantName})` : baseName,
+          variant_name: variantName,
+          price,
           quantity: 1,
           special_instructions: '',
         },
@@ -151,11 +156,11 @@ function NewOrderContent() {
     })
   }
 
-  const updateQuantity = (itemId, delta) => {
+  const updateQuantity = (cartKey, delta) => {
     setCart((prev) =>
       prev
         .map((item) => {
-          if ((item.item_id || item.id) !== itemId) return item
+          if (item.cart_key !== cartKey) return item
           const q = item.quantity + delta
           return q <= 0 ? null : { ...item, quantity: q }
         })
@@ -163,9 +168,17 @@ function NewOrderContent() {
     )
   }
 
+  const pickItem = (item) => {
+    if (Array.isArray(item.variants) && item.variants.length > 0) {
+      setVariantPicker(item)
+    } else {
+      addToCart(item)
+    }
+  }
+
   const cartItemCount = cart.reduce((s, i) => s + i.quantity, 0)
   const cartTotal = cart.reduce((s, i) => s + i.price * i.quantity, 0)
-  const getQty = (id) => cart.find((i) => (i.item_id || i.id) === id)?.quantity || 0
+  const getQty = (id) => cart.filter((i) => (i.item_id || i.id) === id).reduce((s, i) => s + i.quantity, 0)
 
   const handleSubmitOrder = async () => {
     if (cart.length === 0) {
@@ -196,6 +209,7 @@ function NewOrderContent() {
         menu_item_id: item.item_id,
         quantity: item.quantity,
         price: item.price,
+        variant_name: item.variant_name || null,
         special_instructions: item.special_instructions || null,
       }))
 
@@ -228,24 +242,9 @@ function NewOrderContent() {
       const itemsData = await itemsRes.json().catch(() => ({}))
       if (!itemsRes.ok) throw new Error(itemsData.error || 'Failed')
 
-      const kotRes = await apiCall(`/api/admin/pos/orders/${orderId}/kot`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          idempotency_key: `${orderId}-${Date.now()}`,
-          order_notes: kotNote.trim() || null,
-        }),
-      })
-      const kotData = await kotRes.json().catch(() => ({}))
-      if (!kotRes.ok) throw new Error(kotData.error || 'Failed')
-
-      const autoPrintKot = String(settings.kitchen_printing_enabled ?? 'false') === 'true'
-      if (kotData.kot && autoPrintKot) {
-        printKot(kotData.kot, { size: settings.receipt_paper_size || '80' })
-      }
-
+      // Items stay unsent until waiter taps Send KOT on the order screen.
       addToast(friendlyMessage(existingOrderId ? 'items_added' : 'order_success', {
-        description: kotData.kot?.kot_number ? `${kotData.kot.kot_number} sent to kitchen.` : undefined,
+        description: 'Items saved. Open the order and tap Send KOT when ready for the kitchen.',
       }))
       router.push(`/waiter/order/${orderId}`)
     } catch (e) {
@@ -273,7 +272,7 @@ function NewOrderContent() {
           <p className="text-center text-slate-400 py-12 text-sm">Tap a dish to add it</p>
         ) : (
           cart.map((item) => (
-            <div key={item.item_id} className="flex gap-2.5 p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+            <div key={item.cart_key} className="flex gap-2.5 p-2.5 rounded-xl bg-slate-50 border border-slate-100">
               <MenuItemImage src={item.image_url} alt={item.item_name} size="sm" />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-slate-900 line-clamp-1">{item.item_name}</p>
@@ -281,7 +280,7 @@ function NewOrderContent() {
                 <div className="flex items-center gap-1.5 mt-1.5">
                   <button
                     type="button"
-                    onClick={() => updateQuantity(item.item_id, -1)}
+                    onClick={() => updateQuantity(item.cart_key, -1)}
                     className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center"
                   >
                     <Minus className="w-3.5 h-3.5" />
@@ -289,7 +288,7 @@ function NewOrderContent() {
                   <span className="w-6 text-center text-sm font-bold">{item.quantity}</span>
                   <button
                     type="button"
-                    onClick={() => updateQuantity(item.item_id, 1)}
+                    onClick={() => updateQuantity(item.cart_key, 1)}
                     className="w-8 h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center"
                   >
                     <Plus className="w-3.5 h-3.5" />
@@ -327,8 +326,11 @@ function NewOrderContent() {
           className="w-full h-12 rounded-2xl bg-slate-900 text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-40"
         >
           <Send className="w-4 h-4" />
-          {submitting ? 'Sending…' : existingOrderId ? 'Send to Kitchen' : 'Place Order'}
+          {submitting ? 'Saving…' : existingOrderId ? 'Save items' : 'Save order'}
         </button>
+        <p className="text-[11px] text-center text-slate-500">
+          Items are saved unsent. Use Send KOT on the order screen to fire the kitchen.
+        </p>
       </div>
     </div>
   )
@@ -438,7 +440,7 @@ function NewOrderContent() {
               ))}
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-1.5">
               {filteredItems.map((item) => {
                 const id = item.item_id || item.id
                 const qty = getQty(id)
@@ -448,41 +450,33 @@ function NewOrderContent() {
                   <button
                     key={id}
                     type="button"
-                    onClick={() => addToCart(item)}
-                    className={`text-left rounded-xl bg-white border overflow-hidden shadow-sm transition-transform duration-200 active:scale-[0.97] ${
-                      pulsing ? 'scale-[0.96] ring-2 ring-slate-900' : ''
+                    onClick={() => pickItem(item)}
+                    className={`text-left rounded-lg bg-white border overflow-hidden transition-transform duration-150 active:scale-[0.98] ${
+                      pulsing ? 'ring-2 ring-slate-900' : ''
                     } ${qty > 0 ? 'border-slate-900' : 'border-slate-200'}`}
                   >
-                    <div className="relative aspect-square bg-slate-100">
+                    <div className="relative h-16 sm:h-20 bg-slate-100">
                       <MenuItemImage
                         src={item.image_url}
                         alt={name}
-                        size="card"
-                        className="!w-full !h-full !rounded-none"
+                        size="sm"
+                        className="!w-full !h-full !rounded-none object-cover"
                       />
                       {qty > 0 && (
-                        <span className="absolute top-1.5 right-1.5 min-w-6 h-6 px-1 rounded-full bg-slate-900 text-white text-[10px] font-bold flex items-center justify-center">
+                        <span className="absolute top-1 right-1 min-w-5 h-5 px-1 rounded-full bg-slate-900 text-white text-[10px] font-bold flex items-center justify-center">
                           {qty}
                         </span>
                       )}
-                      {item.category && (
-                        <span className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded-full bg-white/95 text-[9px] font-semibold text-slate-700 border border-slate-200 max-w-[70%] truncate">
-                          {item.category}
-                        </span>
-                      )}
                     </div>
-                    <div className="p-2">
-                      <div className="flex items-start gap-1">
-                        <p className="flex-1 font-semibold text-xs text-slate-900 leading-snug line-clamp-2">
-                          {name}
-                        </p>
-                        <span
-                          className={`mt-0.5 w-1.5 h-1.5 rounded-full shrink-0 ${
-                            item.is_veg || item.is_vegetarian ? 'bg-emerald-500' : 'bg-rose-500'
-                          }`}
-                        />
-                      </div>
-                      <p className="mt-0.5 text-xs font-bold text-slate-900">Rs {item.price}</p>
+                    <div className="px-1.5 py-1.5">
+                      <p className="font-semibold text-[11px] sm:text-xs text-slate-900 leading-snug line-clamp-2">
+                        {name}
+                      </p>
+                      {item.variants?.length > 0 ? (
+                        <p className="mt-0.5 text-[11px] font-bold text-slate-900">{item.variants.length} options</p>
+                      ) : (
+                        <p className="mt-0.5 text-[11px] font-bold text-slate-900">Rs {item.price}</p>
+                      )}
                     </div>
                   </button>
                 )
@@ -521,6 +515,33 @@ function NewOrderContent() {
         <div className="lg:hidden fixed inset-0 z-50 bg-black/40 flex items-end">
           <div className="w-full max-h-[85vh] bg-white rounded-t-3xl overflow-hidden">
             <CartPanel mobile />
+          </div>
+        </div>
+      )}
+
+      {variantPicker && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md p-5 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-slate-900">{variantPicker.item_name || variantPicker.name}</h3>
+              <button type="button" onClick={() => setVariantPicker(null)} className="p-1 text-slate-500">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-sm text-slate-500 mb-3">Choose an option</p>
+            <div className="space-y-2">
+              {variantPicker.variants.map((variant) => (
+                <button
+                  key={variant.id}
+                  type="button"
+                  onClick={() => { addToCart(variantPicker, variant); setVariantPicker(null) }}
+                  className="w-full flex items-center justify-between px-4 py-3 rounded-xl border border-slate-200 hover:border-slate-900 active:scale-[0.98] transition-transform"
+                >
+                  <span className="font-medium text-slate-900">{variant.variant_name}</span>
+                  <span className="font-bold text-slate-900">Rs {variant.price}</span>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}

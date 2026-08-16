@@ -43,13 +43,26 @@ test('accepts QR with provider only (reference optional)', () => {
   assert.equal(result[0].verified, true);
 });
 
-test('rejects credit without an approved identified customer or above its limit', () => {
+test('rejects credit without an identified customer', () => {
   assert.throws(() => validateAllocations([credit(1000)], 1000), /identified customer/);
-  assert.throws(
-    () => validateAllocations([credit(1000)], 1000, { customer: { ...customer, credit_limit: 1000, current_credit: 250 } }),
-    /credit limit/
-  );
-  assert.throws(() => validateAllocations([credit(1000)], 1000, { customer, actorRole: 'cashier' }), /Administrator permission/);
+});
+
+test('allows credit past its limit — limit is advisory, not a hard cap', () => {
+  const overLimit = validateAllocations([credit(1000)], 1000, {
+    customer: { ...customer, credit_limit: 1000, current_credit: 250 },
+    actorRole: 'admin',
+  });
+  assert.equal(overLimit[0].method, 'credit');
+  const noLimit = validateAllocations([credit(1000)], 1000, {
+    customer: { ...customer, credit_limit: 0, current_credit: 0 },
+    actorRole: 'cashier',
+  });
+  assert.equal(noLimit[0].method, 'credit');
+  const blankLimit = validateAllocations([credit(500)], 500, {
+    customer: { ...customer, credit_limit: null, current_credit: 0 },
+    actorRole: 'admin',
+  });
+  assert.equal(blankLimit[0].method, 'credit');
 });
 
 test('cash tendered covers only cash allocation and calculates change from cash', () => {

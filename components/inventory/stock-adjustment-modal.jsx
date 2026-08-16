@@ -34,6 +34,7 @@ import QuantityInput from '@/components/ui/quantity-input';
 import CostEntry from '@/components/ui/cost-entry';
 import { unitLabel } from '@/lib/units';
 import { toConsumptionAmount, deriveCost, blankCost, hasTwoUnits, round } from '@/lib/entry-math';
+import { nepalDateString } from '@/lib/report-dates.js';
 
 const DECREASE_REASONS = [
   'Stock count correction',
@@ -140,7 +141,7 @@ export default function StockAdjustmentModal({ item, suppliers = [], onClose, on
         body: JSON.stringify({
           supplier: supplier || null,
           invoice_number: invoiceNumber.trim() || null,
-          invoice_date: new Date().toISOString().split('T')[0],
+          invoice_date: nepalDateString(),
           notes: finalReason || 'Recorded from a stock adjustment',
           // PURCHASE units, unconverted — createPurchase posts with units:'purchase'.
           items: [

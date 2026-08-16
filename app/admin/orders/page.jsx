@@ -20,6 +20,7 @@ import { formatNepalDateTime } from '@/lib/report-dates.js';
 import { compactOrderNumber } from '@/lib/document-display.js';
 import { printFinalBill } from '@/lib/pos-print.js';
 import { receiptFromOrderDetail } from '@/lib/bill-receipt.js';
+import { orderTypeLabel } from '@/lib/order-types.js';
 
 const STATUS_TONE = {
   pending: 'amber',
@@ -31,6 +32,9 @@ const STATUS_TONE = {
   awaiting_payment: 'amber',
   completed: 'gray',
   cancelled: 'red',
+  refunded: 'red',
+  partially_refunded: 'amber',
+  voided: 'red',
 };
 
 const PAY_TONE = {
@@ -40,6 +44,8 @@ const PAY_TONE = {
   credit: 'violet',
   due: 'red',
   refunded: 'gray',
+  partially_refunded: 'amber',
+  voided: 'red',
 };
 
 const STATUSES = [
@@ -50,11 +56,17 @@ const STATUSES = [
   'dining',
   'awaiting_payment',
   'completed',
+  'refunded',
+  'partially_refunded',
+  'voided',
   'cancelled',
 ];
 
 function payLabel(o) {
-  const status = String(o.payment_status || '').toLowerCase();
+  const status = String(o.financial_payment_status || o.payment_status || '').toLowerCase();
+  if (status === 'refunded') return 'Refunded';
+  if (status === 'partially_refunded') return 'Partially refunded';
+  if (status === 'voided') return 'Voided';
   const outstanding = Number(o.outstanding_amount || 0);
   if (status === 'paid' || (o.status === 'completed' && outstanding <= 0.009)) return 'Paid';
   if (outstanding > 0.009 && (status === 'partial' || status === 'credit')) return 'Due / Credit';
@@ -216,7 +228,7 @@ export default function AdminOrders() {
             <div className="truncate text-[11px] text-gray-400">
               {o.table_number
                 ? `Table ${o.table_number}${o.party_label ? ` · ${o.party_label}` : ''}`
-                : (o.order_type || 'dine-in').replace(/_/g, ' ')}
+                : orderTypeLabel(o)}
             </div>
           </div>
         ),
@@ -236,7 +248,7 @@ export default function AdminOrders() {
         render: (o) => formatCurrency(o.total || 0),
       },
       {
-        key: 'payment_status',
+        key: 'financial_payment_status',
         label: 'Pay',
         render: (o) => {
           const label = payLabel(o);
@@ -245,15 +257,15 @@ export default function AdminOrders() {
               : label.includes('Due') || label.includes('Credit') ? 'violet'
                 : label === 'Unpaid' ? 'amber'
                   : 'gray';
-          return <StatusBadge tone={PAY_TONE[o.payment_status] || tone}>{label}</StatusBadge>;
+          return <StatusBadge tone={PAY_TONE[o.financial_payment_status] || PAY_TONE[o.payment_status] || tone}>{label}</StatusBadge>;
         },
       },
       {
-        key: 'status',
+        key: 'financial_status',
         label: 'Status',
         render: (o) => (
-          <StatusBadge tone={STATUS_TONE[o.status] || 'gray'}>
-            {String(o.status || 'unknown').replace(/_/g, ' ')}
+          <StatusBadge tone={STATUS_TONE[o.financial_status] || STATUS_TONE[o.status] || 'gray'}>
+            {String(o.financial_status || o.status || 'unknown').replace(/_/g, ' ')}
           </StatusBadge>
         ),
       },
@@ -263,8 +275,10 @@ export default function AdminOrders() {
 
   const tiles = [
     { label: 'Total Orders', value: summary ? summary.orders.toLocaleString() : '—' },
-    { label: 'Total Revenue', value: summary ? formatCurrency(summary.revenue) : '—' },
-    { label: 'Average Order Value', value: summary ? formatCurrency(summary.average) : '—' },
+    { label: 'Gross Sales', value: summary ? formatCurrency(summary.grossRevenue) : '—' },
+    { label: 'Refunds', value: summary ? formatCurrency(summary.refunds) : '—' },
+    { label: 'Voided Value', value: summary ? formatCurrency(summary.voids) : '—' },
+    { label: 'Net Revenue', value: summary ? formatCurrency(summary.revenue) : '—' },
     { label: 'Completed Orders', value: summary ? summary.completed.toLocaleString() : '—' },
   ];
 
@@ -278,7 +292,7 @@ export default function AdminOrders() {
       </header>
 
       <div className="space-y-5 bg-gray-50 p-4 sm:p-6 lg:p-8">
-        <div className="grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-3 xl:grid-cols-6">
           {tiles.map((t) => (
             <div key={t.label} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
               <p className="text-xs font-medium text-gray-500 sm:text-sm">{t.label}</p>
@@ -319,6 +333,8 @@ export default function AdminOrders() {
           }
           renderActions={(o) => {
             const cancelled = ['cancelled', 'canceled'].includes(String(o.status || ''));
+            const correctionFinal = ['refunded', 'voided'].includes(String(o.financial_status || ''));
+            const hasRefund = Number(o.refunded_amount || 0) > 0;
             const busy = busyId === o.id;
             return (
               <>
@@ -330,16 +346,18 @@ export default function AdminOrders() {
                 >
                   <Eye className="h-4 w-4" />
                 </button>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => router.push(`/admin/pos?order=${o.id}`)}
-                  className="rounded-lg p-2 text-emerald-600 hover:bg-emerald-50 disabled:opacity-40"
-                  title="Edit in POS / KOT"
-                >
-                  <ExternalLink className="h-4 w-4" />
-                </button>
-                {!cancelled && (
+                {!correctionFinal && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => router.push(`/admin/pos?order=${o.id}`)}
+                    className="rounded-lg p-2 text-emerald-600 hover:bg-emerald-50 disabled:opacity-40"
+                    title="Edit in POS / KOT"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                  </button>
+                )}
+                {!cancelled && !correctionFinal && !hasRefund && (
                   <button
                     type="button"
                     disabled={busy}

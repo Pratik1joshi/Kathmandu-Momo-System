@@ -119,6 +119,7 @@ export async function POST(request, { params }) {
       if (!validIds.has(id) || !(qty > 0)) continue;
       items.push({
         menu_item_id: Number(id),
+        variant_name: it.variant_name ? String(it.variant_name).slice(0, 60) : null,
         quantity: Math.min(qty, 50),
         special_instructions: String(it.special_instructions || '').slice(0, 200) || null,
       });

@@ -6,6 +6,7 @@ import { useToast } from '@/components/ui/toast';
 import { friendlyFromError } from '@/lib/friendly-message';
 import { apiJson } from '@/lib/authed-fetch';
 import LedgerTable from '@/components/accounting/ledger-table';
+import DateInput from '@/components/ui/date-input.jsx';
 
 export default function CashBookPage() {
   const { addToast } = useToast();
@@ -43,8 +44,8 @@ export default function CashBookPage() {
               {drawers.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
           </label>
-          <label className="block"><span className="mb-1 block text-xs font-medium text-gray-500">From</span><input type="date" value={range.from} onChange={(e) => setRange((r) => ({ ...r, from: e.target.value }))} className="h-10 rounded-lg border border-gray-300 px-3 text-sm" /></label>
-          <label className="block"><span className="mb-1 block text-xs font-medium text-gray-500">To</span><input type="date" value={range.to} onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))} className="h-10 rounded-lg border border-gray-300 px-3 text-sm" /></label>
+          <label className="block"><span className="mb-1 block text-xs font-medium text-gray-500">From</span><DateInput value={range.from} onChange={(v) => setRange((r) => ({ ...r, from: v }))} className="h-10 rounded-lg border border-gray-300 px-3 text-sm" /></label>
+          <label className="block"><span className="mb-1 block text-xs font-medium text-gray-500">To</span><DateInput value={range.to} onChange={(v) => setRange((r) => ({ ...r, to: v }))} className="h-10 rounded-lg border border-gray-300 px-3 text-sm" /></label>
         </div>
         <LedgerTable lines={lines} debitNormal loading={loading} empty="No cash movements in range." />
       </div>

@@ -20,6 +20,7 @@ import { KpiCards, ChartCard, ChartGrid, TrendChart, RankBars } from '@/componen
 import WastageModal, { WASTAGE_REASON_LABELS, WASTAGE_REASONS } from '@/components/inventory/wastage-modal';
 import { formatNepalTime } from '@/lib/time-utils';
 import { nepalDateString } from '@/lib/report-dates';
+import DateInput from '@/components/ui/date-input.jsx';
 
 const reasonLabel = (r) => WASTAGE_REASON_LABELS[r] || String(r || 'other').replace(/_/g, ' ');
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
@@ -195,11 +196,11 @@ export default function WastagePage() {
           </label>
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-gray-500">From</span>
-            <input type="date" value={filters.from} onChange={(e) => setFilters((f) => ({ ...f, from: e.target.value }))} className="h-10 rounded-lg border border-gray-300 px-3 text-sm text-gray-700" />
+            <DateInput value={filters.from} onChange={(v) => setFilters((f) => ({ ...f, from: v }))} className="h-10 rounded-lg border border-gray-300 px-3 text-sm text-gray-700" />
           </label>
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-gray-500">To</span>
-            <input type="date" value={filters.to} onChange={(e) => setFilters((f) => ({ ...f, to: e.target.value }))} className="h-10 rounded-lg border border-gray-300 px-3 text-sm text-gray-700" />
+            <DateInput value={filters.to} onChange={(v) => setFilters((f) => ({ ...f, to: v }))} className="h-10 rounded-lg border border-gray-300 px-3 text-sm text-gray-700" />
           </label>
           {(filters.reason !== 'all' || filters.from || filters.to) && (
             <button type="button" onClick={() => setFilters({ reason: 'all', from: '', to: '' })} className="h-10 rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-600 hover:bg-gray-50">

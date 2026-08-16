@@ -10,7 +10,8 @@ import {
 import { requireAuth } from '@/lib/api-guard.js';
 import { dateKey } from '@/lib/reports.js';
 import { FEATURES } from '@/lib/deployment.js';
-import { currentBusinessDay, businessDaySummary } from '@/lib/business-days.js';
+import { autoCloseStaleBusinessDay, currentBusinessDay, businessDaySummary } from '@/lib/business-days.js';
+import { orderTypeLabel } from '@/lib/order-types.js';
 
 const COST_RATIO = 0.6; // flat food-cost heuristic until recipe-cost rollup is wired
 const LIVE_ORDER = `status IN ('pending','confirmed','preparing','cooking','ready','dining','served','awaiting_payment')`;
@@ -26,6 +27,7 @@ export async function GET(request) {
     if (auth.error) return auth.error;
 
     const db = Database.getInstance();
+    await autoCloseStaleBusinessDay(db);
     const activeBusinessDay = await currentBusinessDay(db);
     const activeDaySummary = activeBusinessDay ? await businessDaySummary(db, activeBusinessDay) : null;
     const today = nepalDateString(new Date());
@@ -351,7 +353,7 @@ export async function GET(request) {
       const amt = n(o.amount);
       activity.push({
         type: 'order_created',
-        text: `Open · ${o.order_number}${o.table_number ? ` · Table ${o.table_number}` : ''} · ${String(o.status || '').replace(/_/g, ' ')}${amt ? ` · Rs ${amt.toFixed(0)}` : ''}`,
+        text: `${o.table_number ? 'Open' : orderTypeLabel(o)} · ${o.order_number}${o.table_number ? ` · Table ${o.table_number}` : ''} · ${String(o.status || '').replace(/_/g, ' ')}${amt ? ` · Rs ${amt.toFixed(0)}` : ''}`,
         at: o.updated_at || o.created_at,
       });
     }
@@ -359,19 +361,19 @@ export async function GET(request) {
       if (seenOrderIds.has(o.id)) continue;
       activity.push({
         type: 'order_created',
-        text: `Order ${o.order_number} ${o.status === 'completed' ? 'completed' : 'created'}${o.table_number ? ` · Table ${o.table_number}` : o.order_type ? ` · ${o.order_type}` : ''}`,
+        text: `Order ${o.order_number} ${o.status === 'completed' ? 'completed' : 'created'} · ${o.table_number ? `Table ${o.table_number}` : orderTypeLabel(o)}`,
         at: o.created_at,
       });
     }
     for (const k of recentKots || []) {
       activity.push({
         type: 'kitchen_ready',
-        text: `KOT ${k.kot_number || k.id} sent${k.table_number ? ` · Table ${k.table_number}` : ''}`,
+        text: `KOT ${k.kot_number || k.id} sent · ${k.table_number ? `Table ${k.table_number}` : 'Takeaway'}`,
         at: k.printed_at || k.created_at,
       });
     }
     for (const k of completedTickets || []) {
-      activity.push({ type: 'kitchen_ready', text: `Kitchen ticket ready${k.table_number ? ` for Table ${k.table_number}` : ''}`, at: k.completed_at });
+      activity.push({ type: 'kitchen_ready', text: `Kitchen ticket ready for ${k.table_number ? `Table ${k.table_number}` : 'Takeaway'}`, at: k.completed_at });
     }
     for (const r of checkedInReservations || []) {
       activity.push({ type: 'reservation_checked_in', text: `${r.name} checked in`, at: r.checked_in_at });

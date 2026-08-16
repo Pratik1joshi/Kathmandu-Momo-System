@@ -50,8 +50,9 @@ import CostEntry from '@/components/ui/cost-entry';
 import { unitLabel, normalizeUnitOrKeep } from '@/lib/units';
 import { resolveConversionFactor } from '@/lib/unit-conversions';
 import { toConsumptionAmount, deriveCost, blankCost, hasTwoUnits, round } from '@/lib/entry-math';
+import { nepalDateString } from '@/lib/report-dates.js';
 
-export default function ItemFormModal({ item, suppliers = [], categories = [], onClose, onSaved }) {
+export default function ItemFormModal({ item, suppliers = [], categories = [], menuItems = [], onClose, onSaved }) {
   const { addToast } = useToast();
   const editing = Boolean(item?.id);
   const [saving, setSaving] = useState(false);
@@ -64,6 +65,7 @@ export default function ItemFormModal({ item, suppliers = [], categories = [], o
     min_stock_level: item?.min_stock_level ?? 5,
     supplier: item?.supplier || '',
     notes: item?.notes || '',
+    menu_item_id: item?.menu_item_id || '',
     invoice_number: '',
   });
   // Factor was typed by hand -> auto-derivation must not clobber it.
@@ -187,7 +189,7 @@ export default function ItemFormModal({ item, suppliers = [], categories = [], o
           body: JSON.stringify({
             supplier: form.supplier || null,
             invoice_number: form.invoice_number.trim() || null,
-            invoice_date: new Date().toISOString().split('T')[0],
+            invoice_date: nepalDateString(),
             notes: `Opening purchase for ${form.item_name.trim()}`,
             items: [
               {
@@ -241,6 +243,17 @@ export default function ItemFormModal({ item, suppliers = [], categories = [], o
                 onChange={(v) => set({ category: v })}
                 options={categories.map((c) => ({ value: c, label: c }))}
                 placeholder="e.g. Vegetables"
+              />
+            </AdminField>
+            <AdminField
+              label="Linked menu item"
+              hint="For one-for-one packaged stock such as bottled drinks or tobacco. Leave blank when a recipe deducts ingredients."
+            >
+              <Combobox
+                value={form.menu_item_id}
+                onChange={(v) => set({ menu_item_id: v })}
+                options={menuItems.map((menuItem) => ({ value: String(menuItem.id), label: menuItem.name }))}
+                placeholder="Not directly linked"
               />
             </AdminField>
           </div>

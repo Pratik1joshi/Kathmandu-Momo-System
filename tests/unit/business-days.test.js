@@ -342,7 +342,9 @@ let day2Id;
 
 test('starting the next business day is independent of staleness acknowledgement and carries unresolved work forward', async () => {
   const day2 = await openBusinessDay(db, {
-    business_date: today, opening_cash: 5800, action: 'start_next', confirm_next_day: true,
+    // The server, not the browser locale/date picker, selects today's Nepal
+    // date when starting the next day.
+    business_date: '2000-01-01', opening_cash: 5800, action: 'start_next', confirm_next_day: true,
   }, admin);
   day2Id = day2.id;
   assert.equal(day2.business_date, today);

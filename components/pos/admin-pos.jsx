@@ -5,6 +5,7 @@ import {
   Search, Plus, Minus, Trash2, ChefHat, Loader2, RefreshCw, X, Ban,
   LayoutGrid, FileText, ShoppingCart, Sparkles, ReceiptText, Clock,
   ArrowLeftRight, Users, Printer, CreditCard, Utensils, ShoppingBag,
+  Truck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
@@ -90,6 +91,9 @@ export default function AdminPos() {
     restaurant_address: '',
     vat_number: '',
     pan_number: '',
+    delivery_pricing_enabled: false,
+    delivery_pricing_mode: 'fixed',
+    delivery_fixed_fee: 0,
   });
 
   const [tables, setTables] = useState([]);
@@ -108,16 +112,21 @@ export default function AdminPos() {
   const [clearAllOpen, setClearAllOpen] = useState(false); // custom clear-cart confirm
   const [showCustom, setShowCustom] = useState(false);
   const [customItem, setCustomItem] = useState({ name: '', price: '', quantity: 1 });
+  const [variantPicker, setVariantPicker] = useState(null); // product with variants, awaiting a pick
   const [kotNotes, setKotNotes] = useState('');
   // Local cart before first KOT — no DB order/bill until kitchen ticket is cut.
   const [draftLines, setDraftLines] = useState([]);
   const [draftDest, setDraftDest] = useState(null); // { type, table_id?, table_number?, new_party? }
 
   const [discount, setDiscount] = useState(0);
+  const [discountMode, setDiscountMode] = useState('percent'); // percent | amount
+
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [amountPaid, setAmountPaid] = useState('');
   const [splitPayment, setSplitPayment] = useState(emptySplitPayment);
   const [customerSelection, setCustomerSelection] = useState(emptyCustomerSelection);
+  const [deliveryAtCheckout, setDeliveryAtCheckout] = useState(false);
+  const [deliveryFee, setDeliveryFee] = useState('');
 
   const kotKeyRef = useRef(null);
   const payKeyRef = useRef(null);
@@ -133,10 +142,13 @@ export default function AdminPos() {
 
   const resetPaymentState = useCallback(() => {
     setDiscount(0);
+    setDiscountMode('percent');
     setPaymentMethod('cash');
     setAmountPaid('');
     setSplitPayment(emptySplitPayment);
     setCustomerSelection(emptyCustomerSelection);
+    setDeliveryAtCheckout(false);
+    setDeliveryFee('');
     payKeyRef.current = null;
   }, []);
 
@@ -210,6 +222,9 @@ export default function AdminPos() {
         restaurant_address: s.restaurant_address || '',
         vat_number: s.vat_number || '',
         pan_number: s.pan_number || '',
+        delivery_pricing_enabled: String(s.delivery_pricing_enabled ?? 'false') === 'true',
+        delivery_pricing_mode: s.delivery_pricing_mode || 'fixed',
+        delivery_fixed_fee: Number(s.delivery_fixed_fee || 0),
       });
     } catch { /* defaults */ }
   }, []);
@@ -337,6 +352,22 @@ export default function AdminPos() {
     return draftLines;
   }, [orderId, workspace, draftLines]);
 
+  // A delivery is still a table-less POS order, but is intentionally marked at
+  // checkout because that is when the cashier knows whether it is being picked
+  // up or sent out and what fee to charge.
+  useEffect(() => {
+    if (!orderId) {
+      setDeliveryAtCheckout(false);
+      setDeliveryFee('');
+      return;
+    }
+    const existingDelivery = String(workspace?.order?.order_type || '').toLowerCase() === 'delivery';
+    setDeliveryAtCheckout(existingDelivery);
+    setDeliveryFee(existingDelivery ? String(Number(workspace?.order?.delivery_fee || 0)) : '');
+  // The order id, not every workspace refresh, establishes checkout mode.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderId]);
+
   const calculateSubtotal = useCallback(
     () => allLines.reduce((sum, item) => sum + Number(item.subtotal || 0), 0),
     [allLines]
@@ -344,12 +375,16 @@ export default function AdminPos() {
 
   const getTotals = useCallback(() => {
     const serverTotals = workspace?.totals;
-    if (serverTotals && orderStatus === 'awaiting_payment') {
+    // A bill may already be awaiting payment when the cashier decides this
+    // pickup is actually being delivered. Recalculate locally in that case so
+    // the payment allocation includes the newly-entered delivery charge.
+    if (serverTotals && orderStatus === 'awaiting_payment' && !deliveryAtCheckout) {
       return {
         subtotal: Number(serverTotals.subtotal ?? calculateSubtotal()),
         discount: Number(serverTotals.discount ?? 0),
         tax: Number(serverTotals.tax ?? 0),
         serviceCharge: Number(serverTotals.serviceCharge ?? 0),
+        deliveryFee: Number(serverTotals.deliveryFee ?? 0),
         total: Number(serverTotals.total ?? calculateSubtotal()),
         taxPercent: Number(serverTotals.taxPercent ?? settings.vat_percentage),
         servicePercent: Number(serverTotals.servicePercent ?? settings.service_charge_percentage),
@@ -357,11 +392,14 @@ export default function AdminPos() {
     }
     const { vatPercent, servicePercent } = parseSettingsRates(settings);
     return calculateBillTotals(calculateSubtotal(), {
-      discountPercent: discount,
+      ...(discountMode === 'amount'
+        ? { discountAmount: discount }
+        : { discountPercent: discount }),
       vatPercent,
       servicePercent,
+      deliveryFee: deliveryAtCheckout ? Math.max(0, Number(deliveryFee) || 0) : 0,
     });
-  }, [calculateSubtotal, discount, orderStatus, settings, workspace?.totals]);
+  }, [calculateSubtotal, deliveryAtCheckout, deliveryFee, discount, discountMode, orderStatus, settings, workspace?.totals]);
 
   const cartCount = allLines.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
   const totals = getTotals();
@@ -393,16 +431,18 @@ export default function AdminPos() {
       throw new Error('Cash tendered must cover the cash allocation.');
     }
     const credit = allocations.find((row) => row.method === 'credit');
-    if (credit && !customerSelection.customer?.id) throw new Error('Credit requires an existing identified customer with an approved limit.');
+    if (credit && !customerSelection.customer?.id) throw new Error('Credit requires an existing identified customer.');
     return allocations;
   }, [amountPaid, customerSelection.customer?.id, paymentMethod, splitPayment]);
 
-  const addItem = useCallback(async (product) => {
+  const addItem = useCallback(async (product, variant = null) => {
     if (!canEdit) return;
-    const price = Number(product.price ?? product.base_price ?? 0);
+    const price = variant ? Number(variant.price ?? 0) : Number(product.price ?? product.base_price ?? 0);
+    const variantName = variant?.variant_name || null;
+    const displayName = variantName ? `${product.name} (${variantName})` : product.name;
     if (!orderId) {
       setDraftLines((prev) => {
-        const existing = prev.find((l) => l.menu_item_id === product.id && !l.variant_name);
+        const existing = prev.find((l) => l.menu_item_id === product.id && l.variant_name === variantName);
         if (existing) {
           return prev.map((l) => {
             if (l.local_id !== existing.local_id) return l;
@@ -414,7 +454,7 @@ export default function AdminPos() {
           local_id: uid(),
           order_item_id: null,
           menu_item_id: product.id,
-          item_name: product.name,
+          item_name: displayName,
           price,
           quantity: 1,
           sent_quantity: 0,
@@ -422,7 +462,7 @@ export default function AdminPos() {
           subtotal: price,
           image_url: product.image_url || null,
           category: product.category_name || product.category || 'Menu',
-          variant_name: null,
+          variant_name: variantName,
         }];
       });
       return;
@@ -430,7 +470,7 @@ export default function AdminPos() {
     setBusy(true);
     try {
       const lines = unsentLines;
-      const existing = lines.find((l) => l.menu_item_id === product.id && !l.variant_name && Number(l.sent_quantity || 0) === 0);
+      const existing = lines.find((l) => l.menu_item_id === product.id && l.variant_name === variantName && Number(l.sent_quantity || 0) === 0);
       if (existing) {
         const data = await api(`/api/admin/pos/orders/${orderId}/items`, {
           method: 'PATCH',
@@ -440,13 +480,21 @@ export default function AdminPos() {
       } else {
         const data = await api(`/api/admin/pos/orders/${orderId}/items`, {
           method: 'POST',
-          body: JSON.stringify({ items: [{ menu_item_id: product.id, quantity: 1, price }] }),
+          body: JSON.stringify({ items: [{ menu_item_id: product.id, quantity: 1, price, variant_name: variantName }] }),
         });
         setWorkspace(data.workspace);
       }
     } catch (e) { notify(e.message, 'error'); }
     finally { setBusy(false); }
   }, [orderId, canEdit, unsentLines, notify]);
+
+  const pickProduct = useCallback((product) => {
+    if (Array.isArray(product.variants) && product.variants.length > 0) {
+      setVariantPicker(product);
+    } else {
+      addItem(product);
+    }
+  }, [addItem]);
 
   const addCustomToCart = useCallback(async () => {
     if (!canEdit) return;
@@ -735,7 +783,10 @@ export default function AdminPos() {
 
     setBusy(true);
     try {
-      if (unsentLines.length && !workspace?.reopened) await markUnsentAsSent();
+      // Unsent items stay unsent until KOT / KOT & Print — never auto-issue on pay.
+      if (unsentLines.length && !workspace?.reopened) {
+        notify('Some items are not on a KOT yet. They stay unsent — use KOT if kitchen needs them.', 'warning');
+      }
       const data = await api(`/api/admin/pos/orders/${orderId}/pay`, {
         method: 'POST',
         body: JSON.stringify({
@@ -746,6 +797,8 @@ export default function AdminPos() {
           customer_name: customerCheck.name,
           customer_phone: customerCheck.phone,
           customer_address: customerCheck.address || customerSelection.address || '',
+          delivery: deliveryAtCheckout,
+          delivery_fee: deliveryAtCheckout ? billTotals.deliveryFee : 0,
         }),
       });
       printFinalBill(data.receipt, { size: paperSize });
@@ -755,7 +808,7 @@ export default function AdminPos() {
       await loadTables();
     } catch (e) { notify(e.message, 'error'); }
     finally { setBusy(false); }
-  }, [orderId, busy, allLines.length, unsentLines.length, markUnsentAsSent, notify, customerSelection, resetToNewSale, paperSize, workspace, loadTables, showSuccessFlash, buildAllocations, getTotals]);
+  }, [orderId, busy, allLines.length, unsentLines.length, notify, customerSelection, resetToNewSale, paperSize, workspace, loadTables, showSuccessFlash, buildAllocations, getTotals, deliveryAtCheckout]);
 
   const selectTable = useCallback(async (table) => {
     if (changeTableMode && orderId) {
@@ -887,15 +940,13 @@ export default function AdminPos() {
   }
 
   const destLabel = orderId
-    ? (workspace?.order?.order_type === 'takeaway'
-      ? 'Counter'
-      : workspace?.order?.table_number
-        ? `Table ${workspace.order.table_number}${workspace?.order?.party_label ? ` · ${workspace.order.party_label}` : ''}`
-        : 'Counter')
+    ? (workspace?.order?.table_number
+      ? `Table ${workspace.order.table_number}${workspace?.order?.party_label ? ` · ${workspace.order.party_label}` : ''}`
+      : workspace?.order?.order_type === 'delivery' ? 'Delivery' : 'Takeaway')
     : draftDest?.table_number
       ? `Table ${draftDest.table_number}${draftDest.new_party ? ' · New party' : ''} (draft)`
       : draftLines.length
-        ? 'Counter draft — KOT creates order'
+        ? 'Takeaway draft — KOT creates order'
         : 'Ready — pick a table or add items';
 
   return (
@@ -1064,7 +1115,7 @@ export default function AdminPos() {
                   key={product.id}
                   type="button"
                   disabled={busy || !canEdit}
-                  onClick={() => addItem(product)}
+                  onClick={() => pickProduct(product)}
                   className="bg-white rounded-xl border border-blue-100 p-3 sm:p-4 text-left active:scale-[0.98] hover:border-blue-400 hover:shadow-md transition-transform overflow-hidden disabled:opacity-50"
                 >
                   <div className="aspect-square rounded-lg mb-2 overflow-hidden bg-stone-100">
@@ -1077,13 +1128,44 @@ export default function AdminPos() {
                   </div>
                   <h3 className="font-semibold text-slate-900 text-xs sm:text-sm line-clamp-2 min-h-[2.5rem]">{product.name}</h3>
                   <p className="text-[11px] text-slate-500 truncate mb-1">{product.category_name || product.category || 'Menu'}</p>
-                  <p className="text-base sm:text-lg font-bold text-blue-600">{formatCurrency(product.price || product.base_price || 0)}</p>
+                  {product.variants?.length > 0 ? (
+                    <p className="text-[11px] font-semibold text-blue-600">{product.variants.length} options</p>
+                  ) : (
+                    <p className="text-base sm:text-lg font-bold text-blue-600">{formatCurrency(product.price || product.base_price || 0)}</p>
+                  )}
                 </button>
               ))}
             </div>
           )}
         </div>
       </div>
+
+      {variantPicker && (
+        <div className="fixed inset-0 z-[60] bg-black/40 flex items-end sm:items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md p-5 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-stone-900">{variantPicker.name}</h3>
+              <button type="button" onClick={() => setVariantPicker(null)} className="p-1 text-stone-500">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-sm text-stone-500 mb-3">Choose an option</p>
+            <div className="space-y-2">
+              {variantPicker.variants.map((variant) => (
+                <button
+                  key={variant.id}
+                  type="button"
+                  onClick={() => { addItem(variantPicker, variant); setVariantPicker(null); }}
+                  className="w-full flex items-center justify-between px-4 py-3 rounded-xl border border-stone-200 hover:border-blue-400 hover:bg-blue-50 active:scale-[0.98] transition-transform"
+                >
+                  <span className="font-medium text-stone-900">{variant.variant_name}</span>
+                  <span className="font-bold text-blue-600">{formatCurrency(variant.price || 0)}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {showCustom && (
         <div className="fixed inset-0 z-[60] bg-black/40 flex items-end sm:items-center justify-center p-4">
@@ -1325,7 +1407,7 @@ export default function AdminPos() {
               </div>
               {discount > 0 && (
                 <div className="flex justify-between text-green-600">
-                  <span>Discount ({discount}%)</span>
+                  <span>Discount ({discountMode === 'amount' ? 'Rs' : `${discount}%`})</span>
                   <span className="font-bold">- {formatCurrency(totals.discount)}</span>
                 </div>
               )}
@@ -1339,6 +1421,12 @@ export default function AdminPos() {
                 <div className="flex justify-between">
                   <span className="text-slate-700">Tax</span>
                   <span className="font-bold text-slate-900">{formatCurrency(totals.tax)}</span>
+                </div>
+              )}
+              {totals.deliveryFee > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-slate-700">Delivery</span>
+                  <span className="font-bold text-slate-900">{formatCurrency(totals.deliveryFee)}</span>
                 </div>
               )}
               <div className="flex justify-between text-base font-bold pt-1.5 border-t border-blue-200">
@@ -1543,6 +1631,8 @@ export default function AdminPos() {
         settings={settings}
         discount={discount}
         onDiscountChange={setDiscount}
+        discountMode={discountMode}
+        onDiscountModeChange={setDiscountMode}
         customerSelection={customerSelection}
         onCustomerChange={setCustomerSelection}
         paymentMethod={paymentMethod}
@@ -1551,6 +1641,16 @@ export default function AdminPos() {
         onAmountPaidChange={setAmountPaid}
         splitPayment={splitPayment}
         onSplitPaymentChange={setSplitPayment}
+        canSetDelivery={!workspace?.order?.table_id}
+        deliveryEnabled={deliveryAtCheckout}
+        onDeliveryEnabledChange={(enabled) => {
+          setDeliveryAtCheckout(enabled);
+          if (enabled && !String(deliveryFee).trim()) {
+            setDeliveryFee(String(settings.delivery_pricing_mode === 'fixed' ? Number(settings.delivery_fixed_fee || 0) : 0));
+          }
+        }}
+        deliveryFee={deliveryFee}
+        onDeliveryFeeChange={setDeliveryFee}
       />
     </div>
   );
@@ -1891,8 +1991,8 @@ function ActiveBillsModal({ busy, onClose, onSelect }) {
       },
       {
         id: 'counter',
-        title: 'Counter / takeaway',
-        hint: 'Walk-in orders still in progress',
+        title: 'Takeaway',
+        hint: 'Orders not linked to a table',
         icon: ShoppingBag,
         tone: 'border-slate-200 bg-slate-50/60',
         bills: pick(filtered.filter((b) => !b.tableNumber && b.orderStatus !== 'awaiting_payment')),
@@ -1988,9 +2088,9 @@ const ORDER_STATUS = {
 function billDisplayTitle(b) {
   if (b.tableNumber) return `Table ${b.tableNumber}`;
   if (b.customerName) return b.customerName;
-  if (b.channel === 'takeaway') return 'Counter · Takeaway';
+  if (b.channel === 'takeaway') return 'Takeaway';
   if (b.channel === 'online') return 'Online order';
-  return 'Counter · Walk-in';
+  return 'Takeaway';
 }
 
 function billTimeLabel(iso) {

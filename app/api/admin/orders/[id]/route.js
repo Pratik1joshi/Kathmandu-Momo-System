@@ -37,6 +37,8 @@ export async function GET(request, { params }) {
              b.discount_amount AS bill_discount,
              b.grand_total AS bill_grand_total,
              b.status AS bill_status,
+             COALESCE((SELECT SUM(bc.amount) FROM bill_corrections bc WHERE bc.bill_id=b.id AND bc.type='refund'), b.refunded_amount, 0) AS refunded_amount,
+             COALESCE((SELECT SUM(bc.amount) FROM bill_corrections bc WHERE bc.bill_id=b.id AND bc.type='void'), 0) AS voided_amount,
              COALESCE(b.payment_status, o.payment_status, 'unpaid') AS payment_status,
              COALESCE(b.outstanding_amount, 0) AS outstanding_amount,
              COALESCE(b.grand_total, 0) - COALESCE(b.outstanding_amount, 0) AS amount_paid,

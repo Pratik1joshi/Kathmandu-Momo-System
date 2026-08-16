@@ -3,12 +3,13 @@
 import React from 'react';
 import Link from 'next/link';
 import { AlertTriangle, Banknote, ChevronDown, ChevronUp, CircleCheck, CreditCard, ReceiptText, Utensils } from 'lucide-react';
+import { financialToneClass } from '@/lib/financial-tone';
 
 const amount = (value) => `Rs ${Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const count = (value) => Number(value || 0).toLocaleString('en-IN');
 
-function Metric({ label, value, money = true }) {
-  return <div className="min-w-0 border-l-2 border-gray-200 pl-3"><p className="text-xs font-medium text-gray-500">{label}</p><p className="mt-1 truncate text-base font-semibold tabular-nums text-gray-950">{money ? amount(value) : count(value)}</p></div>;
+function Metric({ label, value, money = true, tone }) {
+  return <div className="min-w-0 border-l-2 border-gray-200 pl-3"><p className="text-xs font-medium text-gray-500">{label}</p><p className={`mt-1 truncate text-base font-semibold tabular-nums ${money ? financialToneClass({ label, value, tone }) : 'text-gray-950'}`}>{money ? amount(value) : count(value)}</p></div>;
 }
 
 function Section({ icon: Icon, title, children }) {
@@ -31,23 +32,25 @@ export default function ClosingSummary({ summary, countedCash = '', onCountedCas
   return <div className="space-y-0">
     <Section icon={ReceiptText} title="Sales summary">
       <div className="grid grid-cols-2 gap-x-4 gap-y-5 sm:grid-cols-3 xl:grid-cols-6">
-        <Metric label="Gross Sales" value={sales.gross_sales} /><Metric label="Discounts" value={sales.discounts} />
-        <Metric label="Net Sales" value={sales.net_sales} /><Metric label="VAT / Tax" value={sales.tax} />
+        <Metric label="Gross Billed Sales" value={sales.gross_sales} tone="positive" /><Metric label="Discounts" value={sales.discounts} />
+        <Metric label="Sales Before Returns" value={sales.sales_before_returns} tone="positive" /><Metric label="Net Sales After Refunds" value={sales.net_sales} tone={Number(sales.net_sales) < 0 ? 'negative' : 'positive'} /><Metric label="VAT / Tax" value={sales.tax} />
         <Metric label="Service Charge" value={sales.service_charge} /><Metric label="Refunds" value={sales.refunds} />
-        <Metric label="Voided Bill Value" value={sales.voided_bill_value} /><Metric label="Completed Bills" value={sales.completed_bills} money={false} />
-        <Metric label="Orders Completed" value={summary?.orders?.completed} money={false} /><Metric label="Average Bill" value={sales.average_bill} />
+        <Metric label="Voided Bill Value" value={sales.voided_bill_value} /><Metric label="Finalized Bills" value={sales.completed_bills} money={false} />
+        <Metric label="Orders Completed" value={summary?.orders?.completed} money={false} /><Metric label="Average Net Bill" value={sales.average_bill} tone="positive" />
         <Metric label="Items Sold" value={sales.items_sold} money={false} />
       </div>
       {!!sales.channels?.length && <div className="mt-5 flex flex-wrap gap-x-6 gap-y-2 border-t border-gray-100 pt-4">
-        {sales.channels.map((row) => <span key={row.channel} className="text-sm text-gray-600"><strong className="capitalize text-gray-900">{String(row.channel).replaceAll('_', ' ')}</strong> {amount(row.amount)}</span>)}
+        {sales.channels.map((row) => <span key={row.channel} className="text-sm text-gray-600"><strong className="capitalize text-gray-900">{String(row.channel).replaceAll('_', ' ')}</strong> <span className="font-semibold text-emerald-700">{amount(row.amount)} net</span>{Number(row.refunds||0)>0 && <> (<span className="text-emerald-700">{amount(row.gross_amount)} gross</span> - <span className="text-rose-700">{amount(row.refunds)} refunded</span>)</>}</span>)}
       </div>}
     </Section>
 
     <Section icon={CreditCard} title="Payment collection summary">
       <div className="grid grid-cols-2 gap-x-4 gap-y-5 sm:grid-cols-3 lg:grid-cols-6">
-        <Metric label="Cash Collected" value={collections.cash} /><Metric label="Online / QR" value={collections.qr} />
-        <Metric label="Card" value={collections.card} /><Metric label="Bank Transfer" value={collections.bank} />
-        <Metric label="Credit Sales" value={collections.credit_sales} /><Metric label="Total Collected" value={collections.total_collected} />
+        <Metric label="Cash Collected" value={collections.cash} /><Metric label="Online / QR" value={collections.qr} tone="positive" />
+        <Metric label="Card" value={collections.card} tone="positive" /><Metric label="Bank Transfer" value={collections.bank} tone="positive" />
+        <Metric label="Credit Sales" value={collections.credit_sales} tone="positive" /><Metric label="Gross Collected" value={collections.total_collected} />
+        <Metric label="Refunds Returned" value={collections.refunds} /><Metric label="Void Returns" value={collections.void_returns} />
+        <Metric label="Net Collected" value={collections.net_collected} />
       </div>
     </Section>
 
@@ -86,7 +89,7 @@ export default function ClosingSummary({ summary, countedCash = '', onCountedCas
 
     <Section icon={CreditCard} title="Online and bank reconciliation">
       {summary?.online?.length ? <div className="divide-y divide-gray-100 border-y border-gray-100">
-        {summary.online.map((row) => <div key={row.code} className="grid grid-cols-[1fr_auto_auto_auto] gap-4 py-3 text-sm"><span className="font-medium text-gray-900">{row.name}</span><span className="text-gray-500">In {amount(row.inflow)}</span><span className="text-gray-500">Out {amount(row.outflow)}</span><strong className="tabular-nums">Net {amount(row.net)}</strong></div>)}
+        {summary.online.map((row) => <div key={row.code} className="grid grid-cols-[1fr_auto_auto_auto] gap-4 py-3 text-sm"><span className="font-medium text-gray-900">{row.name}</span><span className="font-medium text-emerald-700">In {amount(row.inflow)}</span><span className="font-medium text-rose-700">Out {amount(row.outflow)}</span><strong className={`tabular-nums ${Number(row.net) > 0 ? 'text-emerald-700' : Number(row.net) < 0 ? 'text-rose-700' : 'text-gray-950'}`}>Net {amount(row.net)}</strong></div>)}
       </div> : <p className="text-sm text-gray-500">No online or bank movement in this business day.</p>}
     </Section>
 
@@ -107,5 +110,6 @@ export default function ClosingSummary({ summary, countedCash = '', onCountedCas
 }
 
 function CashLine({ label, value, sign = '' }) {
-  return <div><p className="text-xs text-gray-400">{label}</p><p className="mt-0.5 font-semibold tabular-nums">{sign} {amount(value)}</p></div>;
+  const tone = sign === '+' ? 'text-emerald-400' : sign === '-' ? 'text-rose-400' : 'text-white';
+  return <div><p className="text-xs text-gray-400">{label}</p><p className={`mt-0.5 font-semibold tabular-nums ${tone}`}>{sign} {amount(value)}</p></div>;
 }

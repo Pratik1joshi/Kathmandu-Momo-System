@@ -37,6 +37,7 @@ export default function KitchenAnalyticsPage() {
           kpis={[
             { key: 'orders', label: 'Orders today', value: d?.orders_today ?? 0, format: 'number' },
             { key: 'ready', label: 'Completed', value: d?.ready_today ?? 0, format: 'number', sub: `${d?.active_now ?? 0} in progress` },
+            { key: 'dishes', label: 'Dishes prepared', value: d?.dishes_prepared_today ?? 0, format: 'number' },
             { key: 'avg', label: 'Avg prep time', value: d?.avg_prep_minutes ?? 0, format: 'number', sub: 'minutes' },
             { key: 'busy', label: 'Busiest hour', value: d?.busiest_hour != null ? hourLabel(d.busiest_hour) : '—' },
           ]}
@@ -64,17 +65,18 @@ export default function KitchenAnalyticsPage() {
             <div className="border-b border-gray-200 px-5 py-4"><h2 className="text-sm font-semibold text-gray-900">Chef performance — today</h2></div>
             <table className="w-full text-sm">
               <thead className="border-b border-gray-200 bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
-                <tr><th className="px-5 py-3 font-semibold">Chef</th><th className="px-5 py-3 text-right font-semibold">Prepared</th><th className="px-5 py-3 text-right font-semibold">Avg prep</th></tr>
+                <tr><th className="px-5 py-3 font-semibold">Chef</th><th className="px-5 py-3 text-right font-semibold">Orders</th><th className="px-5 py-3 text-right font-semibold">Dishes</th><th className="px-5 py-3 text-right font-semibold">Avg prep</th></tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {(d?.chefs || []).map((c) => (
                   <tr key={c.name} className="hover:bg-gray-50">
                     <td className="px-5 py-2.5 font-medium text-gray-900">{c.name}</td>
                     <td className="px-5 py-2.5 text-right tabular-nums text-gray-900">{c.prepared}</td>
+                    <td className="px-5 py-2.5 text-right tabular-nums text-gray-900">{c.dishes}</td>
                     <td className="px-5 py-2.5 text-right tabular-nums text-gray-600">{c.avg_prep_minutes} min</td>
                   </tr>
                 ))}
-                {!loading && (d?.chefs || []).length === 0 && <tr><td colSpan={3} className="px-5 py-8 text-center text-gray-500">No attributed prep yet. Chefs are credited when they mark orders preparing/ready.</td></tr>}
+                {!loading && (d?.chefs || []).length === 0 && <tr><td colSpan={4} className="px-5 py-8 text-center text-gray-500">No attributed prep yet. Chefs are credited when they mark orders preparing/ready.</td></tr>}
               </tbody>
             </table>
           </section>

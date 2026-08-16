@@ -12,6 +12,8 @@
 
 # testing
 /coverage
+/test-results/
+/playwright-report/
 
 # next.js
 /.next/
@@ -64,3 +66,7 @@ POS_Distribution*
 # local tooling
 tmp-*.mjs
 tmp-*.js
+/.tmp/
+
+# editor/mount crash artifacts
+.fuse_hidden*

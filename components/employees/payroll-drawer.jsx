@@ -6,10 +6,12 @@ import { useToast } from '@/components/ui/toast';
 import { useConfirm } from '@/components/ui/confirm';
 import { friendlyMessage, friendlyFromError } from '@/lib/friendly-message';
 import { apiJson } from '@/lib/authed-fetch';
+import { nepalDateString } from '@/lib/report-dates.js';
+import DateInput from '@/components/ui/date-input.jsx';
 
 const money = (n) => `Rs ${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 const METHODS = ['cash', 'bank', 'cheque', 'other'];
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => nepalDateString();
 const currentPeriod = () => new Date().toLocaleString('en-US', { timeZone: 'Asia/Kathmandu', month: 'long', year: 'numeric' });
 
 export default function PayrollDrawer({
@@ -161,7 +163,7 @@ export default function PayrollDrawer({
                   <div className="grid grid-cols-2 gap-3">
                     <Field label="Gross salary (Rs)"><input type="number" min="0" step="any" value={payment.gross_amount} onChange={(e) => setPayment({ ...payment, gross_amount: e.target.value })} className={INPUT} /></Field>
                     <Field label={`Advance deduction (due ${money(outstanding)})`}><input type="number" min="0" max={Math.min(gross, outstanding)} step="any" value={payment.advance_deduction} onChange={(e) => setPayment({ ...payment, advance_deduction: e.target.value })} className={INPUT} placeholder="0" /></Field>
-                    <Field label="Paid on"><input type="date" value={payment.paid_on} onChange={(e) => setPayment({ ...payment, paid_on: e.target.value })} className={INPUT} /></Field>
+                    <Field label="Paid on"><DateInput value={payment.paid_on} onChange={(v) => setPayment({ ...payment, paid_on: v })} className={INPUT} /></Field>
                     <Field label="Period"><input value={payment.period_label} onChange={(e) => setPayment({ ...payment, period_label: e.target.value })} className={INPUT} placeholder="e.g. August 2026" /></Field>
                     <Field label="Method"><select value={payment.method} onChange={(e) => setPayment({ ...payment, method: e.target.value })} className={INPUT}>{METHODS.map((method) => <option key={method} value={method}>{method}</option>)}</select></Field>
                     <Field label="Paid now"><div className="flex h-10 items-center rounded-lg bg-emerald-50 px-3 text-sm font-semibold text-emerald-800">{money(netPay)}</div></Field>
@@ -175,7 +177,7 @@ export default function PayrollDrawer({
                   <p className="mb-3 text-xs text-gray-500">This is deducted from a future salary payment and remains visible until settled.</p>
                   <div className="grid grid-cols-2 gap-3">
                     <Field label="Amount (Rs)"><input type="number" min="0" step="any" value={advance.amount} onChange={(e) => setAdvance({ ...advance, amount: e.target.value })} className={INPUT} /></Field>
-                    <Field label="Date"><input type="date" value={advance.advanced_on} onChange={(e) => setAdvance({ ...advance, advanced_on: e.target.value })} className={INPUT} /></Field>
+                    <Field label="Date"><DateInput value={advance.advanced_on} onChange={(v) => setAdvance({ ...advance, advanced_on: v })} className={INPUT} /></Field>
                     <Field label="Method"><select value={advance.method} onChange={(e) => setAdvance({ ...advance, method: e.target.value })} className={INPUT}>{METHODS.map((method) => <option key={method} value={method}>{method}</option>)}</select></Field>
                     <Field label="Note"><input value={advance.note} onChange={(e) => setAdvance({ ...advance, note: e.target.value })} className={INPUT} placeholder="Optional reason" /></Field>
                   </div>

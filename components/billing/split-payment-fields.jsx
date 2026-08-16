@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { formatCurrency } from '@/lib/currency';
 import QrEnlargeModal from '@/components/billing/qr-enlarge-modal';
+import DateInput from '@/components/ui/date-input.jsx';
 
 export const emptySplitPayment = {
   cash: '', qr: '', credit: '', cashTendered: '', qrProvider: 'Fonepay',
@@ -111,10 +112,9 @@ export default function SplitPaymentFields({
           </p>
           <label className="block font-semibold">
             Due date (optional)
-            <input
-              type="date"
+            <DateInput
               value={value.creditDueDate}
-              onChange={(e) => set('creditDueDate', e.target.value)}
+              onChange={(v) => set('creditDueDate', v)}
               className="mt-1 w-full rounded-lg border border-amber-200 bg-white px-2 py-2 text-sm"
             />
           </label>

@@ -37,7 +37,8 @@ export default function BillDetailsPage({ params }) {
 
   // Payment form state
   const [paymentMethod, setPaymentMethod] = useState('cash');
-  const [discountAmount, setDiscountAmount] = useState(0);
+  const [discount, setDiscount] = useState(0);
+  const [discountMode, setDiscountMode] = useState('percent'); // percent | amount
   const [discountReason, setDiscountReason] = useState('');
   const [deliveryFee, setDeliveryFee] = useState(0);
   const [customerSelection, setCustomerSelection] = useState(emptyCustomerSelection);
@@ -147,7 +148,9 @@ export default function BillDetailsPage({ params }) {
   const calculateBill = () => {
     const { vatPercent, servicePercent } = parseSettingsRates(settings);
     const totals = calculateBillTotals(subtotal, {
-      discountAmount: Math.max(0, discountAmount),
+      ...(discountMode === 'amount'
+        ? { discountAmount: Math.max(0, discount) }
+        : { discountPercent: Math.max(0, discount) }),
       vatPercent,
       servicePercent,
       deliveryFee: order?.order_type === 'delivery' ? Math.max(0, deliveryFee) : 0,
@@ -274,13 +277,13 @@ export default function BillDetailsPage({ params }) {
     if (!pendingBill) return;
     try {
       setProcessing(true);
-      const { finalAmount } = calculateBill();
+      const { finalAmount, discountAmount: resolvedDiscount } = calculateBill();
 
       const res = await apiCall(`/api/admin/pos/orders/${resolvedParams.id}/pay`, {
         method: 'POST',
         body: JSON.stringify({
           idempotency_key: uid(),
-          discount: discountAmount,
+          discount: resolvedDiscount,
           discount_reason: discountReason,
           delivery_fee: order?.order_type === 'delivery' ? Math.max(0, deliveryFee) : 0,
           allocations: buildAllocations(finalAmount),
@@ -695,21 +698,46 @@ export default function BillDetailsPage({ params }) {
               {/* Discount */}
               <div className="space-y-4 mb-6 p-4 bg-yellow-50 rounded-lg border-2 border-yellow-200">
                 <div>
-                  <label className="block text-sm font-semibold text-gray-900 mb-2 flex items-center">
-                    <Tag className="w-4 h-4 mr-2" />
-                    Discount Amount
-                  </label>
-                  <input
-                    type="number"
-                    value={discountAmount}
-                    onChange={(e) => setDiscountAmount(parseFloat(e.target.value) || 0)}
-                    className="w-full px-4 py-3 border-2 border-yellow-300 rounded-lg focus:border-yellow-500 focus:outline-none text-gray-900"
-                    placeholder="0.00"
-                    min="0"
-                    step="0.01"
-                  />
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <label className="text-sm font-semibold text-gray-900 flex items-center">
+                      <Tag className="w-4 h-4 mr-2" />
+                      Discount
+                    </label>
+                    <div className="flex rounded-lg bg-yellow-100 p-0.5">
+                      {[
+                        { id: 'percent', label: '%' },
+                        { id: 'amount', label: 'Rs' },
+                      ].map((opt) => (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => { setDiscountMode(opt.id); setDiscount(0); }}
+                          className={`rounded-md px-3 py-1 text-xs font-bold ${
+                            discountMode === opt.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="relative">
+                    <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-gray-500">
+                      {discountMode === 'amount' ? 'Rs' : '%'}
+                    </span>
+                    <input
+                      type="number"
+                      value={discount}
+                      onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)}
+                      className="w-full pl-10 pr-4 py-3 border-2 border-yellow-300 rounded-lg focus:border-yellow-500 focus:outline-none text-gray-900"
+                      placeholder="0"
+                      min="0"
+                      max={discountMode === 'percent' ? 100 : undefined}
+                      step={discountMode === 'amount' ? '0.01' : '1'}
+                    />
+                  </div>
                 </div>
-                {discountAmount > 0 && (
+                {discount > 0 && (
                   <div>
                     <label className="block text-sm font-semibold text-gray-900 mb-2">
                       Discount Reason

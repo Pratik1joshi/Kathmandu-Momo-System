@@ -9,6 +9,8 @@ import {
 import AdminLayout from '@/components/admin/admin-layout';
 import OverviewDashboard from '@/components/analytics/overview-dashboard';
 import { formatNepalDateTime } from '@/lib/report-dates';
+import { orderTypeLabel } from '@/lib/order-types.js';
+import DateInput from '@/components/ui/date-input.jsx';
 
 const PERIODS = [
   ['today', 'Today'], ['yesterday', 'Yesterday'], ['last3', 'Last 3 Days'],
@@ -110,7 +112,7 @@ export default function AnalyticsPage() {
             <div className="flex flex-wrap gap-1.5">
               {PERIODS.map(([id, label]) => <button key={id} type="button" onClick={() => choosePeriod(id)} className={`rounded-md px-3.5 py-1.5 text-xs font-semibold transition-[background-color,color,border-color,transform] duration-150 active:scale-[0.98] ${period === id ? 'bg-gray-950 text-white shadow-sm' : 'border border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50'}`}>{label}</button>)}
             </div>
-            {period === 'custom' && <div className="flex items-center gap-2"><input type="date" value={startDate} max={endDate} onChange={(event) => { setStartDate(event.target.value); setTransactionPage(1); }} className="h-9 rounded-md border border-gray-300 bg-white px-2 text-sm" /><span className="text-xs text-gray-400">to</span><input type="date" value={endDate} min={startDate} max={todayNepal()} onChange={(event) => { setEndDate(event.target.value); setTransactionPage(1); }} className="h-9 rounded-md border border-gray-300 bg-white px-2 text-sm" /></div>}
+            {period === 'custom' && <div className="flex items-center gap-2"><DateInput value={startDate} max={endDate} onChange={(v) => { setStartDate(v); setTransactionPage(1); }} className="h-9 rounded-md border border-gray-300 bg-white px-2 text-sm" /><span className="text-xs text-gray-400">to</span><DateInput value={endDate} min={startDate} max={todayNepal()} onChange={(v) => { setEndDate(v); setTransactionPage(1); }} className="h-9 rounded-md border border-gray-300 bg-white px-2 text-sm" /></div>}
           </div>
 
           {error ? <ErrorState message={error} retry={loadOverview} /> : loading && !data ? <LoadingState /> : data ? (
@@ -164,7 +166,7 @@ function downloadTransactionWorkbook(range, rows) {
   }), { subtotal: 0, discount: 0, cash: 0, qr: 0, credit: 0, food: 0, beverage: 0, tobacco: 0, other: 0, final: 0 });
   const headers = ['Date', 'Bill', 'Order', 'Table / Channel', 'Customer', 'Cashier', 'Payment', 'Subtotal', 'Discount', 'Cash', 'QR', 'Credit', 'QR Type', 'Food', 'Beverage', 'Tobacco', 'Other', 'Final Total'];
   const bodyRows = rows.map((row) => [
-    dateLabel(row.paid_at || row.created_at), row.bill_number, row.order_number, row.table_number || row.order_type || '', row.customer_name || 'Walk-in',
+    dateLabel(row.paid_at || row.created_at), row.bill_number, row.order_number, row.table_number ? `Table ${row.table_number}` : orderTypeLabel(row), row.customer_name || 'Walk-in',
     row.cashier, row.payment, row.subtotal, row.discount_amount, row.cash_amount, row.qr_amount, row.credit_amount, row.qr_type,
     row.food_amount, row.beverage_amount, row.tobacco_amount, row.other_amount, row.final_total,
   ]);

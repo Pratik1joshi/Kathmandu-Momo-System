@@ -220,7 +220,7 @@ export default function BillsPage() {
           </div>
           <select value={channel} onChange={(e) => setChannel(e.target.value)} className="h-9 min-w-[132px] rounded-lg border border-gray-200 bg-white px-2.5 text-sm text-gray-700 outline-none focus:border-gray-400">
             <option value="">All channels</option>
-            <option value="counter">Counter</option>
+            <option value="counter">Table orders</option>
             <option value="takeaway">Takeaway</option>
             <option value="online">Online</option>
           </select>

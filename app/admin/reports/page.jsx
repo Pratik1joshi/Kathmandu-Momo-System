@@ -8,6 +8,8 @@ import {
   ScatterChart, BusinessInsights, DataTable, DataNotes, formatValue,
 } from '@/components/admin/report-kit';
 import DonutChart from '@/components/admin/donut-chart';
+import { orderTypeLabel } from '@/lib/order-types.js';
+import DateInput from '@/components/ui/date-input.jsx';
 
 const DONUT_COLORS = ['#0f172a', '#2563eb', '#059669', '#d97706', '#db2777', '#7c3aed', '#0891b2', '#ea580c'];
 
@@ -217,9 +219,9 @@ export default function ReportsPage() {
             ))}
             {period === 'custom' && (
               <div className="flex flex-wrap items-center gap-2">
-                <input type="date" value={custom.start} onChange={(e) => setCustom({ ...custom, start: e.target.value })} className={selectClass()} />
+                <DateInput value={custom.start} onChange={(v) => setCustom({ ...custom, start: v })} className={selectClass()} />
                 <span className="text-sm text-gray-400">to</span>
-                <input type="date" value={custom.end} onChange={(e) => setCustom({ ...custom, end: e.target.value })} className={selectClass()} />
+                <DateInput value={custom.end} onChange={(v) => setCustom({ ...custom, end: v })} className={selectClass()} />
               </div>
             )}
           </div>
@@ -256,7 +258,7 @@ export default function ReportsPage() {
             <select value={filters.orderType} onChange={(e) => setFilters({ ...filters, orderType: e.target.value })} className={selectClass()}>
               <option value="">All order types</option>
               {(options?.orderTypes || []).map((t) => (
-                <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>
+                <option key={t} value={t}>{orderTypeLabel(t)}</option>
               ))}
             </select>
             <form

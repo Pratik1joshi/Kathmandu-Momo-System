@@ -66,6 +66,29 @@ async function assertNameFree(db, itemName, exceptId = null) {
   }
 }
 
+async function resolveMenuItemLink(db, value, exceptInventoryId = null) {
+  if (value == null || value === '') return null;
+  const menuItemId = Number(value);
+  if (!Number.isInteger(menuItemId) || menuItemId <= 0) {
+    throw Object.assign(new Error('Choose a valid menu item to link.'), { status: 400 });
+  }
+  const menuItem = await db.get('SELECT id, name FROM menu_items WHERE id = ?', [menuItemId]);
+  if (!menuItem) throw Object.assign(new Error('That menu item no longer exists.'), { status: 400 });
+  const clash = await db.get(
+    `SELECT id, item_name FROM inventory_items
+     WHERE menu_item_id = ? AND COALESCE(is_archived, 0) = 0 AND id <> COALESCE(?, -1)
+     LIMIT 1`,
+    [menuItemId, exceptInventoryId]
+  );
+  if (clash) {
+    throw Object.assign(
+      new Error(`${menuItem.name} is already linked to inventory item "${clash.item_name}".`),
+      { status: 409 }
+    );
+  }
+  return menuItemId;
+}
+
 export async function GET(request) {
   try {
     const auth = await requireAuth(request, { roles: ['admin', 'kitchen', 'waiter', 'cashier'] });
@@ -79,9 +102,11 @@ export async function GET(request) {
     const includeArchived = new URL(request.url).searchParams.get('include_archived') === '1';
 
     const items = await db.all(`
-      SELECT * FROM inventory_items
-      ${includeArchived ? '' : 'WHERE COALESCE(is_archived, 0) = 0'}
-      ORDER BY created_at DESC
+      SELECT i.*, mi.name AS linked_menu_item_name
+      FROM inventory_items i
+      LEFT JOIN menu_items mi ON mi.id = i.menu_item_id
+      ${includeArchived ? '' : 'WHERE COALESCE(i.is_archived, 0) = 0'}
+      ORDER BY i.created_at DESC
     `);
 
     return NextResponse.json({ items });
@@ -104,6 +129,7 @@ export async function POST(request) {
     await ensureInventoryReady(db);
     await assertNameFree(db, data.item_name);
     const units = normalizeUnitFields(data);
+    const menuItemId = await resolveMenuItemLink(db, data.menu_item_id);
 
     const item = await db.transaction(async (tx) => {
       const supplier = await resolveSupplier(tx, data.supplier);
@@ -115,8 +141,8 @@ export async function POST(request) {
         INSERT INTO inventory_items (
           item_name, quantity, unit, cost_per_unit, selling_price,
           min_stock_level, supplier, supplier_id, notes,
-          purchase_unit, consumption_unit, conversion_factor, category, category_id, is_archived
-        ) VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+          purchase_unit, consumption_unit, conversion_factor, category, category_id, menu_item_id, is_archived
+        ) VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
       `,
         [
           String(data.item_name).trim(),
@@ -132,6 +158,7 @@ export async function POST(request) {
           data.conversion_factor || 1,
           category?.name || null,
           category?.id || null,
+          menuItemId,
         ]
       );
       const id = result.lastInsertRowid;
@@ -186,6 +213,10 @@ export async function PUT(request) {
     }
 
     const units = normalizeUnitFields(data, before);
+    const requestedMenuItemId = Object.prototype.hasOwnProperty.call(data, 'menu_item_id')
+      ? data.menu_item_id
+      : before.menu_item_id;
+    const menuItemId = await resolveMenuItemLink(db, requestedMenuItemId, id);
 
     const item = await db.transaction(async (tx) => {
       const supplier = await resolveSupplier(tx, data.supplier);
@@ -196,7 +227,7 @@ export async function PUT(request) {
         UPDATE inventory_items
         SET item_name = ?, unit = ?, cost_per_unit = ?,
             selling_price = ?, min_stock_level = ?, supplier = ?, supplier_id = ?, notes = ?,
-            purchase_unit = ?, consumption_unit = ?, conversion_factor = ?, category = ?, category_id = ?,
+            purchase_unit = ?, consumption_unit = ?, conversion_factor = ?, category = ?, category_id = ?, menu_item_id = ?,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `,
@@ -214,6 +245,7 @@ export async function PUT(request) {
           data.conversion_factor || 1,
           category?.name || null,
           category?.id || null,
+          menuItemId,
           id,
         ]
       );

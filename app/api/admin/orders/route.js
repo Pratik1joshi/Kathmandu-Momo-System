@@ -21,6 +21,20 @@ const ORDER_COLUMNS = `
   b.id as bill_id,
   b.status as bill_status,
   COALESCE(b.payment_status, 'unpaid') as payment_status,
+  COALESCE(bc.refund_amount, b.refunded_amount, 0) AS refunded_amount,
+  COALESCE(bc.void_amount, 0) AS voided_amount,
+  CASE
+    WHEN LOWER(COALESCE(b.status, '')) IN ('void', 'voided', 'cancelled', 'canceled') OR COALESCE(bc.void_amount, 0) > 0 THEN 'voided'
+    WHEN COALESCE(bc.refund_amount, b.refunded_amount, 0) >= COALESCE(b.grand_total, 0) AND COALESCE(b.grand_total, 0) > 0 THEN 'refunded'
+    WHEN COALESCE(bc.refund_amount, b.refunded_amount, 0) > 0 THEN 'partially_refunded'
+    ELSE o.status
+  END AS financial_status,
+  CASE
+    WHEN LOWER(COALESCE(b.status, '')) IN ('void', 'voided', 'cancelled', 'canceled') OR COALESCE(bc.void_amount, 0) > 0 THEN 'voided'
+    WHEN COALESCE(bc.refund_amount, b.refunded_amount, 0) >= COALESCE(b.grand_total, 0) AND COALESCE(b.grand_total, 0) > 0 THEN 'refunded'
+    WHEN COALESCE(bc.refund_amount, b.refunded_amount, 0) > 0 THEN 'partially_refunded'
+    ELSE COALESCE(b.payment_status, 'unpaid')
+  END AS financial_payment_status,
   COALESCE(b.outstanding_amount, 0) as outstanding_amount,
   COALESCE(b.grand_total, 0) - COALESCE(b.outstanding_amount, 0) as amount_paid,
   (SELECT COUNT(oi.id) FROM order_items oi
@@ -29,13 +43,26 @@ const ORDER_COLUMNS = `
 
 const ORDER_FROM = `orders o LEFT JOIN bills b ON b.order_id = o.id AND b.id = (
   SELECT MAX(b2.id) FROM bills b2 WHERE b2.order_id = o.id
-)`;
+)
+LEFT JOIN (
+  SELECT bill_id,
+         COALESCE(SUM(CASE WHEN type='refund' THEN amount ELSE 0 END),0) AS refund_amount,
+         COALESCE(SUM(CASE WHEN type='void' THEN amount ELSE 0 END),0) AS void_amount
+  FROM bill_corrections GROUP BY bill_id
+) bc ON bc.bill_id=b.id`;
+
+const FINANCIAL_STATUS = `CASE
+  WHEN LOWER(COALESCE(b.status, '')) IN ('void', 'voided', 'cancelled', 'canceled') OR COALESCE(bc.void_amount, 0) > 0 THEN 'voided'
+  WHEN COALESCE(bc.refund_amount, b.refunded_amount, 0) >= COALESCE(b.grand_total, 0) AND COALESCE(b.grand_total, 0) > 0 THEN 'refunded'
+  WHEN COALESCE(bc.refund_amount, b.refunded_amount, 0) > 0 THEN 'partially_refunded'
+  ELSE o.status END`;
 
 /** Sortable columns, by design an allowlist — the key arrives in the URL. */
 const ORDER_SORTS = {
   created_at: 'o.created_at',
   order_number: 'o.order_number',
   status: 'o.status',
+  financial_status: FINANCIAL_STATUS,
   order_type: 'o.order_type',
   table_number: 'o.table_number',
   customer_name: 'o.customer_name',
@@ -62,7 +89,7 @@ export async function GET(request) {
 
     const status = searchParams.get('status');
     if (status && status !== 'all') {
-      conditions.push('o.status = ?');
+      conditions.push(`${FINANCIAL_STATUS} = ?`);
       params.push(status);
     }
     const orderType = searchParams.get('order_type');
@@ -102,8 +129,10 @@ export async function GET(request) {
 
     const summary = await db.get(
       `SELECT COUNT(*) AS orders,
-              COALESCE(SUM(b.grand_total), 0) AS revenue,
-              COALESCE(AVG(b.grand_total), 0) AS average,
+              COALESCE(SUM(CASE WHEN LOWER(COALESCE(b.status,'')) NOT IN ('void','voided','cancelled','canceled') THEN b.grand_total ELSE 0 END), 0) AS gross_revenue,
+              COALESCE(SUM(CASE WHEN LOWER(COALESCE(b.status,'')) NOT IN ('void','voided','cancelled','canceled') THEN COALESCE(bc.refund_amount,b.refunded_amount,0) ELSE 0 END), 0) AS refunds,
+              COALESCE(SUM(CASE WHEN LOWER(COALESCE(b.status,'')) IN ('void','voided','cancelled','canceled') THEN COALESCE(NULLIF(bc.void_amount,0),b.grand_total,0) ELSE COALESCE(bc.void_amount,0) END), 0) AS voids,
+              COALESCE(AVG(CASE WHEN LOWER(COALESCE(b.status,'')) NOT IN ('void','voided','cancelled','canceled') THEN b.grand_total-COALESCE(bc.refund_amount,b.refunded_amount,0) END), 0) AS average,
               SUM(CASE WHEN o.status = 'completed' THEN 1 ELSE 0 END) AS completed
        FROM ${ORDER_FROM} WHERE ${where}`,
       params
@@ -114,7 +143,10 @@ export async function GET(request) {
       pagination,
       summary: {
         orders: Number(summary?.orders || 0),
-        revenue: Number(summary?.revenue || 0),
+        grossRevenue: Number(summary?.gross_revenue || 0),
+        refunds: Number(summary?.refunds || 0),
+        voids: Number(summary?.voids || 0),
+        revenue: Number(summary?.gross_revenue || 0) - Number(summary?.refunds || 0),
         average: Number(summary?.average || 0),
         completed: Number(summary?.completed || 0),
       },

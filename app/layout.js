@@ -3,24 +3,24 @@ import './globals.css'
 import { AuthProvider } from '@/lib/auth-context'
 import { ToastProvider } from '@/components/ui/toast'
 import { ConfirmProvider } from '@/components/ui/confirm'
+import { RESTAURANT } from '@/lib/restaurant-info.js'
 
 const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
-const SITE_DESCRIPTION =
-  'Kathmandu Momo — momo steamed to order, Nepali thali, chatamari and café classics in Birendranagar, Surkhet. Call +977 984-9216081.'
+const SITE_DESCRIPTION = `${RESTAURANT.tagline}. Call ${RESTAURANT.phoneDisplay}.`
 
 // Bump `v` whenever the favicon assets change to bust browser/CDN caches.
 const ICON_VERSION = '2083b'
 
 export const metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://kathmandumomo.com.np'),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || RESTAURANT.siteUrl),
   title: {
-    default: 'Kathmandu Momo | Momo, Nepali Kitchen & Café',
-    template: '%s | Kathmandu Momo',
+    default: `${RESTAURANT.name} | ${RESTAURANT.tagline}`,
+    template: `%s | ${RESTAURANT.name}`,
   },
   description: SITE_DESCRIPTION,
-  applicationName: 'Kathmandu Momo',
+  applicationName: RESTAURANT.name,
   manifest: `/site.webmanifest?v=${ICON_VERSION}`,
   icons: {
     icon: [
@@ -32,21 +32,21 @@ export const metadata = {
   },
   openGraph: {
     type: 'website',
-    siteName: 'Kathmandu Momo',
-    title: 'Kathmandu Momo | Momo, Nepali Kitchen & Café | Surkhet',
+    siteName: RESTAURANT.name,
+    title: `${RESTAURANT.name} | ${RESTAURANT.tagline}`,
     description: SITE_DESCRIPTION,
-    images: [{ url: '/icon-512.png', alt: 'Kathmandu Momo' }],
+    images: [{ url: RESTAURANT.logo, alt: RESTAURANT.name }],
   },
   twitter: {
     card: 'summary',
-    title: 'Kathmandu Momo | Surkhet',
+    title: RESTAURANT.name,
     description: SITE_DESCRIPTION,
-    images: ['/icon-512.png'],
+    images: [RESTAURANT.logo],
   },
 }
 
 export const viewport = {
-  themeColor: '#e30613',
+  themeColor: RESTAURANT.themeColor,
 }
 
 export default function RootLayout({ children }) {

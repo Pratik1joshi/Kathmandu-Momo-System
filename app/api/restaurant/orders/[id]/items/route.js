@@ -1,7 +1,5 @@
 import { OrderRepository } from '@/lib/db/repositories/orders.js';
 import { AuthService } from '@/lib/auth/auth.js';
-import Database from '@/lib/db/index.js';
-import { issueKot } from '@/lib/kot-service.js';
 
 async function verifyAuth(request) {
   const token = request.headers.get('authorization')?.split(' ')[1];
@@ -57,35 +55,19 @@ export async function POST(request, context) {
       );
     }
     
-    // Add items to order
+    // Add items only — KOT is issued explicitly via /kot (Save KOT / Send to Kitchen).
     await orderRepo.addItems(orderId, items);
-    let kot = null;
-    try {
-      const issued = await issueKot(Database.getInstance(), {
-        orderId,
-        actor: user,
-        orderNotes: body.kot_note ?? body.kot_notes ?? null,
-      });
-      kot = issued.kot || null;
-    } catch (e) {
-      if (e?.code !== 'no_unsent_items') throw e;
-    }
 
-    // Extra rounds after serving → send back to kitchen
-    if (['dining', 'served', 'ready'].includes(order.status)) {
-      await orderRepo.updateStatus(orderId, 'preparing');
-    }
-    
     // Get updated order
     const updatedOrder = await orderRepo.getById(orderId);
     const orderItems = await orderRepo.getOrderItems(orderId);
     
     return Response.json({ 
       success: true,
-      message: 'Items added to the order.',
+      message: 'Items added to the order. Send a KOT when ready for the kitchen.',
       order: updatedOrder,
       items: orderItems,
-      kot,
+      kot: null,
     });
     
   } catch (error) {

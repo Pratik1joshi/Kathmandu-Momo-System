@@ -478,12 +478,13 @@ function WaiterDashboardInner() {
                 return !o
               })
             }}
-            className={`relative h-11 w-11 rounded-xl flex items-center justify-center ${
+            className={`relative h-11 px-2.5 rounded-xl flex flex-col items-center justify-center gap-0.5 min-w-[3.25rem] ${
               showAlerts ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'
             }`}
             aria-label="Alerts"
           >
-            <Bell className="w-5 h-5" />
+            <Bell className="w-4 h-4" />
+            <span className="text-[9px] font-semibold leading-none">Alerts</span>
             {unreadCount > 0 && (
               <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-amber-500 text-white text-[11px] font-bold flex items-center justify-center">
                 {unreadCount}
@@ -493,11 +494,12 @@ function WaiterDashboardInner() {
           <button
             type="button"
             onClick={() => router.push('/waiter/requests')}
-            className={`relative h-11 w-11 rounded-xl flex items-center justify-center ${waiterCallCount > 0 ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-700'}`}
+            className={`relative h-11 px-2.5 rounded-xl flex flex-col items-center justify-center gap-0.5 min-w-[3.25rem] ${waiterCallCount > 0 ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-700'}`}
             aria-label="Waiter calls"
             title="Waiter calls"
           >
-            <BellRing className="w-5 h-5" />
+            <BellRing className="w-4 h-4" />
+            <span className="text-[9px] font-semibold leading-none">Calls</span>
             {waiterCallCount > 0 && (
               <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-red-600 text-white text-[11px] font-bold flex items-center justify-center">
                 {waiterCallCount}
@@ -507,38 +509,42 @@ function WaiterDashboardInner() {
           <button
             type="button"
             onClick={() => router.push('/waiter/kots')}
-            className="h-11 w-11 rounded-xl flex items-center justify-center bg-slate-100 text-slate-700"
+            className="h-11 px-2.5 rounded-xl flex flex-col items-center justify-center gap-0.5 min-w-[3.25rem] bg-slate-100 text-slate-700"
             aria-label="KOT history"
             title="KOT history"
           >
-            <ChefHat className="w-5 h-5" />
+            <ChefHat className="w-4 h-4" />
+            <span className="text-[9px] font-semibold leading-none">KOT</span>
           </button>
           <button
             type="button"
             onClick={() => router.push('/waiter/bills')}
-            className="h-11 w-11 rounded-xl flex items-center justify-center bg-slate-100 text-slate-700"
+            className="h-11 px-2.5 rounded-xl flex flex-col items-center justify-center gap-0.5 min-w-[3.25rem] bg-slate-100 text-slate-700"
             aria-label="Bills history"
             title="Bills history"
           >
-            <Receipt className="w-5 h-5" />
+            <Receipt className="w-4 h-4" />
+            <span className="text-[9px] font-semibold leading-none">Bills</span>
           </button>
           <button
             type="button"
             onClick={() => setShowWastageHistory(true)}
-            className="h-11 w-11 rounded-xl flex items-center justify-center bg-slate-100 text-slate-700"
+            className="h-11 px-2.5 rounded-xl flex flex-col items-center justify-center gap-0.5 min-w-[3.25rem] bg-slate-100 text-slate-700"
             aria-label="View wastage"
             title="View wastage"
           >
-            <ClipboardList className="w-5 h-5" />
+            <ClipboardList className="w-4 h-4" />
+            <span className="text-[9px] font-semibold leading-none">Waste</span>
           </button>
           <button
             type="button"
             onClick={() => setShowWastageLog(true)}
-            className="h-11 w-11 rounded-xl flex items-center justify-center bg-rose-50 text-rose-700"
+            className="h-11 px-2.5 rounded-xl flex flex-col items-center justify-center gap-0.5 min-w-[3.25rem] bg-rose-50 text-rose-700"
             aria-label="Log wastage"
             title="Log wastage"
           >
-            <Trash2 className="w-5 h-5" />
+            <Trash2 className="w-4 h-4" />
+            <span className="text-[9px] font-semibold leading-none">Log</span>
           </button>
           <LogoutButton onLogout={logout} iconOnly />
         </div>

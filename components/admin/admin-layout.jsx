@@ -424,6 +424,7 @@ export default function AdminLayout({ children }) {
       items: [
         { icon: Wallet, label: 'Expenses', href: '/cashier/expenses', color: 'text-emerald-600' },
         { icon: ArrowRightLeft, label: 'Cash Exchange', href: '/cashier/cash-exchange', color: 'text-amber-600' },
+        { icon: Wallet, label: 'Cash Drawer', href: '/cashier/cash-drawer', color: 'text-orange-600' },
         { icon: Receipt, label: 'Receivables', href: '/cashier/accounts-receivable', color: 'text-teal-700' },
         { icon: Receipt, label: 'Payables', href: '/cashier/accounts-payable', color: 'text-orange-700' },
         { icon: CalendarClock, label: 'Opening & Closing', href: '/cashier/business-days', color: 'text-gray-700' },

@@ -21,6 +21,7 @@ import { KpiCards } from '@/components/admin/report-kit';
 import ReceiveDeliveryModal from '@/components/purchases/receive-delivery-modal';
 import PurchaseDrawer, { PURCHASE_STATUS } from '@/components/purchases/purchase-drawer';
 import { useCapabilities } from '@/lib/use-capabilities.js';
+import DateInput from '@/components/ui/date-input.jsx';
 
 export default function PurchasesPage() {
   const pathname = usePathname();
@@ -238,8 +239,8 @@ export default function PurchasesPage() {
                 <option value="partial">Partial</option>
                 <option value="voided">Voided</option>
               </select>
-              <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={SELECT} aria-label="From date" />
-              <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={SELECT} aria-label="To date" />
+              <DateInput value={from} onChange={setFrom} className={SELECT} aria-label="From date" />
+              <DateInput value={to} onChange={setTo} className={SELECT} aria-label="To date" />
             </>
           }
           renderActions={(row) =>

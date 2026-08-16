@@ -23,10 +23,12 @@ function authedRequest(url) {
 
 function formatBusinessDate(value) {
   if (!value) return '-';
-  const [year, month, day] = String(value).slice(0, 10).split('-');
-  if (!year || !month || !day) return value;
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${day} ${months[Number(month) - 1] || month} ${year}`;
+  const raw = String(value).trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(raw)
+    ? raw
+    : new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kathmandu', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(value));
+  const parsed = new Date(`${iso}T12:00:00+05:45`);
+  return parsed.toLocaleDateString('en-GB', { timeZone: 'Asia/Kathmandu', day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 // ponytail: no restaurant-hours table exists yet — greeting/open-closed/shift are
@@ -339,7 +341,7 @@ export default function AdminDashboard() {
             </div>
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">{greeting}</h1>
-              <p className="text-gray-500 mt-0.5 text-sm">Counter overview — sales, open work, and what needs action.</p>
+              <p className="text-gray-500 mt-0.5 text-sm">Restaurant overview — sales, open work, and what needs action.</p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -348,7 +350,7 @@ export default function AdminDashboard() {
               onClick={() => router.push('/admin/pos')}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-900 text-white text-xs font-semibold hover:bg-gray-800"
             >
-              Open POS
+              Takeaway
             </button>
             <button
               type="button"
@@ -823,7 +825,7 @@ export default function AdminDashboard() {
                           : 'Place an order in POS or accept an online order to kick things off.'}
                     </p>
                     <div className="mt-3 flex justify-center gap-2">
-                      <button type="button" onClick={() => router.push('/admin/pos')} className="rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white">Open POS</button>
+                      <button type="button" onClick={() => router.push('/admin/pos')} className="rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white">Takeaway</button>
                       <button type="button" onClick={() => router.push('/admin/business-days')} className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800">
                         <CalendarClock className="h-3.5 w-3.5" />
                         Opening & Closing
@@ -1069,7 +1071,21 @@ function TableRoomBoard({ tables, rooms, visibleRooms, roomFilter, statusFilter,
           ['running', 'Running', statusCounts.running],
           ['reserved', 'Reserved', statusCounts.reserved],
         ].map(([value, label, count]) => (
-          <button key={value} type="button" onClick={() => onStatusFilter(value)} className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-transform duration-150 active:scale-[0.97] ${statusFilter === value ? 'bg-gray-950 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+          <button
+            key={value}
+            type="button"
+            onClick={() => onStatusFilter(value)}
+            className={`rounded-full px-4 py-2 text-xs font-bold text-white shadow-sm transition-[transform,filter,box-shadow] duration-150 hover:brightness-95 active:scale-[0.97] ${
+              value === 'available'
+                ? 'bg-emerald-600'
+                : value === 'running'
+                  ? 'bg-blue-600'
+                  : value === 'reserved'
+                    ? 'bg-red-600'
+                    : 'bg-slate-700'
+            } ${statusFilter === value ? 'ring-2 ring-gray-900 ring-offset-2' : ''}`}
+            aria-pressed={statusFilter === value}
+          >
             {label} ({count})
           </button>
         ))}
@@ -1109,17 +1125,17 @@ function DashboardTableCard({ table, onClick }) {
   const running = state === 'running';
   const reserved = state === 'reserved';
   return (
-    <button type="button" onClick={onClick} className={`min-h-[116px] rounded-lg border-2 p-3 text-left transition-[border-color,box-shadow,transform] duration-150 hover:shadow-md active:scale-[0.98] ${running ? 'border-sky-300 bg-sky-50 hover:border-sky-400' : reserved ? 'border-red-300 bg-red-50 hover:border-red-400' : 'border-emerald-200 bg-emerald-50 hover:border-emerald-400'}`}>
+    <button type="button" onClick={onClick} className={`min-h-[116px] rounded-lg border-2 p-3 text-left transition-[border-color,box-shadow,transform] duration-150 hover:shadow-md active:scale-[0.98] ${running ? 'border-blue-600 bg-blue-600 text-white hover:brightness-95' : reserved ? 'border-red-600 bg-red-600 text-white hover:brightness-95' : 'border-emerald-600 bg-emerald-600 text-white hover:brightness-95'}`}>
       <div className="flex items-start justify-between gap-1">
-        <span className="text-xl font-bold text-gray-900">{table.table_number}</span>
-        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${running ? 'bg-sky-200 text-sky-900' : reserved ? 'bg-red-200 text-red-900' : 'bg-emerald-200 text-emerald-900'}`}>
+        <span className="text-xl font-bold">{table.table_number}</span>
+        <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-semibold">
           {state === 'running' ? 'Running' : state === 'reserved' ? 'Reserved' : 'Available'}
         </span>
       </div>
-      <p className="mt-1 text-xs text-gray-500">{Number(table.capacity || 0)} Seat{Number(table.capacity || 0) === 1 ? '' : 's'}</p>
+      <p className="mt-1 text-xs text-white/80">{Number(table.capacity || 0)} Seat{Number(table.capacity || 0) === 1 ? '' : 's'}</p>
       {running ? (
-        <div className="mt-2 space-y-0.5"><p className="text-xs font-semibold text-sky-800">{table.party_count || 1} part{(table.party_count || 1) === 1 ? 'y' : 'ies'} · {formatCurrency(table.current_amount || 0)}</p>{table.unsent_count > 0 && <p className="text-[11px] font-medium text-amber-700">{table.unsent_count} unsent</p>}</div>
-      ) : reserved ? <p className="mt-2 text-xs font-medium text-red-700">View reservation</p> : <p className="mt-2 text-xs font-medium text-emerald-700">Open in POS</p>}
+        <div className="mt-2 space-y-0.5"><p className="text-xs font-semibold">{table.party_count || 1} part{(table.party_count || 1) === 1 ? 'y' : 'ies'} · {formatCurrency(table.current_amount || 0)}</p>{table.unsent_count > 0 && <p className="text-[11px] font-medium text-amber-200">{table.unsent_count} unsent</p>}</div>
+      ) : reserved ? <p className="mt-2 text-xs font-medium text-white/90">View reservation</p> : <p className="mt-2 text-xs font-medium text-white/90">Open in POS</p>}
     </button>
   );
 }

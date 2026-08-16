@@ -5,6 +5,7 @@ import { ensureOrderColumns } from '@/lib/online-orders.js';
 import { nextDocumentNumber } from '@/lib/document-numbers.js';
 import { currentBusinessDayId } from '@/lib/business-days.js';
 import { calculateDeliveryPricing, loadDeliveryPricing } from '@/lib/delivery-pricing.js';
+import { ensureMenuVariantsSchema } from '@/lib/menu-variants.js';
 
 async function savedOrderResponse(db, order) {
   const items = await db.all(
@@ -63,6 +64,7 @@ export async function POST(request) {
 
     const db = Database.getInstance();
     await ensureOrderColumns(db);
+    await ensureMenuVariantsSchema(db);
 
     const deliveryConfig = await loadDeliveryPricing(db);
     const delivery = calculateDeliveryPricing(deliveryConfig, {
@@ -90,12 +92,12 @@ export async function POST(request) {
       let variantName = null;
       if (item.variant_name) {
         const variant = await db.get(
-          'SELECT variant_name, price_modifier FROM menu_item_variants WHERE menu_item_id = ? AND variant_name = ?',
+          'SELECT variant_name, price, price_modifier FROM menu_item_variants WHERE menu_item_id = ? AND variant_name = ?',
           [id, String(item.variant_name)]
         );
         if (!variant) continue;
         variantName = variant.variant_name;
-        price += Number(variant.price_modifier || 0);
+        price = variant.price != null ? Number(variant.price) : price + Number(variant.price_modifier || 0);
         itemName = `${menuItem.name} (${variantName})`;
       }
       resolved.push({ menu_item_id: id, item_name: itemName, variant_name: variantName, quantity, price, subtotal: price * quantity });

@@ -8,8 +8,10 @@ import {
 } from 'lucide-react';
 import DishImage from '@/components/public/dish-image';
 import { compactOrderNumber } from '@/lib/document-display.js';
+import { RESTAURANT } from '@/lib/restaurant-info.js';
 
 const rs = (n) => `Rs ${Number(n || 0).toLocaleString()}`;
+const lineKey = (item, variant) => `${item.id}${variant ? `:${variant.name}` : ''}`;
 
 const WAITER_OPTIONS = [
   { id: 'service', label: 'Need service', detail: 'I need help at the table', icon: BellRing },
@@ -18,7 +20,11 @@ const WAITER_OPTIONS = [
   { id: 'water', label: 'Need water', detail: 'Please bring water to the table', icon: Droplets },
 ];
 
-function MenuCard({ item, qty, onAdd, onDec, orderingEnabled }) {
+function MenuCard({ item, qtyFor, onAdd, onDec, orderingEnabled }) {
+  const hasVariants = item.variants && item.variants.length > 0;
+  const totalQty = hasVariants
+    ? item.variants.reduce((s, v) => s + qtyFor(lineKey(item, v)), 0)
+    : qtyFor(lineKey(item));
   return (
     <article className="group flex flex-col overflow-hidden rounded-2xl border border-stone-200/80 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
       <div className="relative">
@@ -28,9 +34,9 @@ function MenuCard({ item, qty, onAdd, onDec, orderingEnabled }) {
             <Leaf className="h-3 w-3" /> Veg
           </span>
         )}
-        {qty > 0 && (
+        {totalQty > 0 && (
           <span className="absolute right-2 top-2 flex h-6 min-w-6 items-center justify-center rounded-full bg-stone-900 px-1.5 text-xs font-bold text-white shadow">
-            {qty}
+            {totalQty}
           </span>
         )}
       </div>
@@ -39,25 +45,59 @@ function MenuCard({ item, qty, onAdd, onDec, orderingEnabled }) {
         {item.description ? (
           <p className="line-clamp-2 text-xs leading-relaxed text-stone-500">{item.description}</p>
         ) : null}
-        <div className="mt-auto flex items-center justify-between gap-2 pt-2">
-          <span className="text-sm font-bold tabular-nums text-amber-700 sm:text-base">{rs(item.price)}</span>
-          {!orderingEnabled ? null : qty === 0 ? (
-            <button
-              type="button"
-              onClick={() => onAdd(item)}
-              className="inline-flex items-center gap-1 rounded-lg bg-stone-900 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-stone-800"
-            >
-              <Plus className="h-3.5 w-3.5" /> Add
-            </button>
+        <div className="mt-auto pt-2">
+          {hasVariants ? (
+            <div className="flex flex-col gap-1.5">
+              {item.variants.map((v) => {
+                const key = lineKey(item, v);
+                const qty = qtyFor(key);
+                return (
+                  <div key={v.name} className="flex items-center justify-between gap-2 rounded-lg border border-stone-200 px-2.5 py-1.5">
+                    <span className="text-xs font-medium text-stone-900">{v.name}</span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-xs font-bold tabular-nums text-amber-700">{rs(v.price)}</span>
+                      {!orderingEnabled ? null : qty === 0 ? (
+                        <button type="button" onClick={() => onAdd(item, v)} aria-label={`Add ${item.name} ${v.name}`} className="rounded p-0.5 text-stone-700 hover:bg-stone-100">
+                          <Plus className="h-3.5 w-3.5" />
+                        </button>
+                      ) : (
+                        <span className="flex items-center gap-1.5 rounded-md bg-stone-900 px-1 py-0.5 text-white">
+                          <button type="button" onClick={() => onDec(item, v)} aria-label="Remove one" className="rounded p-0.5 hover:bg-white/10">
+                            <Minus className="h-3 w-3" />
+                          </button>
+                          <span className="min-w-3 text-center text-[11px] font-bold">{qty}</span>
+                          <button type="button" onClick={() => onAdd(item, v)} aria-label="Add one" className="rounded p-0.5 hover:bg-white/10">
+                            <Plus className="h-3 w-3" />
+                          </button>
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
           ) : (
-            <div className="flex items-center gap-2 rounded-lg bg-stone-900 px-1.5 py-1 text-white">
-              <button type="button" onClick={() => onDec(item)} aria-label="Remove one" className="rounded p-0.5 hover:bg-white/10">
-                <Minus className="h-3.5 w-3.5" />
-              </button>
-              <span className="min-w-4 text-center text-xs font-bold">{qty}</span>
-              <button type="button" onClick={() => onAdd(item)} aria-label="Add one" className="rounded p-0.5 hover:bg-white/10">
-                <Plus className="h-3.5 w-3.5" />
-              </button>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm font-bold tabular-nums text-amber-700 sm:text-base">{rs(item.price)}</span>
+              {!orderingEnabled ? null : totalQty === 0 ? (
+                <button
+                  type="button"
+                  onClick={() => onAdd(item)}
+                  className="inline-flex items-center gap-1 rounded-lg bg-stone-900 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-stone-800"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add
+                </button>
+              ) : (
+                <div className="flex items-center gap-2 rounded-lg bg-stone-900 px-1.5 py-1 text-white">
+                  <button type="button" onClick={() => onDec(item)} aria-label="Remove one" className="rounded p-0.5 hover:bg-white/10">
+                    <Minus className="h-3.5 w-3.5" />
+                  </button>
+                  <span className="min-w-4 text-center text-xs font-bold">{totalQty}</span>
+                  <button type="button" onClick={() => onAdd(item)} aria-label="Add one" className="rounded p-0.5 hover:bg-white/10">
+                    <Plus className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -131,17 +171,24 @@ export default function CustomerOrderPage() {
 
   const items = useMemo(() => Object.values(cart), [cart]);
   const count = items.reduce((s, x) => s + x.qty, 0);
-  const total = items.reduce((s, x) => s + x.qty * Number(x.item.price || 0), 0);
+  const total = items.reduce((s, x) => s + x.qty * Number((x.variant ? x.variant.price : x.item.price) || 0), 0);
   const orderingEnabled = data?.ordering_enabled !== false;
+  const qtyFor = (key) => cart[key]?.qty || 0;
 
-  const add = (item) => setCart((c) => ({ ...c, [item.id]: { item, qty: (c[item.id]?.qty || 0) + 1 } }));
-  const dec = (item) => setCart((c) => {
-    const q = (c[item.id]?.qty || 0) - 1;
-    const next = { ...c };
-    if (q <= 0) delete next[item.id];
-    else next[item.id] = { item, qty: q };
-    return next;
-  });
+  const add = (item, variant = null) => {
+    const key = lineKey(item, variant);
+    setCart((c) => ({ ...c, [key]: { item, variant, qty: (c[key]?.qty || 0) + 1 } }));
+  };
+  const dec = (item, variant = null) => {
+    const key = lineKey(item, variant);
+    setCart((c) => {
+      const q = (c[key]?.qty || 0) - 1;
+      const next = { ...c };
+      if (q <= 0) delete next[key];
+      else next[key] = { item, variant, qty: q };
+      return next;
+    });
+  };
 
   const place = async () => {
     setPlacing(true);
@@ -149,7 +196,7 @@ export default function CustomerOrderPage() {
       const res = await fetch(`/api/public/order/${token}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customer_name: name || null, items: items.map((x) => ({ menu_item_id: x.item.id, quantity: x.qty })) }),
+        body: JSON.stringify({ customer_name: name || null, items: items.map((x) => ({ menu_item_id: x.item.id, variant_name: x.variant?.name || null, quantity: x.qty })) }),
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || 'Could not place order.');
@@ -205,7 +252,7 @@ export default function CustomerOrderPage() {
             <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-700">
               Table {data.table?.number || '—'}{data.table?.floor ? ` · ${data.table.floor}` : ''}
             </p>
-            <h1 className="truncate font-serif text-2xl font-bold tracking-tight text-stone-900 sm:text-3xl">Kathmandu Momo</h1>
+            <h1 className="truncate font-serif text-2xl font-bold tracking-tight text-stone-900 sm:text-3xl">{RESTAURANT.name}</h1>
             <p className="text-sm text-stone-500">Order from your table — kitchen gets it instantly.</p>
           </div>
           <button
@@ -281,7 +328,7 @@ export default function CustomerOrderPage() {
                 <MenuCard
                   key={item.id}
                   item={item}
-                  qty={cart[item.id]?.qty || 0}
+                  qtyFor={qtyFor}
                   onAdd={add}
                   onDec={dec}
                   orderingEnabled={orderingEnabled}
@@ -321,20 +368,23 @@ export default function CustomerOrderPage() {
               </button>
             </div>
             <div className="space-y-3">
-              {items.map((x) => (
-                <div key={x.item.id} className="flex items-center gap-3">
-                  <div className="flex-1">
-                    <p className="font-medium text-stone-900">{x.item.name}</p>
-                    <p className="text-xs text-stone-500">{rs(x.item.price)}</p>
+              {items.map((x) => {
+                const price = Number((x.variant ? x.variant.price : x.item.price) || 0);
+                return (
+                  <div key={lineKey(x.item, x.variant)} className="flex items-center gap-3">
+                    <div className="flex-1">
+                      <p className="font-medium text-stone-900">{x.item.name}{x.variant ? ` (${x.variant.name})` : ''}</p>
+                      <p className="text-xs text-stone-500">{rs(price)}</p>
+                    </div>
+                    <div className="flex items-center gap-3 rounded-lg bg-stone-100 px-2 py-1">
+                      <button type="button" onClick={() => dec(x.item, x.variant)}><Minus className="h-4 w-4 text-stone-700" /></button>
+                      <span className="min-w-4 text-center text-sm font-bold">{x.qty}</span>
+                      <button type="button" onClick={() => add(x.item, x.variant)}><Plus className="h-4 w-4 text-stone-700" /></button>
+                    </div>
+                    <span className="w-20 text-right font-semibold text-stone-900">{rs(x.qty * price)}</span>
                   </div>
-                  <div className="flex items-center gap-3 rounded-lg bg-stone-100 px-2 py-1">
-                    <button type="button" onClick={() => dec(x.item)}><Minus className="h-4 w-4 text-stone-700" /></button>
-                    <span className="min-w-4 text-center text-sm font-bold">{x.qty}</span>
-                    <button type="button" onClick={() => add(x.item)}><Plus className="h-4 w-4 text-stone-700" /></button>
-                  </div>
-                  <span className="w-20 text-right font-semibold text-stone-900">{rs(x.qty * x.item.price)}</span>
-                </div>
-              ))}
+                );
+              })}
             </div>
             <input
               value={name}

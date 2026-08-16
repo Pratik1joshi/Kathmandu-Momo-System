@@ -20,6 +20,7 @@ import {
 import { formatCurrency } from '@/lib/currency';
 import { formatNepalDateTime } from '@/lib/report-dates';
 import { toCsv } from '@/lib/csv';
+import { financialToneClass } from '@/lib/financial-tone';
 
 const CHIP_ICONS = {
   up: { Icon: TrendingUp, tone: 'bg-emerald-50 text-emerald-600' },
@@ -146,7 +147,7 @@ export function KpiCards({ kpis }) {
       {kpis.map((kpi) => (
         <div key={kpi.key} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
           <p className="text-xs font-medium text-gray-500 sm:text-sm">{kpi.label}</p>
-          <h3 className="mt-2 truncate text-xl font-bold tabular-nums text-gray-900 sm:text-2xl" title={String(kpi.value ?? '')}>
+          <h3 className={`mt-2 truncate text-xl font-bold tabular-nums sm:text-2xl ${kpi.format === 'currency' ? financialToneClass(kpi) : 'text-gray-900'}`} title={String(kpi.value ?? '')}>
             {formatValue(kpi.value, kpi.format)}
           </h3>
           {kpi.sub && <p className="mt-1 truncate text-xs text-gray-400">{kpi.sub}</p>}
@@ -524,7 +525,7 @@ export function DataTable({ title, columns, rows, empty, csvName, truncated, lim
               {visible.map((row, i) => (
                 <tr key={i} className="hover:bg-gray-50/70">
                   {columns.map((c) => (
-                    <td key={c.key} className={`whitespace-nowrap px-4 py-3.5 ${c.align === 'right' ? 'text-right tabular-nums font-medium text-gray-900' : 'text-gray-600'}`}>
+                    <td key={c.key} className={`whitespace-nowrap px-4 py-3.5 ${c.align === 'right' ? `text-right tabular-nums font-medium ${c.type === 'currency' ? financialToneClass({ label: c.label, value: row[c.key], tone: c.tone }) : 'text-gray-900'}` : 'text-gray-600'}`}>
                       {c.type === 'badge' || c.type === 'status'
                         ? <Badge value={row[c.key]} />
                         : formatValue(row[c.key], c.type)}

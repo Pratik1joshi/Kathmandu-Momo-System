@@ -187,10 +187,17 @@ export async function POST(request, context) {
       const subtotal = Number(itemsSum?.total || 0);
       if (subtotal <= 0) throw Object.assign(new Error('This order has no billable items.'), { status: 409, code: 'empty_order' });
 
+      const isDelivery = data.delivery == null
+        ? String(order.order_type || '').toLowerCase() === 'delivery'
+        : Boolean(data.delivery);
+      if (isDelivery && order.table_id) {
+        throw Object.assign(new Error('Only a table-less takeaway can be changed to delivery at checkout.'), { status: 400 });
+      }
+      const finalOrderType = isDelivery ? 'delivery' : (order.table_id ? 'dine_in' : 'takeaway');
       const requestedDeliveryFee = data.delivery_fee == null
         ? Number(reopenedBill?.delivery_fee ?? order.delivery_fee ?? 0)
         : Number(data.delivery_fee);
-      const deliveryFee = String(order.order_type || '').toLowerCase() === 'delivery'
+      const deliveryFee = isDelivery
         ? Math.max(0, Number.isFinite(requestedDeliveryFee) ? requestedDeliveryFee : 0)
         : 0;
       const totals = calculateBillTotals(subtotal, {
@@ -261,11 +268,12 @@ export async function POST(request, context) {
         }
 
         await tx.run(
-          `UPDATE orders SET status = 'completed', customer_id = COALESCE(?, customer_id),
+        `UPDATE orders SET status = 'completed', order_type = ?, customer_id = COALESCE(?, customer_id),
              customer_name = COALESCE(?, customer_name), customer_phone = COALESCE(?, customer_phone),
              payment_method = COALESCE(?, payment_method), delivery_fee = ?,
              updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
           [
+            finalOrderType,
             customerInfo.customer_id, customerInfo.customer_name, customerInfo.customer_phone,
             primaryPaymentMethod(payment.allocations || []), totals.deliveryFee, orderId,
           ]
@@ -297,7 +305,7 @@ export async function POST(request, context) {
           [orderId]
         );
         return {
-          order,
+          order: { ...order, order_type: finalOrderType, delivery_fee: deliveryFee },
           billId: reopenedBill.id,
           billNumber: reopenedBill.bill_number,
           totals,
@@ -351,11 +359,12 @@ export async function POST(request, context) {
       });
 
       await tx.run(
-        `UPDATE orders SET status = 'completed', customer_id = COALESCE(?, customer_id),
+        `UPDATE orders SET status = 'completed', order_type = ?, customer_id = COALESCE(?, customer_id),
            customer_name = COALESCE(?, customer_name), customer_phone = COALESCE(?, customer_phone),
            payment_method = COALESCE(?, payment_method), delivery_fee = ?,
            updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
         [
+          finalOrderType,
           customerInfo.customer_id, customerInfo.customer_name, customerInfo.customer_phone,
           primaryPaymentMethod(payment.allocations || allocations), totals.deliveryFee, orderId,
         ]
@@ -386,7 +395,7 @@ export async function POST(request, context) {
         `SELECT * FROM order_items WHERE order_id = ? AND COALESCE(status,'') NOT IN ('voided','cancelled') ORDER BY id`,
         [orderId]
       );
-      return { order, billId, billNumber, totals, payment, customerInfo, items, allocations, reopened: false, alreadyPaid: 0, due: totals.total, refundDue: 0 };
+      return { order: { ...order, order_type: finalOrderType, delivery_fee: deliveryFee }, billId, billNumber, totals, payment, customerInfo, items, allocations, reopened: false, alreadyPaid: 0, due: totals.total, refundDue: 0 };
     });
 
     // Reopen change summary: what items were added / removed / changed vs the
@@ -475,6 +484,7 @@ export async function POST(request, context) {
         bill_number: result.billNumber,
         order_number: result.order.order_number,
         table_number: result.order.table_number,
+        order_type: result.order.order_type,
         kot_numbers: kots.filter((k) => k.kot_type !== 'cancellation').map((k) => k.kot_number),
         items: result.items,
         subtotal: result.totals.subtotal,

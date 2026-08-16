@@ -5,6 +5,7 @@ import { ensureSqliteTable } from '@/lib/db/ensure-sqlite-table.js';
 import { ensureColumn } from '@/lib/db/schema-helpers.js';
 import { readListParams, resolveOrderBy, buildSearch, paginateQuery } from '@/lib/paginate.js';
 import { currentBusinessDayId } from '@/lib/business-days.js';
+import { nepalDateString } from '@/lib/report-dates.js';
 
 async function ensureExpensesReady(db) {
   await ensureSqliteTable(
@@ -201,7 +202,7 @@ export async function POST(request) {
     await ensureExpensesReady(db);
     const businessDayId = await currentBusinessDayId(db, { required: true });
 
-    const dateVal = data.purchase_date || data.expense_date || new Date().toISOString().split('T')[0];
+    const dateVal = data.purchase_date || data.expense_date || nepalDateString();
 
     const { ensureAccountingSchema, postExpenseJournal } = await import('@/lib/accounting.js');
     await ensureAccountingSchema(db);
@@ -271,7 +272,7 @@ export async function PUT(request) {
       return NextResponse.json({ error: 'A closed business day expense cannot be edited.' }, { status: 409 });
     }
 
-    const dateVal = data.purchase_date || data.expense_date || new Date().toISOString().split('T')[0];
+    const dateVal = data.purchase_date || data.expense_date || nepalDateString();
 
     const expense = await db.transaction(async (tx) => {
       await tx.run(

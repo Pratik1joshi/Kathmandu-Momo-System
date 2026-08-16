@@ -16,6 +16,7 @@ import { useConfirm } from '@/components/ui/confirm';
 import { printFinalBill } from '@/lib/pos-print.js';
 import { receiptFromOrderDetail } from '@/lib/bill-receipt.js';
 import ReviseSettlementForm from '@/components/billing/revise-settlement-form';
+import { orderTypeLabel } from '@/lib/order-types.js';
 
 export default function OrderView() {
   const params = useParams();
@@ -83,6 +84,9 @@ export default function OrderView() {
       awaiting_payment: 'bg-amber-100 text-amber-900 border-amber-300',
       completed: 'bg-gray-100 text-gray-800 border-gray-300',
       cancelled: 'bg-red-100 text-red-800 border-red-300',
+      refunded: 'bg-rose-100 text-rose-800 border-rose-300',
+      partially_refunded: 'bg-amber-100 text-amber-900 border-amber-300',
+      voided: 'bg-red-100 text-red-900 border-red-400',
     };
     return colors[status] || 'bg-gray-100 text-gray-800 border-gray-300';
   };
@@ -117,7 +121,13 @@ export default function OrderView() {
   const deliveryFee = Number(order.bill_delivery_fee ?? order.delivery_fee ?? 0);
   const outstanding = Number(order.outstanding_amount ?? 0);
   const paid = Number(order.amount_paid ?? Math.max(0, grand - outstanding));
-  const payStatus = String(order.payment_status || (outstanding > 0 ? 'unpaid' : closed ? 'paid' : 'open'));
+  const refundedAmount = Number(order.refunded_amount || 0);
+  const voidedAmount = Number(order.voided_amount || 0);
+  const billVoided = ['void', 'voided', 'cancelled', 'canceled'].includes(String(order.bill_status || '').toLowerCase()) || voidedAmount > 0;
+  const fullyRefunded = refundedAmount >= grand - 0.009 && grand > 0;
+  const financialStatus = billVoided ? 'voided' : fullyRefunded ? 'refunded' : refundedAmount > 0 ? 'partially_refunded' : order.status;
+  const payStatus = billVoided ? 'voided' : fullyRefunded ? 'refunded' : refundedAmount > 0 ? 'partially_refunded' : String(order.payment_status || (outstanding > 0 ? 'unpaid' : closed ? 'paid' : 'open'));
+  const netRetained = Math.max(0, paid - refundedAmount - voidedAmount);
 
   // Reopen change annotations for the item list (cut / added effects).
   const reopenChanges = latestReopenChanges(activity);
@@ -257,23 +267,25 @@ export default function OrderView() {
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <span className={`px-4 py-2 rounded-lg border font-semibold ${getStatusColor(order.status)}`}>
-              {String(order.status || '').replace(/_/g, ' ').toUpperCase()}
+            <span className={`px-4 py-2 rounded-lg border font-semibold ${getStatusColor(financialStatus)}`}>
+              {String(financialStatus || '').replace(/_/g, ' ').toUpperCase()}
             </span>
             <span className="px-4 py-2 rounded-lg border border-indigo-200 bg-indigo-50 font-semibold text-indigo-900 capitalize">
               {payStatus.replace(/_/g, ' ')}
               {outstanding > 0.009 ? ` · Due ${formatCurrency(outstanding)}` : ''}
             </span>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={openInPos}
-              className="no-print inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-semibold disabled:opacity-50"
-            >
-              <ExternalLink className="w-5 h-5" />
-              {closed && !cancelled ? 'Reopen in POS' : 'Edit in POS / KOT'}
-            </button>
-            {order.bill_id && !cancelled && (
+            {!billVoided && !fullyRefunded && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={openInPos}
+                className="no-print inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-semibold disabled:opacity-50"
+              >
+                <ExternalLink className="w-5 h-5" />
+                {closed && !cancelled ? 'Reopen in POS' : 'Edit in POS / KOT'}
+              </button>
+            )}
+            {order.bill_id && !cancelled && !billVoided && !fullyRefunded && (
               <button
                 type="button"
                 disabled={busy}
@@ -284,7 +296,7 @@ export default function OrderView() {
                 Edit payment / customer
               </button>
             )}
-            {order.bill_id && closed && !cancelled && (
+            {order.bill_id && closed && !cancelled && !billVoided && !fullyRefunded && (
               <button
                 type="button"
                 disabled={busy}
@@ -299,7 +311,7 @@ export default function OrderView() {
                 Refund
               </button>
             )}
-            {!cancelled && (
+            {!cancelled && !billVoided && refundedAmount <= 0 && (
               <button
                 type="button"
                 disabled={busy}
@@ -445,9 +457,9 @@ export default function OrderView() {
                 <div className="flex items-center gap-3">
                   <MapPin className="w-5 h-5 text-gray-700" />
                   <div>
-                    <div className="text-sm text-gray-700">Table</div>
+                    <div className="text-sm text-gray-700">Destination</div>
                     <div className="font-medium text-gray-900">
-                      {order.table_number || 'Counter / Takeaway'}
+                      {order.table_number ? `Table ${order.table_number}` : orderTypeLabel(order)}
                       {order.party_label ? ` · ${order.party_label}` : ''}
                     </div>
                   </div>
@@ -456,8 +468,8 @@ export default function OrderView() {
                   <Clock className="w-5 h-5 text-gray-700" />
                   <div>
                     <div className="text-sm text-gray-700">Type / Date</div>
-                    <div className="font-medium text-gray-900 capitalize">
-                      {(order.order_type || 'dine-in').replace(/_/g, ' ')} · {formatNepalDateTime(order.created_at)}
+                    <div className="font-medium text-gray-900">
+                      {orderTypeLabel(order)} · {formatNepalDateTime(order.created_at)}
                     </div>
                   </div>
                 </div>
@@ -505,9 +517,27 @@ export default function OrderView() {
                   <span>{formatCurrency(grand || subtotal)}</span>
                 </div>
                 <div className="flex justify-between text-emerald-700">
-                  <span>Paid</span>
+                  <span>Collected</span>
                   <span className="font-semibold">{formatCurrency(paid)}</span>
                 </div>
+                {refundedAmount > 0 && (
+                  <div className="flex justify-between font-semibold text-rose-700">
+                    <span>Refunded</span>
+                    <span>- {formatCurrency(refundedAmount)}</span>
+                  </div>
+                )}
+                {voidedAmount > 0 && (
+                  <div className="flex justify-between font-semibold text-red-700">
+                    <span>Voided / reversed</span>
+                    <span>- {formatCurrency(voidedAmount)}</span>
+                  </div>
+                )}
+                {(refundedAmount > 0 || voidedAmount > 0) && (
+                  <div className="flex justify-between border-t border-gray-200 pt-3 font-bold text-gray-900">
+                    <span>Net retained</span>
+                    <span>{formatCurrency(netRetained)}</span>
+                  </div>
+                )}
                 <div className={`flex justify-between font-bold ${outstanding > 0.009 ? 'text-amber-700' : 'text-gray-500'}`}>
                   <span>Due / Credit</span>
                   <span>{formatCurrency(outstanding)}</span>
@@ -543,7 +573,7 @@ export default function OrderView() {
 
             {activity.length > 0 && (
               <div className="bg-white rounded-lg border border-gray-200 p-6">
-                <h3 className="text-lg font-bold text-gray-900 mb-3">Reopen &amp; change history</h3>
+                <h3 className="text-lg font-bold text-gray-900 mb-3">Audit &amp; change history</h3>
                 <div className="space-y-3">
                   {activity.map((a) => (
                     <div key={a.id} className="border-l-2 border-gray-200 pl-3">

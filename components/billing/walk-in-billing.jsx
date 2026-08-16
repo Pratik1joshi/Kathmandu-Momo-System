@@ -13,6 +13,7 @@ import CustomerModePicker, {
   validateCustomerSelection,
 } from '@/components/billing/customer-mode-picker';
 import BillConfirmModal from '@/components/billing/bill-confirm-modal';
+import DateInput from '@/components/ui/date-input.jsx';
 import QrEnlargeModal from '@/components/billing/qr-enlarge-modal';
 import { calculateBillTotals, parseSettingsRates } from '@/lib/billing-totals';
 import { compactBillNumber, compactOrderNumber } from '@/lib/document-display.js';
@@ -30,6 +31,7 @@ export default function WalkInBilling({ variant = 'admin' }) {
   const [amountPaid, setAmountPaid] = useState('');
   const [splitPayment, setSplitPayment] = useState(emptySplitPayment);
   const [discount, setDiscount] = useState(0);
+  const [discountMode, setDiscountMode] = useState('percent');
   const [customerSelection, setCustomerSelection] = useState(emptyCustomerSelection);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingBill, setPendingBill] = useState(null);
@@ -178,7 +180,9 @@ export default function WalkInBilling({ variant = 'admin' }) {
   const getTotals = () => {
     const { vatPercent, servicePercent } = parseSettingsRates(settings);
     return calculateBillTotals(calculateSubtotal(), {
-      discountPercent: discount,
+      ...(discountMode === 'amount'
+        ? { discountAmount: discount }
+        : { discountPercent: discount }),
       vatPercent,
       servicePercent,
     });
@@ -904,16 +908,44 @@ export default function WalkInBilling({ variant = 'admin' }) {
           <div className="shrink-0 border-t border-blue-200 max-h-[42vh] overflow-y-auto">
             <div className="p-3 sm:p-4 space-y-2.5 bg-gradient-to-r from-blue-50 to-white">
               <div>
-                <label className="block text-xs font-bold text-slate-900 mb-1">Discount (%)</label>
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={discount || ''}
-                  onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)}
-                  className="w-full px-3 py-2 border-2 border-blue-200 rounded-lg text-slate-900 font-semibold text-sm"
-                  placeholder="0"
-                />
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <label className="block text-xs font-bold text-slate-900">Discount</label>
+                  <div className="flex rounded-lg bg-slate-100 p-0.5">
+                    {[
+                      { id: 'percent', label: '%' },
+                      { id: 'amount', label: 'Rs' },
+                    ].map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => {
+                          setDiscountMode(opt.id);
+                          setDiscount(0);
+                        }}
+                        className={`rounded-md px-2.5 py-1 text-[11px] font-bold ${
+                          discountMode === opt.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="relative">
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
+                    {discountMode === 'amount' ? 'Rs' : '%'}
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    max={discountMode === 'percent' ? 100 : undefined}
+                    step={discountMode === 'amount' ? '0.01' : '1'}
+                    value={discount || ''}
+                    onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)}
+                    className="w-full rounded-lg border-2 border-blue-200 py-2 pl-9 pr-3 text-sm font-semibold text-slate-900"
+                    placeholder="0"
+                  />
+                </div>
               </div>
 
               <div className="space-y-1 text-sm bg-white rounded-xl p-2.5 border border-blue-100">
@@ -926,7 +958,7 @@ export default function WalkInBilling({ variant = 'admin' }) {
                 </div>
                 {discount > 0 && (
                   <div className="flex justify-between text-green-600">
-                    <span>Discount ({discount}%)</span>
+                    <span>Discount ({discountMode === 'amount' ? 'Rs' : `${discount}%`})</span>
                     <span className="font-bold">- {formatCurrency(calculateDiscount())}</span>
                   </div>
                 )}
@@ -1083,7 +1115,7 @@ export default function WalkInBilling({ variant = 'admin' }) {
                 <div className="rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
                   <p className="font-semibold">{customerSelection.customer ? `Credit customer: ${customerSelection.customer.name}` : 'Select an existing customer above before using Credit.'}</p>
                   <label className="mt-2 block">Due date (optional)
-                    <input type="date" value={splitPayment.creditDueDate} onChange={(e) => setSplitPayment((v) => ({ ...v, creditDueDate: e.target.value }))} className="mt-1 w-full rounded-lg border border-amber-200 bg-white px-2 py-2" />
+                    <DateInput value={splitPayment.creditDueDate} onChange={(v) => setSplitPayment((sp) => ({ ...sp, creditDueDate: v }))} className="mt-1 w-full rounded-lg border border-amber-200 bg-white px-2 py-2" />
                   </label>
                 </div>
               )}

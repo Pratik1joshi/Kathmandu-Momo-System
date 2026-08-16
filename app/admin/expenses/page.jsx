@@ -22,6 +22,7 @@ import DataGrid, { StatusBadge } from '@/components/admin/data-grid';
 import useServerList from '@/lib/use-server-list';
 import { KpiCards, ChartCard, ChartGrid, TrendChart, RankBars } from '@/components/admin/report-kit';
 import LogExpenseModal, { EXPENSE_CATEGORIES } from '@/components/expenses/log-expense-modal';
+import DateInput from '@/components/ui/date-input.jsx';
 
 /** Categories the automation writes; they never appear in the manual picker. */
 const GENERATED_CATEGORY_LABELS = {
@@ -290,8 +291,8 @@ export default function ExpensesPage() {
           ))}
           {datePreset === 'custom' && (
             <>
-              <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} className="h-9 rounded-lg border border-gray-300 px-2 text-sm" aria-label="From" />
-              <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} className="h-9 rounded-lg border border-gray-300 px-2 text-sm" aria-label="To" />
+              <DateInput value={customFrom} onChange={setCustomFrom} className="h-9 rounded-lg border border-gray-300 px-2 text-sm" aria-label="From" />
+              <DateInput value={customTo} onChange={setCustomTo} className="h-9 rounded-lg border border-gray-300 px-2 text-sm" aria-label="To" />
             </>
           )}
         </div>

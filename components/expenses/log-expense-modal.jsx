@@ -14,6 +14,8 @@ import {
 } from '@/components/ui/admin-form';
 import { useToast } from '@/components/ui/toast';
 import { friendlyMessage, friendlyFromError } from '@/lib/friendly-message';
+import { nepalDateString } from '@/lib/report-dates.js';
+import DateInput from '@/components/ui/date-input.jsx';
 
 function authedRequest(url, options = {}) {
   const token = localStorage.getItem('pos_token');
@@ -45,7 +47,7 @@ export default function LogExpenseModal({ editingExpense, initialCategory, payro
     description: editingExpense?.description || '',
     category: editingExpense?.category || initialCategory || (payrollMode ? 'salaries' : 'raw_materials'),
     amount: editingExpense?.amount ?? '',
-    purchase_date: editingExpense?.purchase_date || new Date().toISOString().split('T')[0],
+    purchase_date: editingExpense?.purchase_date || nepalDateString(),
     payment_method: editingExpense?.payment_method || 'cash',
     supplier: editingExpense?.supplier || '',
     notes: editingExpense?.notes || '',
@@ -149,7 +151,7 @@ export default function LogExpenseModal({ editingExpense, initialCategory, payro
 
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
             <AdminField label="Date">
-              <input type="date" className={adminInputClass} value={form.purchase_date} onChange={(e) => setForm((f) => ({ ...f, purchase_date: e.target.value }))} />
+              <DateInput className={adminInputClass} value={form.purchase_date} onChange={(v) => setForm((f) => ({ ...f, purchase_date: v }))} />
             </AdminField>
             <AdminField label="Payment Method">
               <select className={adminInputClass} value={form.payment_method} onChange={(e) => setForm((f) => ({ ...f, payment_method: e.target.value }))}>

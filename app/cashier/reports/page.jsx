@@ -15,7 +15,7 @@ export default function ReportsPage() {
   const [reportPeriod, setReportPeriod] = useState('today');
   
   // Initialize with today's date
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getNepaliDateString();
   const [startDate, setStartDate] = useState(todayStr);
   const [endDate, setEndDate] = useState(todayStr);
   
@@ -38,24 +38,24 @@ export default function ReportsPage() {
   });
 
   useEffect(() => {
-    // Set default dates based on period
-    const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
-    
+    // Set default dates based on period (Nepal calendar day, not UTC)
+    const todayStr = getNepaliDateString();
+    const nepalNow = new Date(`${todayStr}T12:00:00+05:45`);
+
     if (reportPeriod === 'today') {
       setStartDate(todayStr);
       setEndDate(todayStr);
     } else if (reportPeriod === 'week') {
       // Last 7 days including today (today = Friday, then from last Friday to this Friday)
-      const weekAgo = new Date(today);
+      const weekAgo = new Date(nepalNow);
       weekAgo.setDate(weekAgo.getDate() - 6); // -6 to include today = 7 days total
-      setStartDate(weekAgo.toISOString().split('T')[0]);
+      setStartDate(getNepaliDateString(weekAgo));
       setEndDate(todayStr);
     } else if (reportPeriod === 'month') {
       // Last 30 days including today (if today is 2 March, from 2 Feb to 2 March)
-      const monthAgo = new Date(today);
+      const monthAgo = new Date(nepalNow);
       monthAgo.setDate(monthAgo.getDate() - 29); // -29 to include today = 30 days total
-      setStartDate(monthAgo.toISOString().split('T')[0]);
+      setStartDate(getNepaliDateString(monthAgo));
       setEndDate(todayStr);
     }
   }, [reportPeriod]);

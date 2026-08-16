@@ -280,7 +280,7 @@ export default function AdminKotPage() {
                         )}
                       </div>
                       <p className="mt-1 text-sm text-gray-500">
-                        {kot.table_number ? `Table ${kot.table_number}` : 'Counter'}
+                        {kot.table_number ? `Table ${kot.table_number}` : kot.order_type === 'delivery' ? 'Delivery' : 'Takeaway'}
                         {kot.party_label ? ` · ${kot.party_label}` : ''}
                         {kot.order_number ? ` · ${compactOrderNumber(kot.order_number)}` : ''}
                       </p>

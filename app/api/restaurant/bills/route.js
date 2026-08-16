@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { BillRepository } from '@/lib/db/repositories/bills.js';
 import { AuthService } from '@/lib/auth/auth.js';
+import { nepalDateString } from '@/lib/report-dates.js';
 
 const billRepo = new BillRepository();
 const authService = new AuthService();
@@ -66,7 +67,7 @@ export async function GET(request) {
     
     // Get sales summary
     if (type === 'summary') {
-      const summary = await billRepo.getSalesSummary(date || new Date().toISOString().split('T')[0]);
+      const summary = await billRepo.getSalesSummary(date || nepalDateString());
       
       return NextResponse.json({
         success: true,

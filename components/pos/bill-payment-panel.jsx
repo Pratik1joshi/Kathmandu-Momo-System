@@ -6,13 +6,14 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, X, Wallet, QrCode, Building2, Sparkles, Receipt } from 'lucide-react';
+import { Loader2, X, Wallet, QrCode, Building2, Sparkles, Receipt, Truck } from 'lucide-react';
 import { formatCurrency } from '@/lib/currency';
 import CustomerModePicker, {
   emptyCustomerSelection,
   validateCustomerSelection,
 } from '@/components/billing/customer-mode-picker';
 import SplitPaymentFields, { emptySplitPayment } from '@/components/billing/split-payment-fields';
+import DateInput from '@/components/ui/date-input.jsx';
 import QrEnlargeModal from '@/components/billing/qr-enlarge-modal';
 
 function QrCodeButtons({ settings, onOpen }) {
@@ -62,6 +63,8 @@ export default function BillPaymentPanel({
   settings = {},
   discount = 0,
   onDiscountChange,
+  discountMode = 'percent',
+  onDiscountModeChange,
   customerSelection,
   onCustomerChange,
   paymentMethod,
@@ -70,6 +73,11 @@ export default function BillPaymentPanel({
   onAmountPaidChange,
   splitPayment,
   onSplitPaymentChange,
+  canSetDelivery = false,
+  deliveryEnabled = false,
+  onDeliveryEnabledChange,
+  deliveryFee = '',
+  onDeliveryFeeChange,
 }) {
   const [qrModal, setQrModal] = useState({ open: false, title: '', image: '' });
   const customerSectionRef = useRef(null);
@@ -177,17 +185,77 @@ export default function BillPaymentPanel({
           </div>
 
           <div>
-            <label className="mb-1 block text-xs font-bold text-slate-900">Discount (%)</label>
-            <input
-              type="number"
-              min="0"
-              max="100"
-              value={discount || ''}
-              onChange={(e) => onDiscountChange?.(parseFloat(e.target.value) || 0)}
-              className="w-full rounded-lg border-2 border-emerald-200 px-3 py-2 text-sm font-semibold text-slate-900"
-              placeholder="0"
-            />
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <label className="block text-xs font-bold text-slate-900">Discount</label>
+              <div className="flex rounded-lg bg-slate-100 p-0.5">
+                {[
+                  { id: 'percent', label: '%' },
+                  { id: 'amount', label: 'Rs' },
+                ].map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => {
+                      onDiscountModeChange?.(opt.id);
+                      onDiscountChange?.(0);
+                    }}
+                    className={`rounded-md px-2.5 py-1 text-[11px] font-bold ${
+                      discountMode === opt.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="relative">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
+                {discountMode === 'amount' ? 'Rs' : '%'}
+              </span>
+              <input
+                type="number"
+                min="0"
+                max={discountMode === 'percent' ? 100 : undefined}
+                step={discountMode === 'amount' ? '0.01' : '1'}
+                value={discount || ''}
+                onChange={(e) => onDiscountChange?.(parseFloat(e.target.value) || 0)}
+                className="w-full rounded-lg border-2 border-emerald-200 py-2 pl-9 pr-3 text-sm font-semibold text-slate-900"
+                placeholder="0"
+              />
+            </div>
           </div>
+
+          {canSetDelivery && (
+            <div className="rounded-xl border border-sky-200 bg-sky-50/70 p-3">
+              <label className="flex cursor-pointer items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={deliveryEnabled}
+                  onChange={(e) => onDeliveryEnabledChange?.(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-sky-300 text-sky-600"
+                />
+                <span>
+                  <span className="flex items-center gap-1.5 text-sm font-bold text-slate-900"><Truck className="h-4 w-4 text-sky-700" /> Deliver this takeaway</span>
+                  <span className="mt-0.5 block text-xs text-slate-600">Marks this table-less order as Delivery and adds the charge to this bill.</span>
+                </span>
+              </label>
+              {deliveryEnabled && (
+                <label className="mt-3 block text-xs font-bold text-slate-900">
+                  Delivery charge (Rs)
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    inputMode="decimal"
+                    value={deliveryFee}
+                    onChange={(e) => onDeliveryFeeChange?.(e.target.value)}
+                    className="mt-1 w-full rounded-lg border-2 border-sky-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                    placeholder="0.00"
+                  />
+                </label>
+              )}
+            </div>
+          )}
 
           <div className="space-y-1 rounded-xl border border-emerald-100 bg-emerald-50/60 p-3 text-sm">
             <div className="flex justify-between">
@@ -210,6 +278,12 @@ export default function BillPaymentPanel({
               <div className="flex justify-between">
                 <span className="text-slate-700">Tax ({Number(settings.vat_percentage)}%)</span>
                 <span className="font-bold text-slate-900">{formatCurrency(totals?.tax || 0)}</span>
+              </div>
+            )}
+            {Number(totals?.deliveryFee || 0) > 0 && (
+              <div className="flex justify-between">
+                <span className="text-slate-700">Delivery</span>
+                <span className="font-bold text-slate-900">{formatCurrency(totals.deliveryFee)}</span>
               </div>
             )}
             <div className="flex justify-between border-t border-emerald-200 pt-1.5 text-base font-bold">
@@ -352,10 +426,9 @@ export default function BillPaymentPanel({
                   </p>
                   <label className="mt-2 block text-xs">
                     Due date (optional)
-                    <input
-                      type="date"
+                    <DateInput
                       value={splitPayment?.creditDueDate || ''}
-                      onChange={(e) => onSplitPaymentChange?.({ ...splitPayment, creditDueDate: e.target.value })}
+                      onChange={(v) => onSplitPaymentChange?.({ ...splitPayment, creditDueDate: v })}
                       className="mt-1 w-full rounded-lg border border-amber-200 bg-white px-2 py-2"
                     />
                   </label>

@@ -12,12 +12,14 @@ import {
   money, percent,
 } from './analytics-ui';
 import { compactBillNumber, compactOrderNumber } from '@/lib/document-display';
+import { orderTypeLabel } from '@/lib/order-types.js';
 
 export function LiveStatus({ data }) {
   const live = data.live;
   const items = [
     ['Tables Occupied', live.occupiedTables], ['Tables Available', live.availableTables],
-    ['Orders Open', live.openOrders], ['KOTs Preparing', live.preparingKots],
+    ['Orders Open', live.openOrders], ['Open Orders Value', money(live.openOrdersValue)],
+    ['KOTs Preparing', live.preparingKots],
     ['KOTs Ready', live.readyKots], ['Pending Payments', live.pendingPayments],
     ['Reservations Soon', live.upcomingReservations],
   ];
@@ -192,7 +194,7 @@ export function Controls({ data }) {
           {[
             ['Discount', c.discounts, 'currency'], ['Discounted Bills', c.discountedBills, 'number'], ['Refunds', c.refunds, 'currency'], ['Refund Count', c.refundCount, 'number'],
             ['Cancelled Orders', c.cancelledOrders, 'number'], ['Cancelled KOTs', c.cancelledKots, 'number'], ['Voided Bills', c.voidedBills, 'number'], ['Value Voided', c.voidedValue, 'currency'],
-          ].map(([label, value, format]) => <StatCell key={label} label={label} value={value} format={format} tone={value ? 'warning' : 'default'} />)}
+          ].map(([label, value, format]) => <StatCell key={label} label={label} value={value} format={format} tone={value ? 'negative' : 'default'} />)}
         </div>
         <ChartCard title="Top Recorded Reasons" isEmpty={!reasonRows.length} empty="No cancellation or void reasons in this period."><RankBars data={reasonRows.slice(0, 8)} color="red" format="number" /></ChartCard>
       </div>
@@ -230,7 +232,7 @@ export function RecentActivity({ data, pagination, loading = false, onPageChange
                 <tr key={row.id}>
                   <td className="px-4 py-3 text-gray-500"><NepalTime value={row.paid_at || row.created_at} /></td>
                   <td className="px-4 py-3"><p className="font-medium">{compactBillNumber(row.bill_number)}</p><p className="text-xs text-gray-400">{compactOrderNumber(row.order_number)}</p></td>
-                  <td className="px-4 py-3">{row.table_number ? `Table ${row.table_number}` : String(row.order_type || '').replace(/_/g, ' ')}</td>
+                  <td className="px-4 py-3">{row.table_number ? `Table ${row.table_number}` : orderTypeLabel(row)}</td>
                   <td className="px-4 py-3">{row.customer_name || 'Walk-in'}</td>
                   <td className="px-4 py-3">{row.cashier}</td>
                   <td className="px-4 py-3 capitalize">{row.payment}</td>

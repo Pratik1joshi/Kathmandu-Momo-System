@@ -1,6 +1,7 @@
 'use client';
 
 import { resolvePeriodRange } from '@/lib/report-dates.js';
+import DateInput from './date-input.jsx';
 
 const PRESETS = [
   ['today', 'Today'],
@@ -41,9 +42,9 @@ export default function DateRangeFilter({ value, onChange, className = '', compa
         </select>
         {isCustom && (
           <div className="flex min-w-0 items-center gap-1.5">
-            <input type="date" value={value?.from || ''} onChange={(e) => onChange({ period: 'custom', from: e.target.value, to: value?.to || '' })} className="h-9 min-w-0 rounded-lg border border-gray-200 px-2 text-sm" aria-label="From date" />
+            <DateInput value={value?.from || ''} onChange={(from) => onChange({ period: 'custom', from, to: value?.to || '' })} className="h-9 w-28 min-w-0 rounded-lg border border-gray-200 px-2 text-sm" aria-label="From date" />
             <span className="text-xs text-gray-400">to</span>
-            <input type="date" value={value?.to || ''} onChange={(e) => onChange({ period: 'custom', from: value?.from || '', to: e.target.value })} className="h-9 min-w-0 rounded-lg border border-gray-200 px-2 text-sm" aria-label="To date" />
+            <DateInput value={value?.to || ''} onChange={(to) => onChange({ period: 'custom', from: value?.from || '', to })} className="h-9 w-28 min-w-0 rounded-lg border border-gray-200 px-2 text-sm" aria-label="To date" />
           </div>
         )}
       </div>
@@ -69,19 +70,17 @@ export default function DateRangeFilter({ value, onChange, className = '', compa
       </div>
       {isCustom && (
         <div className="flex items-center gap-1.5">
-          <input
-            type="date"
+          <DateInput
             value={value?.from || ''}
-            onChange={(e) => onChange({ period: 'custom', from: e.target.value, to: value?.to || '' })}
-            className="h-9 rounded-lg border border-gray-200 px-2 text-sm"
+            onChange={(from) => onChange({ period: 'custom', from, to: value?.to || '' })}
+            className="h-9 w-28 rounded-lg border border-gray-200 px-2 text-sm"
             aria-label="From date"
           />
           <span className="text-xs text-gray-400">to</span>
-          <input
-            type="date"
+          <DateInput
             value={value?.to || ''}
-            onChange={(e) => onChange({ period: 'custom', from: value?.from || '', to: e.target.value })}
-            className="h-9 rounded-lg border border-gray-200 px-2 text-sm"
+            onChange={(to) => onChange({ period: 'custom', from: value?.from || '', to })}
+            className="h-9 w-28 rounded-lg border border-gray-200 px-2 text-sm"
             aria-label="To date"
           />
         </div>

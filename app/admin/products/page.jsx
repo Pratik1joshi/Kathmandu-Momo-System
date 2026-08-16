@@ -3,12 +3,14 @@
 import { useState, useEffect, useMemo } from 'react';
 import AdminLayout from '@/components/admin/admin-layout';
 import MenuItemImage from '@/components/menu-item-image';
-import { Plus, Edit, Trash2, Search, Package, Upload } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Package, Upload, Clock3, Link2 } from 'lucide-react';
 import { useToast } from '@/components/ui/toast';
 import { useConfirm } from '@/components/ui/confirm';
 import { friendlyMessage, friendlyFromError } from '@/lib/friendly-message';
 import FieldError, { inputErrorClass } from '@/components/ui/field-error';
 import { numbersOnlyInput, validateName, validatePositiveNumber, firstError } from '@/lib/form-validation';
+
+const emptyVariant = () => ({ variant_name: '', price: '', stock_quantity: '', stock_unit: '', inventory_item_id: '' });
 
 const emptyForm = {
   name: '',
@@ -19,13 +21,21 @@ const emptyForm = {
   image_url: '',
   is_available: true,
   is_vegetarian: false,
+  preparation_time: 15,
+  inventory_item_id: '',
+  unit: '',
+  has_variants: false,
+  variants: [],
 };
+
+const UNIT_OPTIONS = ['Piece', 'Plate', 'Bowl', 'Glass', 'Bottle', 'Cup', 'Packet', 'ml', 'Litre', 'Gram', 'Kg'];
 
 export default function ProductsPage() {
   const { addToast } = useToast();
   const { confirm } = useConfirm();
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [inventoryItems, setInventoryItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
@@ -39,6 +49,7 @@ export default function ProductsPage() {
   useEffect(() => {
     fetchProducts();
     fetchCategories();
+    fetchInventoryItems();
   }, []);
 
   const fetchProducts = async () => {
@@ -75,13 +86,17 @@ export default function ProductsPage() {
     }
   };
 
+  const cleanVariants = formData.variants.filter((v) => v.variant_name.trim() && v.price !== '');
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
     const nextErrors = {
       name: validateName(formData.name, 'item name'),
       category_id: !formData.category_id ? 'Please choose a category.' : null,
-      price: validatePositiveNumber(formData.price, 'price', { allowZero: false }),
+      price: formData.has_variants
+        ? (cleanVariants.length ? null : 'Add at least one variation with a name and price.')
+        : validatePositiveNumber(formData.price, 'price', { allowZero: false }),
       cost: formData.cost === '' || formData.cost == null
         ? null
         : validatePositiveNumber(formData.cost, 'cost', { allowZero: true }),
@@ -92,13 +107,13 @@ export default function ProductsPage() {
       addToast(friendlyMessage('validation', { description: msg }));
       return;
     }
-    
+
     try {
       const token = localStorage.getItem('pos_token');
-      const url = editingProduct 
+      const url = editingProduct
         ? `/api/admin/products/${editingProduct.id}`
         : '/api/admin/products';
-      
+
       const response = await fetch(url, {
         method: editingProduct ? 'PUT' : 'POST',
         headers: {
@@ -107,8 +122,9 @@ export default function ProductsPage() {
         },
         body: JSON.stringify({
           ...formData,
-          price: Number(formData.price),
+          price: formData.has_variants ? undefined : Number(formData.price),
           cost: formData.cost === '' ? null : Number(formData.cost),
+          variants: formData.has_variants ? cleanVariants : [],
         })
       });
 
@@ -163,6 +179,14 @@ export default function ProductsPage() {
 
   const handleEdit = (product) => {
     setEditingProduct(product);
+    const variants = (product.variants || []).map((v) => ({
+      variant_name: v.variant_name || '',
+      price: v.price ?? '',
+      stock_quantity: v.stock_quantity ?? '',
+      stock_unit: v.stock_unit || '',
+      inventory_item_id: v.inventory_item_id || '',
+      is_default: !!v.is_default,
+    }));
     setFormData({
       name: product.name,
       category_id: product.category_id,
@@ -172,6 +196,11 @@ export default function ProductsPage() {
       image_url: product.image_url || '',
       is_available: !!product.is_available,
       is_vegetarian: !!product.is_vegetarian,
+      preparation_time: product.preparation_time || 15,
+      inventory_item_id: product.inventory_item_id || '',
+      unit: product.unit || '',
+      has_variants: variants.length > 0,
+      variants: variants.length > 0 ? variants : [],
     });
     setShowForm(true);
   };
@@ -193,11 +222,41 @@ export default function ProductsPage() {
 
       if (response.ok) {
         fetchProducts();
+        addToast(friendlyMessage('save_success', { description: 'Menu item deleted.' }));
+      } else {
+        const data = await response.json().catch(() => ({}));
+        addToast(friendlyFromError(data, 'save_failed'));
       }
     } catch (error) {
       console.error('Error:', error);
+      addToast(friendlyFromError(error, 'save_failed'));
     }
   };
+
+  const fetchInventoryItems = async () => {
+    try {
+      const token = localStorage.getItem('pos_token');
+      const response = await fetch('/api/admin/inventory', { headers: { Authorization: `Bearer ${token}` } });
+      if (response.ok) {
+        const data = await response.json();
+        setInventoryItems(data.items || []);
+      }
+    } catch (error) {
+      console.error('Inventory load error:', error);
+    }
+  };
+
+  const addVariant = () => setFormData((prev) => ({ ...prev, variants: [...prev.variants, emptyVariant()] }));
+  const removeVariant = (index) => setFormData((prev) => ({ ...prev, variants: prev.variants.filter((_, i) => i !== index) }));
+  const updateVariant = (index, patch) => setFormData((prev) => ({
+    ...prev,
+    variants: prev.variants.map((v, i) => (i === index ? { ...v, ...patch } : v)),
+  }));
+  const toggleHasVariants = (on) => setFormData((prev) => ({
+    ...prev,
+    has_variants: on,
+    variants: on && prev.variants.length === 0 ? [emptyVariant()] : prev.variants,
+  }));
 
   // Live count per category, recomputed as products change
   const categoryCounts = useMemo(() => {
@@ -283,22 +342,24 @@ export default function ProductsPage() {
         {/* Product Form Modal */}
         {showForm && (
           <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[92vh] overflow-y-auto">
+            <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[92vh] overflow-y-auto shadow-2xl">
               <div className="p-6 border-b border-gray-200">
                 <h2 className="text-2xl font-bold text-gray-800">
                   {editingProduct ? 'Edit Menu Item' : 'Add New Menu Item'}
                 </h2>
+                <p className="mt-1 text-sm text-gray-500">Set the selling details, availability and—when appropriate—the stock item that this menu item consumes.</p>
               </div>
               
               <form onSubmit={handleSubmit} className="p-6 sm:p-8 space-y-5" noValidate>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                <div>
+                <div className="sm:col-span-2">
                   <label className="block text-sm font-medium text-gray-900 mb-2">Item Name *</label>
                   <input
                     type="text"
                     value={formData.name}
                     onChange={(e) => setFormData({...formData, name: e.target.value})}
                     className={inputErrorClass(!!formErrors.name, 'w-full h-11 px-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-400 text-gray-900')}
+                    placeholder="e.g. Blue Diamond - QTR"
                   />
                   <FieldError message={formErrors.name} />
                 </div>
@@ -317,33 +378,33 @@ export default function ProductsPage() {
                   </select>
                   <FieldError message={formErrors.category_id} />
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-900 mb-2">Unit</label>
+                  <select
+                    value={formData.unit}
+                    onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+                    className="w-full h-11 px-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-400 text-gray-900"
+                  >
+                    <option value="">Select unit</option>
+                    {UNIT_OPTIONS.map((u) => <option key={u} value={u}>{u}</option>)}
+                  </select>
                 </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                {!formData.has_variants && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-900 mb-2">Sale Price *</label>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={formData.price}
-                      onChange={(e) => setFormData({...formData, price: numbersOnlyInput(e.target.value, { allowDecimal: true })})}
-                      className={inputErrorClass(!!formErrors.price, 'w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-400 text-gray-900')}
-                      placeholder="0"
-                    />
-                    <FieldError message={formErrors.price} />
+                    <label className="mb-2 flex items-center gap-1.5 text-sm font-medium text-gray-900"><Link2 className="h-4 w-4 text-gray-500" />Linked Inventory <span className="font-normal text-gray-500">optional</span></label>
+                    <select
+                      value={formData.inventory_item_id}
+                      onChange={(e) => setFormData({ ...formData, inventory_item_id: e.target.value })}
+                      className="h-11 w-full rounded-lg border border-gray-300 px-3 text-gray-900 focus:ring-2 focus:ring-gray-400"
+                    >
+                      <option value="">No direct inventory link</option>
+                      {inventoryItems.map((item) => (
+                        <option key={item.id} value={item.id}>{item.item_name || item.name} · {Number(item.quantity || 0)} {item.unit || ''}</option>
+                      ))}
+                    </select>
+                    <p className="mt-1.5 text-xs text-gray-500">Use this for one-unit retail items. QTR/HALF/FULL drinks should use recipes.</p>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-900 mb-2">Cost Price</label>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={formData.cost}
-                      onChange={(e) => setFormData({...formData, cost: numbersOnlyInput(e.target.value, { allowDecimal: true })})}
-                      className={inputErrorClass(!!formErrors.cost, 'w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-400 text-gray-900')}
-                      placeholder="0"
-                    />
-                    <FieldError message={formErrors.cost} />
-                  </div>
+                )}
                 </div>
 
                 <div>
@@ -352,9 +413,32 @@ export default function ProductsPage() {
                     value={formData.description}
                     onChange={(e) => setFormData({...formData, description: e.target.value})}
                     rows={3}
+                    placeholder="Short description for the POS and online menu"
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-400 text-gray-900"
                   />
                 </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                  {!formData.has_variants && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-900 mb-2">Sale Price *</label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={formData.price}
+                        onChange={(e) => setFormData({...formData, price: numbersOnlyInput(e.target.value, { allowDecimal: true })})}
+                        className={inputErrorClass(!!formErrors.price, 'w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-400 text-gray-900')}
+                        placeholder="0"
+                      />
+                      <FieldError message={formErrors.price} />
+                    </div>
+                  )}
+                  <div>
+                    <label className="mb-2 flex items-center gap-1.5 text-sm font-medium text-gray-900"><Clock3 className="h-4 w-4 text-gray-500" />Preparation Time</label>
+                    <div className="flex h-11 items-center rounded-lg border border-gray-300 px-3"><input type="number" min="0" value={formData.preparation_time} onChange={(e) => setFormData({ ...formData, preparation_time: numbersOnlyInput(e.target.value) })} className="min-w-0 flex-1 outline-none text-gray-900" /><span className="text-sm text-gray-500">min</span></div>
+                  </div>
+                </div>
+                {formData.has_variants && <FieldError message={formErrors.price} />}
 
                 <div>
                   <label className="block text-sm font-medium text-gray-900 mb-2">Food Image</label>
@@ -418,6 +502,124 @@ export default function ProductsPage() {
                       </label>
                     ))}
                   </fieldset>
+                </div>
+
+                <div className="border-t border-gray-200 pt-5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-gray-900">Has Variations</label>
+                    <fieldset className="flex items-center gap-2">
+                      <legend className="sr-only">Has variations</legend>
+                      {[{ label: 'No', value: false }, { label: 'Yes', value: true }].map((option) => (
+                        <label
+                          key={option.label}
+                          className={`inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium ${
+                            formData.has_variants === option.value
+                              ? 'border-gray-900 bg-gray-900 text-white'
+                              : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="has_variants"
+                            checked={formData.has_variants === option.value}
+                            onChange={() => toggleHasVariants(option.value)}
+                            className="sr-only"
+                          />
+                          {option.label}
+                        </label>
+                      ))}
+                    </fieldset>
+                  </div>
+                  <p className="mt-1 text-xs text-gray-500">e.g. Half Plate / Full Plate momo, or 30ml / 60ml drinks — each with its own price and stock usage.</p>
+
+                  {formData.has_variants && (
+                    <div className="mt-4 space-y-4">
+                      {formData.variants.map((variant, index) => (
+                        <div key={index} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                          <div className="mb-3 flex items-center justify-between">
+                            <span className="text-sm font-semibold text-gray-900">Variation #{index + 1}</span>
+                            {formData.variants.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => removeVariant(index)}
+                                className="inline-flex items-center gap-1 text-xs font-medium text-red-600 hover:underline"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" /> Remove
+                              </button>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-xs font-medium text-gray-700 mb-1">Variation Name</label>
+                              <input
+                                type="text"
+                                value={variant.variant_name}
+                                onChange={(e) => updateVariant(index, { variant_name: e.target.value })}
+                                placeholder="e.g. Half Plate, 60ml, Full"
+                                className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-gray-400"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-700 mb-1">Price</label>
+                              <div className="flex h-10 items-center rounded-lg border border-gray-300 px-3">
+                                <span className="text-sm text-gray-500 mr-1">Rs.</span>
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={variant.price}
+                                  onChange={(e) => updateVariant(index, { price: numbersOnlyInput(e.target.value, { allowDecimal: true }) })}
+                                  placeholder="0.00"
+                                  className="min-w-0 flex-1 outline-none text-sm text-gray-900"
+                                />
+                              </div>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-700 mb-1">Quantity (Stock Usage)</label>
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                value={variant.stock_quantity}
+                                onChange={(e) => updateVariant(index, { stock_quantity: numbersOnlyInput(e.target.value, { allowDecimal: true }) })}
+                                placeholder="e.g. 60"
+                                className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-gray-400"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-700 mb-1">Unit (ml, gram, etc.)</label>
+                              <select
+                                value={variant.stock_unit}
+                                onChange={(e) => updateVariant(index, { stock_unit: e.target.value })}
+                                className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-gray-400"
+                              >
+                                <option value="">Select unit</option>
+                                {UNIT_OPTIONS.map((u) => <option key={u} value={u}>{u}</option>)}
+                              </select>
+                            </div>
+                            <div className="sm:col-span-2">
+                              <label className="block text-xs font-medium text-gray-700 mb-1">Inventory Item</label>
+                              <select
+                                value={variant.inventory_item_id}
+                                onChange={(e) => updateVariant(index, { inventory_item_id: e.target.value })}
+                                className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-gray-400"
+                              >
+                                <option value="">-- Autoselect --</option>
+                                {inventoryItems.map((item) => (
+                                  <option key={item.id} value={item.id}>{item.item_name || item.name} · {Number(item.quantity || 0)} {item.unit || ''}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={addVariant}
+                        className="inline-flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-950"
+                      >
+                        <Plus className="h-4 w-4" /> Add Variation
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex space-x-4 pt-4">

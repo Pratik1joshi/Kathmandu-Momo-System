@@ -6,6 +6,7 @@ import {
   ShoppingBasket, WalletCards,
 } from 'lucide-react';
 import { ChartCard, RankBars, formatValue } from '@/components/admin/report-kit';
+import { financialToneClass } from '@/lib/financial-tone';
 
 const money = (value) => formatValue(value, 'currency');
 const number = (value) => formatValue(value, 'number');
@@ -44,7 +45,7 @@ export function AnalyticsKeyMetrics({ data }) {
         {metrics.map(([label, value, format, detail]) => (
           <div key={label} className="min-w-0 bg-white px-4 py-4 sm:px-5">
             <p className="truncate text-xs font-medium text-gray-500">{label}</p>
-            <p className="mt-1.5 truncate text-xl font-semibold tabular-nums text-gray-950" title={String(value ?? 0)}>
+            <p className={`mt-1.5 truncate text-xl font-semibold tabular-nums ${format === 'currency' ? financialToneClass({ label, value }) : 'text-gray-950'}`} title={String(value ?? 0)}>
               {format === 'percent' ? percent(value) : money(value)}
             </p>
             <p className="mt-1 truncate text-xs text-gray-400">{detail}</p>
@@ -55,7 +56,7 @@ export function AnalyticsKeyMetrics({ data }) {
   );
 }
 
-function OverviewCard({ title, icon: Icon, tone, href, value, detail, children }) {
+function OverviewCard({ title, icon: Icon, tone, moneyTone, href, value, detail, children }) {
   return (
     <Link href={href} className="group flex min-h-[154px] flex-col rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition-[border-color,transform] duration-150 ease-out hover:border-gray-300 active:scale-[0.98]">
       <div className="flex items-center justify-between gap-3">
@@ -65,7 +66,7 @@ function OverviewCard({ title, icon: Icon, tone, href, value, detail, children }
         </div>
         <ArrowRight className="h-4 w-4 text-gray-300 transition-transform duration-150 ease-out group-hover:translate-x-0.5" />
       </div>
-      <p className="mt-4 text-2xl font-semibold tabular-nums text-gray-950">{value}</p>
+      <p className={`mt-4 text-2xl font-semibold tabular-nums ${moneyTone || 'text-gray-950'}`}>{value}</p>
       <p className="mt-1 text-xs text-gray-500">{detail}</p>
       {children}
     </Link>
@@ -98,15 +99,15 @@ export default function AnalyticsHome({ data }) {
       </div>
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5" aria-label="Business overview">
-        <OverviewCard title="Payments" icon={CreditCard} tone="blue" href="/admin/reports?tab=finance" value={money(payments.netCollections)} detail={`${money(payments.cashCollected)} cash · ${money(payments.onlineCollected)} online`}>
+        <OverviewCard title="Payments" icon={CreditCard} tone="blue" moneyTone="text-emerald-700" href="/admin/reports?tab=finance" value={money(payments.grossCollected)} detail={`${money(payments.cashCollected)} cash · ${money(payments.onlineCollected)} online`}>
           <div className="mt-auto flex h-1.5 overflow-hidden rounded-full bg-gray-100" aria-label={`${Math.round(cashShare)} percent cash`}>
             <span className="bg-blue-600" style={{ width: `${cashShare}%` }} />
             <span className="flex-1 bg-cyan-400" />
           </div>
         </OverviewCard>
-        <OverviewCard title="Purchases" icon={ShoppingBasket} tone="amber" href="/admin/purchases" value={money(inventory.purchaseValue)} detail={`${number(inventory.purchases)} purchase records`} />
-        <OverviewCard title="Sales" icon={CircleDollarSign} tone="emerald" href="/admin/reports?tab=sales" value={money(totals.netSales)} detail={`${number(totals.bills)} orders · ${number(totals.itemsSold)} items`} />
-        <OverviewCard title="Expenses" icon={WalletCards} tone="rose" href="/admin/expenses" value={money(finance.operatingExpenses)} detail={`Food cost ${money(finance.cogs)}`} />
+        <OverviewCard title="Purchases" icon={ShoppingBasket} tone="amber" moneyTone="text-rose-700" href="/admin/purchases" value={money(inventory.purchaseValue)} detail={`${number(inventory.purchases)} purchase records`} />
+        <OverviewCard title="Sales" icon={CircleDollarSign} tone="emerald" moneyTone="text-emerald-700" href="/admin/reports?tab=sales" value={money(totals.netSales)} detail={`${number(totals.bills)} orders · ${number(totals.itemsSold)} items${data.live?.openOrdersValue > 0 ? ` · +${money(data.live.openOrdersValue)} on open tables` : ''}`} />
+        <OverviewCard title="Expenses" icon={WalletCards} tone="rose" moneyTone="text-rose-700" href="/admin/expenses" value={money(finance.operatingExpenses)} detail={`Food cost ${money(finance.cogs)}`} />
         <OverviewCard title="Stock" icon={PackageSearch} tone="violet" href="/admin/inventory" value={money(inventory.value)} detail={`${number(inventory.low)} low stock · ${number(inventory.out)} out`} />
       </section>
 

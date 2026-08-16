@@ -36,8 +36,10 @@ import { friendlyMessage, friendlyFromError } from '@/lib/friendly-message';
 import { apiJson, authedRequest } from '@/lib/authed-fetch';
 import { unitLabel } from '@/lib/units';
 import { round } from '@/lib/entry-math';
+import { nepalDateString } from '@/lib/report-dates.js';
+import DateInput from '@/components/ui/date-input.jsx';
 
-const today = () => new Date().toISOString().split('T')[0];
+const today = () => nepalDateString();
 const blankLine = () => ({
   inventory_item_id: '',
   quantity_ordered: '',
@@ -229,7 +231,7 @@ export default function ReceiveDeliveryModal({ purchase, items, suppliers, emplo
               <input value={form.invoice_number} onChange={(e) => set({ invoice_number: e.target.value })} className={adminInputClass} placeholder="Optional" />
             </AdminField>
             <AdminField label="Invoice date">
-              <input type="date" value={form.invoice_date} onChange={(e) => set({ invoice_date: e.target.value })} className={adminInputClass} />
+              <DateInput value={form.invoice_date} onChange={(v) => set({ invoice_date: v })} className={adminInputClass} />
             </AdminField>
             <AdminField label="Payment" hint={'On credit books this to Accounts Payable for the supplier.'}>
               <select value={form.payment_method} onChange={(e) => set({ payment_method: e.target.value })} className={adminInputClass}>
@@ -251,7 +253,7 @@ export default function ReceiveDeliveryModal({ purchase, items, suppliers, emplo
           {showDetails && (
             <div className="grid grid-cols-1 gap-4 rounded-xl border border-gray-200 bg-gray-50 p-4 sm:grid-cols-2 lg:grid-cols-3">
               <AdminField label="Expected delivery date">
-                <input type="date" value={form.expected_delivery_date} onChange={(e) => set({ expected_delivery_date: e.target.value })} className={adminInputClass} />
+                <DateInput value={form.expected_delivery_date} onChange={(v) => set({ expected_delivery_date: v })} className={adminInputClass} />
               </AdminField>
               <AdminField label="Received by">
                 <select value={form.received_by} onChange={(e) => set({ received_by: e.target.value })} className={adminInputClass}>

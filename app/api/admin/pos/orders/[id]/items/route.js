@@ -70,7 +70,7 @@ export async function POST(request, context) {
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, CURRENT_TIMESTAMP)`,
           [orderId, menuId, menuId, displayName, variant, quantity, price, price * quantity, raw.special_instructions || null]
         );
-        resolved.push({ menu_item_id: menuId, item_name: displayName, quantity });
+        resolved.push({ menu_item_id: menuId, item_name: displayName, variant_name: variant, quantity });
       }
       await deductStockForItems(tx, resolved, { orderId, performedBy: auth.user.id });
       await tx.run('UPDATE orders SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', [orderId]);
@@ -122,9 +122,9 @@ export async function PATCH(request, context) {
       const price = Number(item.price || 0);
       const delta = newQty - Number(item.quantity);
       if (delta > 0) {
-        await deductStockForItems(tx, [{ menu_item_id: item.menu_item_id || item.item_id, item_name: item.item_name, quantity: delta }], { orderId });
+        await deductStockForItems(tx, [{ menu_item_id: item.menu_item_id || item.item_id, item_name: item.item_name, variant_name: item.variant_name, quantity: delta }], { orderId });
       } else if (delta < 0) {
-        await restoreStockForItems(tx, [{ menu_item_id: item.menu_item_id || item.item_id, item_name: item.item_name, quantity: -delta }], { orderId, reason: reopened ? 'Reopened quantity reduced' : 'Unsent quantity reduced' });
+        await restoreStockForItems(tx, [{ menu_item_id: item.menu_item_id || item.item_id, item_name: item.item_name, variant_name: item.variant_name, quantity: -delta }], { orderId, reason: reopened ? 'Reopened quantity reduced' : 'Unsent quantity reduced' });
       }
       // Keep sent_quantity ≤ quantity so Print KOT only covers truly new portions.
       const nextSent = reopened && sentQty > 0 ? Math.min(sentQty, newQty) : Math.min(sentQty, newQty);
@@ -167,7 +167,7 @@ export async function DELETE(request, context) {
       if (Number(item.sent_quantity || 0) > 0 && !reopened) {
         throw Object.assign(new Error('This item was already sent on a KOT — cancel it with a reason instead.'), { status: 409, code: 'already_sent' });
       }
-      await restoreStockForItems(tx, [{ menu_item_id: item.menu_item_id || item.item_id, item_name: item.item_name, quantity: item.quantity }], { orderId, reason: reopened ? 'Reopened item removed' : 'Unsent item removed' });
+      await restoreStockForItems(tx, [{ menu_item_id: item.menu_item_id || item.item_id, item_name: item.item_name, variant_name: item.variant_name, quantity: item.quantity }], { orderId, reason: reopened ? 'Reopened item removed' : 'Unsent item removed' });
       await tx.run('DELETE FROM order_items WHERE id = ?', [itemId]);
     });
 

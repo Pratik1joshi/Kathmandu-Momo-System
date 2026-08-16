@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   DollarSign, Receipt, Clock, CheckCircle, TrendingUp,
-  Calendar, CreditCard, AlertCircle, Users, ShoppingBag, Trash2, ClipboardList
+  Calendar, CreditCard, AlertCircle, Users, ShoppingBag, Trash2, ClipboardList, LayoutGrid
 } from 'lucide-react';
 import { formatNepalClock, getNepaliDateString } from '@/lib/time-utils';
 import { isOpenOrder, canCashierBill, normalizeOrderStatus } from '@/lib/restaurant-status';
@@ -13,6 +13,11 @@ import { authedRequest } from '@/lib/authed-fetch';
 import WastageModal from '@/components/inventory/wastage-modal';
 import WastageHistoryModal from '@/components/inventory/wastage-history-modal';
 import AdminLayout from '@/components/admin/admin-layout';
+import { formatCurrency } from '@/lib/currency';
+import {
+  FloorTableBoard,
+  isRunningTable,
+} from '@/components/pos/floor-table-board';
 
 function orderAmount(order) {
   const n = Number(order?.total_amount ?? order?.grand_total ?? 0);
@@ -49,6 +54,10 @@ export default function CashierDashboard() {
   const [filter, setFilter] = useState('active'); // ready, active, completed, all
   const [showWastageLog, setShowWastageLog] = useState(false);
   const [showWastageHistory, setShowWastageHistory] = useState(false);
+  const [tables, setTables] = useState([]);
+  const [tableRoomFilter, setTableRoomFilter] = useState('all');
+  const [tableStatusFilter, setTableStatusFilter] = useState('all');
+  const [menuTable, setMenuTable] = useState(null);
 
   useEffect(() => {
     checkAuth();
@@ -57,10 +66,33 @@ export default function CashierDashboard() {
   useEffect(() => {
     if (user) {
       fetchData();
-      const interval = setInterval(fetchData, 5000);
+      fetchTables();
+      const interval = setInterval(() => {
+        fetchData();
+        fetchTables();
+      }, 5000);
       return () => clearInterval(interval);
     }
   }, [filter, user]);
+
+  const fetchTables = useCallback(async () => {
+    try {
+      const res = await authedRequest('/api/admin/pos/tables');
+      if (!res.ok) return;
+      const data = await res.json();
+      setTables(data.tables || data.data || []);
+    } catch {
+      /* keep last good list */
+    }
+  }, []);
+
+  const handleTableClick = (table) => {
+    if (isRunningTable(table)) {
+      setMenuTable(table);
+      return;
+    }
+    router.push(`/cashier/pos?table=${table.id}`);
+  };
 
   const checkAuth = async () => {
     try {
@@ -274,6 +306,92 @@ export default function CashierDashboard() {
       </div>
 
       <div className="max-w-7xl mx-auto px-2 sm:px-4 lg:px-8 py-3 sm:py-6">
+        {/* Floor board — take table orders like admin */}
+        <section className="mb-4 sm:mb-6 rounded-lg border border-gray-200 bg-white p-4 sm:p-6 shadow-sm">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <LayoutGrid className="h-5 w-5 text-cyan-600" />
+              <div>
+                <h2 className="text-base sm:text-lg font-bold text-gray-900">Floor tables</h2>
+                <p className="text-xs text-gray-500">Available is green, running is blue, and reserved is red. Tap a table to order or bill.</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => { fetchTables(); fetchData(); }}
+              className="text-xs font-semibold text-cyan-700 hover:underline"
+            >
+              Refresh
+            </button>
+          </div>
+          {tables.length === 0 ? (
+            <p className="py-8 text-center text-sm text-gray-400">No tables configured yet.</p>
+          ) : (
+            <FloorTableBoard
+              tables={tables}
+              roomFilter={tableRoomFilter}
+              statusFilter={tableStatusFilter}
+              onRoomFilter={setTableRoomFilter}
+              onStatusFilter={setTableStatusFilter}
+              onTableClick={handleTableClick}
+            />
+          )}
+        </section>
+
+        {menuTable && (
+          <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-4">
+            <button type="button" className="absolute inset-0" aria-label="Close" onClick={() => setMenuTable(null)} />
+            <div className="relative z-10 w-full max-w-md rounded-t-2xl sm:rounded-2xl bg-white p-5 shadow-2xl">
+              <h3 className="text-lg font-bold text-gray-900">Table {menuTable.table_number}</h3>
+              <p className="mb-4 text-sm text-gray-500">
+                {(menuTable.party_count || 1)} active part{(menuTable.party_count || 1) === 1 ? 'y' : 'ies'}
+              </p>
+              <div className="space-y-2">
+                {(menuTable.parties || []).map((p) => (
+                  <button
+                    key={p.order_id}
+                    type="button"
+                    onClick={() => router.push(`/cashier/pos?order=${p.order_id}`)}
+                    className="flex w-full items-center justify-between rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-left hover:border-sky-400"
+                  >
+                    <div>
+                      <p className="font-semibold text-gray-900">{p.party_label || 'Party'}</p>
+                      <p className="text-xs text-gray-500">Open POS · {p.order_number}</p>
+                    </div>
+                    <span className="font-bold text-sky-800">{formatCurrency(p.amount)}</span>
+                  </button>
+                ))}
+                {!(menuTable.parties || []).length && menuTable.current_order_id && (
+                  <button
+                    type="button"
+                    onClick={() => router.push(`/cashier/pos?order=${menuTable.current_order_id}`)}
+                    className="w-full rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-left font-semibold text-sky-900"
+                  >
+                    Open order in POS
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuTable(null);
+                    router.push(`/cashier/pos?table=${menuTable.id}&new_party=1`);
+                  }}
+                  className="w-full rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-left font-semibold text-violet-900"
+                >
+                  Add another party
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMenuTable(null)}
+                  className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-600"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Stats Grid */}
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 sm:gap-4 mb-4 sm:mb-6">
           <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-3 sm:p-5">

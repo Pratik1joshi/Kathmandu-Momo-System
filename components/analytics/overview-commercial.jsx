@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { ArrowRight, BadgeDollarSign, ReceiptText, ShoppingBasket } from 'lucide-react';
 import { BarChart, ChartCard, ChartGrid, RankBars, TrendChart } from '@/components/admin/report-kit';
 import DonutChart, { DEFAULT_COLORS } from '@/components/admin/donut-chart';
+import { financialTone } from '@/lib/financial-tone';
 import {
   CompactMetrics, DashboardSection, Metric, PrimaryKpis, SectionHeading,
   TableWrap, money, percent,
@@ -44,12 +45,12 @@ export function SalesPerformance({ data }) {
           <TableWrap minWidth="620px">
             <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-400"><tr><th className="px-4 py-2.5">Channel</th><th className="px-4 py-2.5 text-right">Orders</th><th className="px-4 py-2.5 text-right">Sales</th><th className="px-4 py-2.5 text-right">Average</th><th className="px-4 py-2.5 text-right">Share</th></tr></thead>
             <tbody className="divide-y divide-gray-100">
-              {(data.channels || []).map((row) => <tr key={row.channel}><td className="px-4 py-3 font-medium text-gray-900">{row.channel}</td><td className="px-4 py-3 text-right tabular-nums">{row.orders}</td><td className="px-4 py-3 text-right tabular-nums">{money(row.sales)}</td><td className="px-4 py-3 text-right tabular-nums">{money(row.averageOrder)}</td><td className="px-4 py-3 text-right tabular-nums">{percent(row.share)}</td></tr>)}
+              {(data.channels || []).map((row) => <tr key={row.channel}><td className="px-4 py-3 font-medium text-gray-900">{row.channel}</td><td className="px-4 py-3 text-right tabular-nums">{row.orders}</td><td className="px-4 py-3 text-right font-medium tabular-nums text-emerald-700">{money(row.sales)}</td><td className="px-4 py-3 text-right tabular-nums text-emerald-700">{money(row.averageOrder)}</td><td className="px-4 py-3 text-right tabular-nums">{percent(row.share)}</td></tr>)}
             </tbody>
           </TableWrap>
         </div>
         <div className="grid grid-cols-2 gap-4 rounded-xl border border-gray-100 bg-gray-50 p-4">
-          <Metric label="Gross Item Sales" value={data.totals.grossSales} format="currency" />
+          <Metric label="Gross Item Sales" value={data.totals.itemSales} format="currency" />
           <Metric label="Net Sales" value={data.totals.netSales} format="currency" tone="positive" />
           <Metric label="Discount" value={data.totals.discounts} format="currency" />
           <Metric label="Tax + Service" value={data.totals.tax + data.totals.serviceCharge} format="currency" />
@@ -98,7 +99,10 @@ export function PaymentFinance({ data }) {
         {[
           ['Gross Profit', finance.grossProfit], ['Operating Expenses', finance.operatingExpenses], ['Operating Profit', finance.operatingProfit], ['Cash in Hand', finance.cashBalance],
           ['Bank / Online', finance.bankBalance], ['Receivables', finance.accountsReceivable], ['Payables', finance.accountsPayable], ['COGS', finance.cogs],
-        ].map(([label, value]) => <div key={label}><p className="text-xs text-gray-400">{label}</p><p className="mt-1 truncate text-base font-semibold tabular-nums">{money(value)}</p></div>)}
+        ].map(([label, value]) => {
+          const tone = financialTone({ label, value });
+          return <div key={label}><p className="text-xs text-gray-400">{label}</p><p className={`mt-1 truncate text-base font-semibold tabular-nums ${tone === 'positive' ? 'text-emerald-400' : tone === 'negative' ? 'text-rose-400' : 'text-white'}`}>{money(value)}</p></div>;
+        })}
       </div>
       <div className="mt-3 flex flex-wrap gap-4 text-sm font-medium">
         <Link href="/admin/financial-reports?report=pnl" className="inline-flex items-center gap-1 text-gray-600 hover:text-gray-950"><BadgeDollarSign className="h-4 w-4" /> View P&amp;L</Link>
@@ -146,7 +150,7 @@ export function MenuPerformance({ data }) {
       <div className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
         <TableWrap minWidth="680px">
           <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-400"><tr><th className="px-4 py-2.5">Item</th><th className="px-4 py-2.5">Category</th><th className="px-4 py-2.5 text-right">Qty</th><th className="px-4 py-2.5 text-right">Orders</th><th className="px-4 py-2.5 text-right">Revenue</th></tr></thead>
-          <tbody className="divide-y divide-gray-100">{(menu.topItems || []).map((row) => <tr key={`${row.item}-${row.category}`}><td className="px-4 py-3 font-medium text-gray-900">{row.item}</td><td className="px-4 py-3 text-gray-500">{row.category}</td><td className="px-4 py-3 text-right tabular-nums">{row.quantity}</td><td className="px-4 py-3 text-right tabular-nums">{row.orders}</td><td className="px-4 py-3 text-right font-medium tabular-nums">{money(row.revenue)}</td></tr>)}</tbody>
+          <tbody className="divide-y divide-gray-100">{(menu.topItems || []).map((row) => <tr key={`${row.item}-${row.category}`}><td className="px-4 py-3 font-medium text-gray-900">{row.item}</td><td className="px-4 py-3 text-gray-500">{row.category}</td><td className="px-4 py-3 text-right tabular-nums">{row.quantity}</td><td className="px-4 py-3 text-right tabular-nums">{row.orders}</td><td className="px-4 py-3 text-right font-medium tabular-nums text-emerald-700">{money(row.revenue)}</td></tr>)}</tbody>
         </TableWrap>
         <ChartCard title="Category Mix" isEmpty={!categoryBars.length} empty="No category sales."><RankBars data={categoryBars} color="slate" format="currency" /></ChartCard>
       </div>

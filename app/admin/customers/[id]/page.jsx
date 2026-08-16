@@ -7,6 +7,7 @@ import AdminLayout from '@/components/admin/admin-layout';
 import { ArrowLeft, Phone, Mail, MapPin, CreditCard, Receipt, ShoppingBag, Loader2 } from 'lucide-react';
 import { formatNepalDateTime } from '@/lib/report-dates.js';
 import { formatCurrency } from '@/lib/currency';
+import { orderTypeLabel } from '@/lib/order-types';
 
 function authHeaders() {
   const token = typeof window !== 'undefined' ? localStorage.getItem('pos_token') : null;
@@ -132,10 +133,10 @@ export default function CustomerProfilePage() {
               headers={['Order', 'Type', 'Table', 'Total', 'Status', 'When (NPT)']}
               rows={orders.map((o) => [
                 <Link key="n" href={`/admin/orders/${o.id}`} className="font-medium text-blue-700 hover:underline">{o.order_number}</Link>,
-                <span className="capitalize">{String(o.order_type || '').replace(/_/g, ' ')}</span>,
+                orderTypeLabel(o),
                 o.table_number || '—',
                 formatCurrency(o.total),
-                <span className="capitalize">{String(o.status || '').replace(/_/g, ' ')}</span>,
+                <span key="status" className="capitalize">{String(o.status || '').replace(/_/g, ' ')}</span>,
                 formatNepalDateTime(o.created_at),
               ])}
             />
@@ -155,7 +156,7 @@ export default function CustomerProfilePage() {
                   b.order_number || '—',
                   formatCurrency(b.grand_total),
                   formatCurrency(b.outstanding_amount || 0),
-                  <span className="capitalize">{String(b.payment_status || b.status || '').replace(/_/g, ' ')}</span>,
+                  <span key="status" className="capitalize">{String(b.payment_status || b.status || '').replace(/_/g, ' ')}</span>,
                   formatNepalDateTime(b.created_at),
                 ])}
               />
@@ -167,7 +168,7 @@ export default function CustomerProfilePage() {
               headers={['When (NPT)', 'Type', 'Invoice', 'Debit', 'Credit', 'Balance', 'Note']}
               rows={ledger.map((e) => [
                 formatNepalDateTime(e.created_at),
-                <span className="capitalize">{String(e.type || '').replace(/_/g, ' ')}</span>,
+                <span key="type" className="capitalize">{String(e.type || '').replace(/_/g, ' ')}</span>,
                 e.invoice || '—',
                 e.debit ? formatCurrency(e.debit) : '—',
                 e.credit ? formatCurrency(e.credit) : '—',
@@ -183,7 +184,7 @@ export default function CustomerProfilePage() {
               rows={payments.map((p) => [
                 formatNepalDateTime(p.created_at),
                 p.bill_number || '—',
-                <span className="capitalize">{p.method}{p.provider ? ` · ${p.provider}` : ''}</span>,
+                <span key="method" className="capitalize">{p.method}{p.provider ? ` · ${p.provider}` : ''}</span>,
                 formatCurrency(p.amount),
                 p.reference || '—',
               ])}

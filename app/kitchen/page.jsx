@@ -240,58 +240,48 @@ export default function KitchenPage() {
   return (
     <div className="min-h-screen bg-slate-100">
       <header className="sticky top-0 z-20 bg-white border-b border-slate-200">
-        <div className="max-w-[1600px] mx-auto px-4 py-3 flex items-center gap-3">
-          <div className="h-10 w-10 rounded-xl bg-slate-900 text-white flex items-center justify-center">
+        <div className="max-w-[1600px] mx-auto px-4 py-3 flex flex-wrap items-center gap-2 sm:gap-3">
+          <div className="h-10 w-10 rounded-xl bg-slate-900 text-white flex items-center justify-center shrink-0">
             <ChefHat className="w-5 h-5" />
           </div>
-          <div className="flex-1 min-w-0">
+          <div className="min-w-0 mr-auto">
             <h1 className="font-bold text-slate-900">Kitchen</h1>
             <p className="text-xs text-slate-500 truncate">{user?.full_name || 'Station'}</p>
           </div>
           <button
             type="button"
             onClick={() => router.push('/kitchen/kots')}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200"
-            aria-label="Ticket history"
-            title="Ticket history"
+            className="flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-slate-100 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-200"
           >
-            <Printer className="w-4 h-4" />
+            <Printer className="w-3.5 h-3.5" /> <span>Tickets</span>
           </button>
           <button
             type="button"
             onClick={() => router.push('/kitchen/inventory')}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200"
-            aria-label="Stock levels"
-            title="Stock levels"
+            className="flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-slate-100 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-200"
           >
-            <Warehouse className="w-4 h-4" />
+            <Warehouse className="w-3.5 h-3.5" /> <span>Stock</span>
           </button>
           <button
             type="button"
             onClick={() => router.push('/kitchen/recipes')}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200"
-            aria-label="Kitchen recipes"
-            title="Kitchen recipes"
+            className="flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-slate-100 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-200"
           >
-            <BookOpen className="w-4 h-4" />
+            <BookOpen className="w-3.5 h-3.5" /> <span>Recipes</span>
           </button>
           <button
             type="button"
             onClick={() => setShowWastageHistory(true)}
-            className="flex h-10 w-10 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-slate-100 text-xs font-semibold text-slate-700 hover:bg-slate-200 xl:w-auto xl:px-3"
-            aria-label="Wastage history"
-            title="Wastage history"
+            className="flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-slate-100 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-200"
           >
-            <ClipboardList className="w-3.5 h-3.5" /> <span className="hidden xl:inline">Wastage</span>
+            <ClipboardList className="w-3.5 h-3.5" /> <span>Wastage</span>
           </button>
           <button
             type="button"
             onClick={() => setShowWastage(true)}
-            className="flex h-10 w-10 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-rose-50 text-xs font-semibold text-rose-700 hover:bg-rose-100 xl:w-auto xl:px-3"
-            aria-label="Log wastage"
-            title="Log wastage"
+            className="flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-rose-50 px-3 text-xs font-semibold text-rose-700 hover:bg-rose-100"
           >
-            <Trash className="w-3.5 h-3.5" /> <span className="hidden xl:inline">Log Wastage</span>
+            <Trash className="w-3.5 h-3.5" /> <span>Log Wastage</span>
           </button>
           <LogoutButton onLogout={logout} iconOnly />
         </div>

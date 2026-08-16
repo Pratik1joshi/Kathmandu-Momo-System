@@ -3,6 +3,7 @@
 import { ArrowDownRight, ArrowUpRight, Minus } from 'lucide-react';
 import { formatValue, KpiCards } from '@/components/admin/report-kit';
 import { formatNepalDateTime } from '@/lib/report-dates';
+import { financialToneClass } from '@/lib/financial-tone';
 
 export const money = (value) => formatValue(value, 'currency');
 export const count = (value) => formatValue(value, 'number');
@@ -73,6 +74,7 @@ export function PrimaryKpis({ rows }) {
     label: row.label,
     value: row.value,
     format: row.format,
+    tone: row.tone,
     change: row.comparison?.percent ?? null,
     sub: row.note || (row.comparison
       ? `${row.comparison.absolute >= 0 ? '+' : ''}${formatValue(row.comparison.absolute, row.format)} vs last period`
@@ -89,7 +91,7 @@ export function CompactMetrics({ rows }) {
       {rows.map((row) => (
         <div key={row.key} className="flex min-w-[140px] flex-1 items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-4 py-2.5 shadow-sm">
           <span className="text-xs text-gray-500">{row.label}</span>
-          <span className="text-sm font-semibold tabular-nums text-gray-900">{formatValue(row.value, row.format)}</span>
+          <span className={`text-sm font-semibold tabular-nums ${row.format === 'currency' ? financialToneClass(row) : 'text-gray-900'}`}>{formatValue(row.value, row.format)}</span>
         </div>
       ))}
     </div>
@@ -103,7 +105,7 @@ export function Metric({ label, value, format = 'number', detail, tone = 'defaul
   return (
     <div className="min-w-0">
       <p className="text-xs text-gray-500">{label}</p>
-      <p className={`mt-0.5 truncate text-lg font-semibold tabular-nums ${tones[tone] || tones.default}`}>{formatValue(value, format)}</p>
+      <p className={`mt-0.5 truncate text-lg font-semibold tabular-nums ${format === 'currency' && tone === 'default' ? financialToneClass({ label, value }) : tones[tone] || tones.default}`}>{formatValue(value, format)}</p>
       {detail && <p className="mt-0.5 text-xs text-gray-400">{detail}</p>}
     </div>
   );
@@ -117,7 +119,7 @@ export function StatCell({ label, value, format = 'number', tone = 'default' }) 
   return (
     <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
       <p className="text-xs text-gray-500">{label}</p>
-      <p className={`mt-1 truncate text-lg font-semibold tabular-nums ${tones[tone] || tones.default}`}>{formatValue(value, format)}</p>
+      <p className={`mt-1 truncate text-lg font-semibold tabular-nums ${format === 'currency' && tone === 'default' ? financialToneClass({ label, value }) : tones[tone] || tones.default}`}>{formatValue(value, format)}</p>
     </div>
   );
 }

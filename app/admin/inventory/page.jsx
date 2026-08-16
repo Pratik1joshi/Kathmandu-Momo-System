@@ -47,6 +47,7 @@ export default function InventoryPage() {
   const [items, setItems] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [managedCategories, setManagedCategories] = useState([]);
+  const [menuItems, setMenuItems] = useState([]);
   const [movements, setMovements] = useState([]);
   const [wastageSummary, setWastageSummary] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -64,7 +65,7 @@ export default function InventoryPage() {
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [inv, sup, mov, waste, cats] = await Promise.all([
+      const [inv, sup, mov, waste, cats, menu] = await Promise.all([
         apiJson('/api/admin/inventory?include_archived=1'),
         apiJson('/api/admin/suppliers').catch(() => ({ suppliers: [] })),
         // Only the counts that disagreed, filtered in SQL — this list shows 20.
@@ -73,10 +74,12 @@ export default function InventoryPage() {
         // server's own rolling totals rather than summing the whole log.
         apiJson('/api/admin/wastage?page_size=1').catch(() => ({ summary: null })),
         apiJson('/api/admin/inventory-categories').catch(() => ({ categories: [] })),
+        apiJson('/api/admin/products').catch(() => ({ products: [] })),
       ]);
       setItems(inv.items || []);
       setSuppliers(sup.suppliers || []);
       setManagedCategories(cats.categories || []);
+      setMenuItems(menu.products || []);
       setMovements(mov.movements || []);
       setWastageSummary(waste.summary || null);
     } catch (error) {
@@ -257,6 +260,13 @@ export default function InventoryPage() {
             onCommit={(v) => patchItem(row, { supplier: v })}
           />
         ),
+      },
+      {
+        key: 'linked_menu_item_name',
+        label: 'Menu link',
+        render: (row) => row.linked_menu_item_name
+          ? <StatusBadge tone="blue">{row.linked_menu_item_name}</StatusBadge>
+          : <span className="text-xs text-gray-400">Recipe / not linked</span>,
       },
       {
         key: 'min_stock_level',
@@ -464,6 +474,7 @@ export default function InventoryPage() {
           item={formItem.id ? formItem : null}
           suppliers={suppliers}
           categories={categories}
+          menuItems={menuItems}
           onClose={() => setFormItem(null)}
           onSaved={fetchAll}
         />
