@@ -43,6 +43,10 @@ export const metadata = {
     description: SITE_DESCRIPTION,
     images: [RESTAURANT.logo],
   },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+  },
 }
 
 export const viewport = {

@@ -12,12 +12,6 @@ import CustomerModePicker, {
   validateCustomerSelection,
 } from '@/components/billing/customer-mode-picker'
 
-const takeawayCustomerEmpty = {
-  ...emptyCustomerSelection,
-  mode: 'customer',
-  name: '',
-}
-
 function NewOrderContent() {
   const { apiCall } = useAuth()
   const router = useRouter()
@@ -33,8 +27,8 @@ function NewOrderContent() {
   const [tables, setTables] = useState([])
   const [showTableDialog, setShowTableDialog] = useState(false)
   const [showCart, setShowCart] = useState(false)
-  const [orderType, setOrderType] = useState('dine-in')
-  const [customerSelection, setCustomerSelection] = useState(takeawayCustomerEmpty)
+  const [orderType, setOrderType] = useState(() => (searchParams.get('type') === 'takeaway' ? 'takeaway' : 'dine-in'))
+  const [customerSelection, setCustomerSelection] = useState(emptyCustomerSelection)
   const [submitting, setSubmitting] = useState(false)
   const [existingOrderId, setExistingOrderId] = useState(null)
   const [kotNote, setKotNote] = useState('')
@@ -111,6 +105,16 @@ function NewOrderContent() {
       /* ignore */
     }
   }
+
+  const availableItems = menuItems.filter((item) => {
+    const available = item.is_available === 1 || item.is_available === true || item.is_available === '1'
+    return available
+  })
+
+  const categoryCounts = availableItems.reduce((map, item) => {
+    if (item.category) map.set(item.category, (map.get(item.category) || 0) + 1)
+    return map
+  }, new Map())
 
   const filteredItems = menuItems.filter((item) => {
     const matchesCategory = selectedCategory === 'all' || item.category === selectedCategory
@@ -254,9 +258,9 @@ function NewOrderContent() {
     }
   }
 
-  const CartPanel = ({ mobile }) => (
-    <div className={`flex flex-col ${mobile ? 'h-full' : 'h-[calc(100vh-8rem)]'}`}>
-      <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+  const renderCartPanel = (mobile) => (
+    <div className={`flex flex-col min-h-0 ${mobile ? 'max-h-[85vh]' : 'h-[calc(100vh-8rem)]'}`}>
+      <div className="shrink-0 px-4 py-3 border-b border-slate-100 flex items-center justify-between">
         <h2 className="font-semibold text-slate-900 flex items-center gap-2">
           <ShoppingCart className="w-4 h-4" />
           Cart ({cartItemCount})
@@ -267,7 +271,7 @@ function NewOrderContent() {
           </button>
         )}
       </div>
-      <div className="flex-1 overflow-y-auto p-3 space-y-2">
+      <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-2">
         {cart.length === 0 ? (
           <p className="text-center text-slate-400 py-12 text-sm">Tap a dish to add it</p>
         ) : (
@@ -302,7 +306,7 @@ function NewOrderContent() {
           ))
         )}
       </div>
-      <div className="p-4 border-t border-slate-100 space-y-3 bg-white">
+      <div className="shrink-0 p-4 border-t border-slate-100 space-y-3 bg-white">
         <div>
           <label className="mb-1 block text-xs font-semibold text-slate-600">
             KOT Note / Special Request
@@ -368,7 +372,7 @@ function NewOrderContent() {
                   type="button"
                   onClick={() => {
                     setOrderType(t)
-                    if (t === 'takeaway') setCustomerSelection(takeawayCustomerEmpty)
+                    if (t === 'takeaway') setCustomerSelection(emptyCustomerSelection)
                   }}
                   className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize ${
                     orderType === t ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'
@@ -398,7 +402,6 @@ function NewOrderContent() {
               value={customerSelection}
               onChange={setCustomerSelection}
               compact
-              hideWalkIn
             />
           </div>
         )}
@@ -416,31 +419,31 @@ function NewOrderContent() {
                 className="w-full h-11 pl-10 pr-4 rounded-xl border border-slate-200 bg-white text-sm"
               />
             </div>
-            <div className="flex gap-2 overflow-x-auto pb-1">
+            <div className="flex flex-wrap gap-2">
               <button
                 type="button"
                 onClick={() => setSelectedCategory('all')}
-                className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold ${
-                  selectedCategory === 'all' ? 'bg-slate-900 text-white' : 'bg-white border border-slate-200 text-slate-600'
+                className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                  selectedCategory === 'all' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                 }`}
               >
-                All
+                All ({availableItems.length})
               </button>
               {categories.map((cat) => (
                 <button
                   key={cat}
                   type="button"
                   onClick={() => setSelectedCategory(cat)}
-                  className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold ${
-                    selectedCategory === cat ? 'bg-slate-900 text-white' : 'bg-white border border-slate-200 text-slate-600'
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                    selectedCategory === cat ? 'bg-slate-900 text-white border-slate-900' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                   }`}
                 >
-                  {cat}
+                  {cat} ({categoryCounts.get(cat) || 0})
                 </button>
               ))}
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-1.5">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-3 xl:grid-cols-4 gap-2 sm:gap-3">
               {filteredItems.map((item) => {
                 const id = item.item_id || item.id
                 const qty = getQty(id)
@@ -451,31 +454,31 @@ function NewOrderContent() {
                     key={id}
                     type="button"
                     onClick={() => pickItem(item)}
-                    className={`text-left rounded-lg bg-white border overflow-hidden transition-transform duration-150 active:scale-[0.98] ${
+                    className={`text-left rounded-xl bg-white border-2 overflow-hidden shadow-sm transition-transform duration-150 active:scale-[0.97] hover:border-slate-400 hover:shadow-md ${
                       pulsing ? 'ring-2 ring-slate-900' : ''
                     } ${qty > 0 ? 'border-slate-900' : 'border-slate-200'}`}
                   >
-                    <div className="relative h-16 sm:h-20 bg-slate-100">
+                    <div className="relative aspect-square bg-slate-100">
                       <MenuItemImage
                         src={item.image_url}
                         alt={name}
-                        size="sm"
+                        size="card"
                         className="!w-full !h-full !rounded-none object-cover"
                       />
                       {qty > 0 && (
-                        <span className="absolute top-1 right-1 min-w-5 h-5 px-1 rounded-full bg-slate-900 text-white text-[10px] font-bold flex items-center justify-center">
+                        <span className="absolute top-1.5 right-1.5 min-w-6 h-6 px-1.5 rounded-full bg-slate-900 text-white text-xs font-bold flex items-center justify-center shadow">
                           {qty}
                         </span>
                       )}
                     </div>
-                    <div className="px-1.5 py-1.5">
-                      <p className="font-semibold text-[11px] sm:text-xs text-slate-900 leading-snug line-clamp-2">
+                    <div className="px-2 py-2 sm:px-2.5 sm:py-2.5">
+                      <p className="font-semibold text-xs sm:text-sm text-slate-900 leading-snug line-clamp-2 min-h-[2.2em]">
                         {name}
                       </p>
                       {item.variants?.length > 0 ? (
-                        <p className="mt-0.5 text-[11px] font-bold text-slate-900">{item.variants.length} options</p>
+                        <p className="mt-1 text-xs sm:text-sm font-bold text-blue-600">{item.variants.length} options</p>
                       ) : (
-                        <p className="mt-0.5 text-[11px] font-bold text-slate-900">Rs {item.price}</p>
+                        <p className="mt-1 text-xs sm:text-sm font-bold text-blue-600">Rs {item.price}</p>
                       )}
                     </div>
                   </button>
@@ -489,7 +492,7 @@ function NewOrderContent() {
 
           <div className="hidden lg:block">
             <div className="sticky top-24 rounded-2xl bg-white border border-slate-200 shadow-sm overflow-hidden">
-              <CartPanel />
+              {renderCartPanel(false)}
             </div>
           </div>
         </div>
@@ -513,8 +516,8 @@ function NewOrderContent() {
 
       {showCart && (
         <div className="lg:hidden fixed inset-0 z-50 bg-black/40 flex items-end">
-          <div className="w-full max-h-[85vh] bg-white rounded-t-3xl overflow-hidden">
-            <CartPanel mobile />
+          <div className="w-full max-h-[85vh] bg-white rounded-t-3xl overflow-hidden flex flex-col">
+            {renderCartPanel(true)}
           </div>
         </div>
       )}

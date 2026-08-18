@@ -62,8 +62,8 @@ export async function POST(request) {
     const result = await db.run(`
       INSERT INTO menu_items (
         name, category_id, base_price, description, image_url,
-        is_available, is_vegetarian, preparation_time, unit
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        is_available, is_vegetarian, preparation_time, unit, cost
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       data.name,
       data.category_id || 1,
@@ -74,6 +74,7 @@ export async function POST(request) {
       data.is_vegetarian ? 1 : 0,
       data.preparation_time || 15,
       data.unit || null,
+      data.cost === '' || data.cost == null ? null : Number(data.cost),
     ]);
 
     const menuItemId = result.lastInsertRowid;

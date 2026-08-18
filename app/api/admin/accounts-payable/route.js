@@ -3,7 +3,7 @@ import Database from '@/lib/db/index';
 import { requireAuth, handleRouteError } from '@/lib/api-guard.js';
 import { ensureAccountingSchema } from '@/lib/accounting.js';
 import { listBankAccounts } from '@/lib/accounting-cash.js';
-import { supplierPayables, supplierStatement, liabilityLedger, liabilityAgeing, paySupplier } from '@/lib/accounting-suppliers.js';
+import { supplierPayables, supplierStatement, liabilityLedger, liabilityAgeing, paySupplier, supplierOpenInvoices } from '@/lib/accounting-suppliers.js';
 
 export async function GET(request) {
   try {
@@ -15,7 +15,11 @@ export async function GET(request) {
 
     const supplierId = q.get('supplier_id');
     if (supplierId) {
-      return NextResponse.json({ statement: await supplierStatement(db, supplierId, { from: q.get('from'), to: q.get('to') }) });
+      const [statement, invoices] = await Promise.all([
+        supplierStatement(db, supplierId, { from: q.get('from'), to: q.get('to') }),
+        supplierOpenInvoices(db, supplierId),
+      ]);
+      return NextResponse.json({ statement, invoices });
     }
     const [payables, ageing, liabilities, banks] = await Promise.all([
       supplierPayables(db),

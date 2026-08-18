@@ -38,7 +38,7 @@ export async function PUT(request, context) {
       UPDATE menu_items
       SET name = ?, category_id = ?, base_price = ?,
           description = ?, image_url = ?, is_available = ?, is_vegetarian = ?,
-          preparation_time = ?, unit = ?,
+          preparation_time = ?, unit = ?, cost = ?,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `, [
@@ -51,6 +51,7 @@ export async function PUT(request, context) {
       data.is_vegetarian ? 1 : 0,
       data.preparation_time || 15,
       data.unit || null,
+      data.cost === '' || data.cost == null ? null : Number(data.cost),
       id,
     ]);
 

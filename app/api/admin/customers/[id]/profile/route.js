@@ -43,7 +43,7 @@ export async function GET(request, { params }) {
       ).catch(() => []),
       db.all(
         `SELECT b.id, b.bill_number, b.grand_total, b.status, b.payment_status,
-                b.outstanding_amount, b.created_at, b.paid_at, o.order_number
+                b.outstanding_amount, b.created_at, b.paid_at, o.order_number, o.id AS order_id
          FROM bills b
          JOIN orders o ON o.id = b.order_id
          WHERE b.customer_id = ? OR o.customer_id = ?
@@ -98,6 +98,13 @@ export async function GET(request, { params }) {
       (b) => Number(b.outstanding_amount || 0) > 0.01 || String(b.payment_status || '') === 'partially_paid'
     );
 
+    // A bill counts as "on credit" if it ever posted a credit_sale ledger entry,
+    // regardless of whether it has since been paid off — the badge marks history, not current balance.
+    const creditBillIds = new Set((ledgerRows || []).filter((r) => r.entry_type === 'credit_sale').map((r) => r.bill_id));
+    const billsWithCredit = (bills || []).map((b) => ({ ...b, was_credit: creditBillIds.has(b.id) }));
+    const creditOrderIds = new Set(billsWithCredit.filter((b) => b.was_credit).map((b) => b.order_id));
+    const ordersWithCredit = (orders || []).map((o) => ({ ...o, was_credit: creditOrderIds.has(o.id) }));
+
     return NextResponse.json({
       success: true,
       customer: {
@@ -118,8 +125,8 @@ export async function GET(request, { params }) {
         ledger_balance: running,
         outstanding_invoices: outstandingBills.length,
       },
-      orders: orders || [],
-      bills: bills || [],
+      orders: ordersWithCredit,
+      bills: billsWithCredit,
       outstanding_bills: outstandingBills,
       ledger,
       payments: (payments || []).map((p) => ({

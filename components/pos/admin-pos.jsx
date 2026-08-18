@@ -343,6 +343,15 @@ export default function AdminPos() {
     });
   }, [products, searchTerm, selectedCategory]);
 
+  const categoryCounts = useMemo(() => {
+    const map = new Map();
+    for (const p of products) {
+      const key = String(p.category_id ?? '');
+      map.set(key, (map.get(key) || 0) + 1);
+    }
+    return map;
+  }, [products]);
+
   const unsentLines = useMemo(() => {
     if (orderId) return (workspace?.items || []).filter((i) => Number(i.unsent_quantity) > 0);
     return draftLines;
@@ -1044,31 +1053,31 @@ export default function AdminPos() {
               className="w-full pl-10 pr-3 py-2.5 border-2 border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 placeholder:text-slate-500 text-slate-900"
             />
           </div>
-          <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+          <div className="flex flex-wrap gap-2">
             <button
               type="button"
               onClick={() => setSelectedCategory('all')}
-              className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium border ${
+              className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
                 selectedCategory === 'all'
                   ? 'bg-stone-900 text-white border-stone-900'
-                  : 'bg-white text-stone-700 border-stone-200'
+                  : 'bg-white text-stone-700 border-stone-200 hover:bg-stone-50'
               }`}
             >
-              All
+              All ({products.length})
             </button>
             {categories.map((cat) => (
               <button
                 key={cat.id}
                 type="button"
                 onClick={() => setSelectedCategory(String(cat.id))}
-                className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border ${
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
                   String(selectedCategory) === String(cat.id)
                     ? 'bg-stone-900 text-white border-stone-900'
-                    : 'bg-white text-stone-700 border-stone-200'
+                    : 'bg-white text-stone-700 border-stone-200 hover:bg-stone-50'
                 }`}
               >
                 <span className="text-base leading-none">{cat.icon || '🍽️'}</span>
-                {cat.name}
+                {cat.name} ({categoryCounts.get(String(cat.id)) || 0})
               </button>
             ))}
           </div>

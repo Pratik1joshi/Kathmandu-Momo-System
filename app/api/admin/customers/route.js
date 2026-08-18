@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import Database from '@/lib/db/index';
-import { findCustomerByPhone, ensureCustomersTable } from '@/lib/customers.js';
-import { digitsOnly, validatePhone, validateName, validateEmail } from '@/lib/form-validation.js';
+import { findCustomerByPhone, ensureCustomersTable, normalizePhone } from '@/lib/customers.js';
+import { validatePhone, validateName, validateEmail } from '@/lib/form-validation.js';
 import { requireAuth, handleRouteError } from '@/lib/api-guard.js';
 import { readListParams, resolveOrderBy, buildSearch, paginateQuery } from '@/lib/paginate.js';
 
@@ -110,7 +110,7 @@ export async function POST(request) {
       );
     }
 
-    const phone = digitsOnly(data.phone);
+    const phone = normalizePhone(data.phone);
     const existing = await findCustomerByPhone(db, phone);
     if (existing) {
       return NextResponse.json(
@@ -187,7 +187,7 @@ export async function PUT(request) {
       );
     }
 
-    const phone = digitsOnly(data.phone);
+    const phone = normalizePhone(data.phone);
     const existing = await findCustomerByPhone(db, phone);
     if (existing && String(existing.id) !== String(data.id)) {
       return NextResponse.json(

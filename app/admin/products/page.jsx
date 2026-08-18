@@ -418,7 +418,7 @@ export default function ProductsPage() {
                   />
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
                   {!formData.has_variants && (
                     <div>
                       <label className="block text-sm font-medium text-gray-900 mb-2">Sale Price *</label>
@@ -431,6 +431,20 @@ export default function ProductsPage() {
                         placeholder="0"
                       />
                       <FieldError message={formErrors.price} />
+                    </div>
+                  )}
+                  {!formData.has_variants && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-900 mb-2">Cost Price</label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={formData.cost}
+                        onChange={(e) => setFormData({...formData, cost: numbersOnlyInput(e.target.value, { allowDecimal: true })})}
+                        className={inputErrorClass(!!formErrors.cost, 'w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-400 text-gray-900')}
+                        placeholder="0"
+                      />
+                      <FieldError message={formErrors.cost} />
                     </div>
                   )}
                   <div>

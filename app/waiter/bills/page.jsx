@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Search, Printer, Receipt } from 'lucide-react'
+import { ArrowLeft, Search, Printer, Receipt, ChevronRight } from 'lucide-react'
 import { useToast } from '@/components/ui/toast'
 import { friendlyFromError } from '@/lib/friendly-message'
 import { formatNepalDateTime } from '@/lib/report-dates.js'
@@ -20,12 +20,22 @@ const TABS = [
   { id: 'all', label: 'All' },
 ]
 
+const CHANNELS = [
+  { id: 'all', label: 'All' },
+  { id: 'counter', label: 'Table' },
+  { id: 'takeaway', label: 'Takeaway' },
+  { id: 'online', label: 'Online' },
+]
+
+const CHANNEL_LABEL = { online: 'Online', takeaway: 'Takeaway', counter: 'Dine-in' }
+
 export default function WaiterBillsPage() {
   const { apiCall } = useAuth()
   const router = useRouter()
   const { addToast } = useToast()
 
   const [tab, setTab] = useState('active')
+  const [channel, setChannel] = useState('all')
   const [search, setSearch] = useState('')
   const [bills, setBills] = useState([])
   const [counts, setCounts] = useState({})
@@ -38,6 +48,7 @@ export default function WaiterBillsPage() {
     setLoading(true)
     try {
       const params = new URLSearchParams({ tab, search, pageSize: '50' })
+      if (channel !== 'all') params.set('channel', channel)
       if (!['active', 'pending'].includes(tab)) {
         const range = operationalDateRange(datePreset)
         if (range.from) params.set('from', range.from)
@@ -56,7 +67,7 @@ export default function WaiterBillsPage() {
     } finally {
       setLoading(false)
     }
-  }, [tab, search, datePreset, apiCall, addToast])
+  }, [tab, channel, search, datePreset, apiCall, addToast])
 
   useEffect(() => {
     apiCall('/api/admin/settings').then((r) => r.json()).then((d) => setSettings(d.settings || {})).catch(() => {})
@@ -111,6 +122,20 @@ export default function WaiterBillsPage() {
             </button>
           ))}
         </div>
+        <div className="max-w-3xl mx-auto px-4 flex gap-2 pb-2 overflow-x-auto">
+          {CHANNELS.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => setChannel(c.id)}
+              className={`shrink-0 h-8 px-3 rounded-full text-xs font-semibold border ${
+                channel === c.id ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'
+              }`}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
         {!['active', 'pending'].includes(tab) && (
           <div className="max-w-3xl mx-auto px-4 pb-2">
             <OperationalDateFilter value={datePreset} onChange={setDatePreset} />
@@ -139,17 +164,26 @@ export default function WaiterBillsPage() {
             <div key={bill.id} className="rounded-2xl bg-white border border-slate-200 shadow-sm p-3.5 flex items-center justify-between gap-3">
               <button
                 type="button"
+                disabled={!bill.orderId}
                 onClick={() => bill.orderId && router.push(`/waiter/order/${bill.orderId}`)}
-                className="flex-1 min-w-0 text-left"
+                className="flex-1 min-w-0 text-left flex items-center gap-2 disabled:opacity-50"
               >
-                <p className="text-sm font-semibold text-slate-900">
-                  {bill.billNumber || bill.orderNumber} {bill.tableNumber ? `· Table ${bill.tableNumber}` : ''}
-                </p>
-                <p className="text-xs text-slate-500 mt-0.5 capitalize">
-                  {bill.paymentStatus} · Rs {Number(bill.total || 0).toFixed(0)}
-                  {bill.balance > 0 ? ` · Rs ${Number(bill.balance).toFixed(0)} due` : ''}
-                </p>
-                <p className="text-[11px] text-slate-400 mt-0.5">{formatNepalDateTime(bill.createdAt)}</p>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-slate-900 flex items-center gap-1.5 flex-wrap">
+                    {bill.billNumber || bill.orderNumber}
+                    <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+                      bill.channel === 'takeaway' ? 'bg-amber-100 text-amber-800' : bill.channel === 'online' ? 'bg-violet-100 text-violet-800' : 'bg-sky-100 text-sky-800'
+                    }`}>
+                      {bill.tableNumber ? `Table ${bill.tableNumber}` : CHANNEL_LABEL[bill.channel] || 'Takeaway'}
+                    </span>
+                  </p>
+                  <p className="text-xs text-slate-500 mt-0.5 capitalize">
+                    {bill.paymentStatus} · Rs {Number(bill.total || 0).toFixed(0)}
+                    {bill.balance > 0 ? ` · Rs ${Number(bill.balance).toFixed(0)} due` : ''}
+                  </p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">{formatNepalDateTime(bill.createdAt)}</p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
               </button>
               <button
                 type="button"

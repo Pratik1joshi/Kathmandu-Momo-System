@@ -194,6 +194,7 @@ export default function MenuBrowser({ categories, whatsappNumber, deliveryPricin
     () => (searching ? categories.flatMap((c) => c.items.filter((it) => it.name.toLowerCase().includes(q))) : []),
     [categories, q, searching]
   );
+  const totalItems = useMemo(() => categories.reduce((n, c) => n + c.items.length, 0), [categories]);
   const visibleCategories = useMemo(() => {
     if (searching) return [];
     if (activeCat === 'all') return categories;
@@ -216,9 +217,11 @@ export default function MenuBrowser({ categories, whatsappNumber, deliveryPricin
             )}
           </div>
           {!searching && (
-            <div className="flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Menu categories">
-              <Chip label="All" active={activeCat === 'all'} onClick={() => setActiveCat('all')} />
-              {categories.map((c) => <Chip key={c.id} label={c.title} active={activeCat === c.id} onClick={() => setActiveCat(c.id)} />)}
+            <div className="flex flex-wrap gap-2" role="tablist" aria-label="Menu categories">
+              <Chip label={`All (${totalItems})`} active={activeCat === 'all'} onClick={() => setActiveCat('all')} />
+              {categories.map((c) => (
+                <Chip key={c.id} label={`${c.title} (${c.items.length})`} active={activeCat === c.id} onClick={() => setActiveCat(c.id)} />
+              ))}
             </div>
           )}
         </div>

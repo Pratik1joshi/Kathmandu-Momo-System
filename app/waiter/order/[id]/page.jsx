@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import { useRouter, useParams } from 'next/navigation'
 import {
-  ArrowLeft, Plus, RefreshCw, Send, CreditCard, X, ChefHat, Printer, Ban, Receipt,
+  ArrowLeft, Plus, RefreshCw, Send, CreditCard, X, ChefHat, Printer, Ban, Receipt, Users, ArrowLeftRight,
 } from 'lucide-react'
 import { useToast } from '@/components/ui/toast'
 import { friendlyMessage, friendlyFromError } from '@/lib/friendly-message'
@@ -13,6 +13,7 @@ import { useConfirm } from '@/components/ui/confirm'
 import { formatElapsed } from '@/lib/restaurant-status'
 import { formatNepalClock } from '@/lib/time-utils'
 import { printKot, printProforma } from '@/lib/pos-print.js'
+import { tableBoardState, computeTableStatusCounts, DashboardTableCard } from '@/components/tables/table-room-board'
 
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 
@@ -74,7 +75,7 @@ export default function WaiterOrderPage() {
   const params = useParams()
   const orderId = params.id
   const { addToast } = useToast()
-  const { prompt } = useConfirm()
+  const { prompt, confirm } = useConfirm()
 
   const [workspace, setWorkspace] = useState(null)
   const [settings, setSettings] = useState({})
@@ -83,6 +84,10 @@ export default function WaiterOrderPage() {
   const [confirmBill, setConfirmBill] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [cancelSentItem, setCancelSentItem] = useState(null)
+  const [showTablePicker, setShowTablePicker] = useState(false)
+  const [pickerTables, setPickerTables] = useState([])
+  const [pickerStatusFilter, setPickerStatusFilter] = useState('all')
+  const [loadingTables, setLoadingTables] = useState(false)
 
   const load = async () => {
     try {
@@ -231,6 +236,78 @@ export default function WaiterOrderPage() {
     }
   }
 
+  const openTablePicker = async () => {
+    setShowTablePicker(true)
+    setPickerStatusFilter('all')
+    setLoadingTables(true)
+    try {
+      // Full board, not just free tables — an occupied table is a valid target
+      // too (adds this order as another party there, same as "Add person").
+      const res = await apiCall('/api/admin/pos/tables')
+      const data = await res.json().catch(() => ({}))
+      if (res.ok) {
+        const currentTableId = workspace?.order?.table_id
+        setPickerTables((data.tables || []).filter((t) => t.id !== currentTableId))
+      }
+    } catch {
+      /* ignore */
+    } finally {
+      setLoadingTables(false)
+    }
+  }
+
+  const changeTable = async (table) => {
+    if (busy) return
+    const state = tableBoardState(table)
+    const patch = { table_id: table.id }
+    if (state !== 'available') {
+      const ok = await confirm({
+        title: `Table ${table.table_number} is already occupied`,
+        message: `This adds ${workspace?.order?.table_number ? `Table ${workspace.order.table_number}` : 'this order'} as another party on Table ${table.table_number}, alongside the ${table.party_count} already seated. It won't merge with their order.`,
+        confirmLabel: 'Move here',
+        cancelLabel: 'Cancel',
+        tone: 'default',
+      })
+      if (!ok) return
+      patch.party_label = `Party ${table.party_count + 1}`
+    }
+    setBusy(true)
+    try {
+      const res = await apiCall(`/api/admin/pos/orders/${orderId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(patch),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Could not change table')
+      addToast(friendlyMessage('save_success', { description: `Moved to table ${table.table_number}.` }))
+      setShowTablePicker(false)
+      await load()
+    } catch (e) {
+      addToast(friendlyFromError(e, 'save_failed'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const addNewParty = async () => {
+    if (!workspace?.order?.table_id) return
+    setBusy(true)
+    try {
+      const res = await apiCall('/api/admin/pos/orders', {
+        method: 'POST',
+        body: JSON.stringify({ table_id: workspace.order.table_id, new_party: true }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Could not start a new party')
+      addToast(friendlyMessage('save_success', { description: 'New party started.' }))
+      router.push(`/waiter/order/${data.order_id}`)
+    } catch (e) {
+      addToast(friendlyFromError(e, 'save_failed'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const cancelOrder = async () => {
     setBusy(true)
     try {
@@ -285,6 +362,11 @@ export default function WaiterOrderPage() {
               {order.order_number} · {formatElapsed(order.created_at)} · {formatNepalClock(order.created_at)}
             </p>
           </div>
+          {order.table_id && allowAdd && (
+            <button type="button" onClick={openTablePicker} className="h-10 w-10 rounded-xl bg-slate-100 flex items-center justify-center" title="Change table">
+              <ArrowLeftRight className="w-4 h-4 text-slate-700" />
+            </button>
+          )}
           <button type="button" onClick={load} className="h-10 w-10 rounded-xl bg-slate-100 flex items-center justify-center">
             <RefreshCw className="w-4 h-4 text-slate-700" />
           </button>
@@ -431,14 +513,28 @@ export default function WaiterOrderPage() {
       <div className="fixed bottom-0 inset-x-0 z-30 p-4 bg-white border-t border-slate-200">
         <div className="max-w-3xl mx-auto space-y-2">
           {allowAdd && (
-            <button
-              type="button"
-              onClick={() => router.push(`/waiter/new-order?order=${orderId}`)}
-              className="w-full h-12 rounded-2xl bg-slate-900 text-white font-semibold flex items-center justify-center gap-2"
-            >
-              <Plus className="w-5 h-5" />
-              Add more items
-            </button>
+            <div className={`grid gap-2 ${order.table_id ? 'grid-cols-3' : 'grid-cols-1'}`}>
+              <button
+                type="button"
+                onClick={() => router.push(`/waiter/new-order?order=${orderId}`)}
+                className="col-span-2 h-12 rounded-2xl bg-slate-900 text-white font-semibold flex items-center justify-center gap-2"
+              >
+                <Plus className="w-5 h-5" />
+                Add more items
+              </button>
+              {order.table_id && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={addNewParty}
+                  className="h-12 rounded-2xl border-2 border-violet-200 bg-white text-violet-700 font-semibold flex items-center justify-center gap-1.5 disabled:opacity-50"
+                  title="Start a new party on this table"
+                >
+                  <Users className="w-4 h-4" />
+                  <span className="text-sm">Add person</span>
+                </button>
+              )}
+            </div>
           )}
           <div className="grid grid-cols-2 gap-2">
             {allowRequestBill && (
@@ -504,6 +600,61 @@ export default function WaiterOrderPage() {
           onClose={() => setCancelSentItem(null)}
           onConfirm={confirmCancelSentItem}
         />
+      )}
+
+      {showTablePicker && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+            <div className="px-4 py-3 border-b flex justify-between items-center">
+              <div>
+                <h3 className="font-bold text-slate-900">Move to another table</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Occupied tables work too — it adds this as another party.</p>
+              </div>
+              <button type="button" onClick={() => setShowTablePicker(false)} className="p-2">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            {!loadingTables && pickerTables.length > 0 && (() => {
+              const counts = computeTableStatusCounts(pickerTables)
+              return (
+                <div className="px-4 pt-3 flex flex-wrap gap-2">
+                  {[
+                    ['all', 'All', pickerTables.length, 'bg-slate-700'],
+                    ['available', 'Available', counts.available, 'bg-emerald-600'],
+                    ['running', 'Running', counts.running, 'bg-blue-600'],
+                    ['reserved', 'Reserved', counts.reserved, 'bg-red-600'],
+                  ].map(([id, label, count, color]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setPickerStatusFilter(id)}
+                      className={`rounded-full px-3 py-1.5 text-xs font-bold text-white transition-[filter,opacity] ${color} ${
+                        pickerStatusFilter === id ? 'ring-2 ring-slate-900 ring-offset-1' : 'opacity-50 hover:opacity-75'
+                      }`}
+                    >
+                      {label} ({count})
+                    </button>
+                  ))}
+                </div>
+              )
+            })()}
+            <div className="p-4 overflow-y-auto">
+              {loadingTables ? (
+                <p className="py-10 text-center text-slate-500">Loading tables…</p>
+              ) : pickerTables.length === 0 ? (
+                <p className="py-10 text-center text-slate-500">No other tables to move to.</p>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {pickerTables
+                    .filter((t) => pickerStatusFilter === 'all' || tableBoardState(t) === pickerStatusFilter)
+                    .map((table) => (
+                      <DashboardTableCard key={table.id} table={table} onClick={() => changeTable(table)} />
+                    ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

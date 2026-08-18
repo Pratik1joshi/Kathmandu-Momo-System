@@ -14,7 +14,11 @@ import { autoCloseStaleBusinessDay, currentBusinessDay, businessDaySummary } fro
 import { orderTypeLabel } from '@/lib/order-types.js';
 
 const COST_RATIO = 0.6; // flat food-cost heuristic until recipe-cost rollup is wired
-const LIVE_ORDER = `status IN ('pending','confirmed','preparing','cooking','ready','dining','served','awaiting_payment')`;
+// Excludes empty shell orders (created, never got an item, abandoned mid-flow) —
+// those aren't operationally "active," just orphaned rows that would otherwise
+// sit on this count forever.
+const LIVE_ORDER = `status IN ('pending','confirmed','preparing','cooking','ready','dining','served','awaiting_payment')
+  AND EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = orders.id AND COALESCE(oi.status,'') NOT IN ('voided','cancelled'))`;
 
 function n(v) {
   const x = Number(v);

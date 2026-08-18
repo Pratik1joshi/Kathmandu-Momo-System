@@ -60,7 +60,10 @@ export default function ReceiveDeliveryModal({ purchase, items, suppliers, emplo
     invoice_date: purchase?.invoice_date?.slice(0, 10) || today(),
     expected_delivery_date: purchase?.expected_delivery_date?.slice(0, 10) || '',
     received_by: purchase?.received_by || '',
-    payment_method: purchase?.payment_method || 'cash',
+    // `payment_method` lives on the linked expense, not the purchase row itself —
+    // getPurchase() nests it under `.expense`. Reading purchase.payment_method
+    // directly always misses and silently falls back to 'cash' on edit.
+    payment_method: purchase?.expense?.payment_method || purchase?.payment_method || 'cash',
     tax: purchase?.tax ?? '',
     discount: purchase?.discount ?? '',
     shipping: purchase?.shipping ?? '',

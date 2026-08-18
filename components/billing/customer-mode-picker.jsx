@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { User, UserRound, Loader2, CheckCircle2 } from 'lucide-react';
+import { User, UserRound, Loader2, CheckCircle2, Search } from 'lucide-react';
 
 /**
  * Walk-in vs Customer picker with phone lookup + new-customer fields.
@@ -16,7 +16,12 @@ export default function CustomerModePicker({
 }) {
   const [lookingUp, setLookingUp] = useState(false);
   const [lookupDone, setLookupDone] = useState(false);
+  const [queryText, setQueryText] = useState(value?.phone || '');
+  const [nameResults, setNameResults] = useState([]);
+  const [nameSearching, setNameSearching] = useState(false);
+  const [showResults, setShowResults] = useState(false);
   const debounceRef = useRef(null);
+  const nameDebounceRef = useRef(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
   const valueRef = useRef(value);
@@ -92,6 +97,73 @@ export default function CustomerModePicker({
     return () => clearTimeout(debounceRef.current);
   }, [phone, mode]);
 
+  // Keep the search box in sync when a customer is resolved (lookup, name pick, or loaded from an existing order).
+  useEffect(() => {
+    if (customer) setQueryText(`${customer.name} · ${customer.phone}`);
+  }, [customer]);
+
+  // Reset the visible search box when the picker is cleared/switched from outside (e.g. mode toggle).
+  useEffect(() => {
+    if (mode !== 'customer') {
+      setQueryText('');
+      setNameResults([]);
+      setShowResults(false);
+    } else if (!phone) {
+      setQueryText((prev) => (prev && /\d/.test(prev) ? '' : prev));
+    }
+  }, [mode, phone]);
+
+  const searchByName = (term) => {
+    clearTimeout(nameDebounceRef.current);
+    if (term.trim().length < 2) {
+      setNameResults([]);
+      return;
+    }
+    nameDebounceRef.current = setTimeout(async () => {
+      setNameSearching(true);
+      try {
+        const token = localStorage.getItem('pos_token');
+        const res = await fetch(`/api/admin/customers?search=${encodeURIComponent(term.trim())}&page_size=8`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) throw new Error('search failed');
+        const data = await res.json();
+        setNameResults(data.customers || []);
+      } catch {
+        setNameResults([]);
+      } finally {
+        setNameSearching(false);
+      }
+    }, 350);
+  };
+
+  const handleQueryChange = (raw) => {
+    setQueryText(raw);
+    setShowResults(true);
+    const digits = raw.replace(/\D/g, '');
+    const isPhoneLike = raw.trim().length > 0 && digits.length === raw.replace(/\s|-/g, '').length;
+    if (isPhoneLike) {
+      setNameResults([]);
+      patch({ phone: digits });
+    } else {
+      patch({ phone: '', customer: null, isNew: false });
+      searchByName(raw);
+    }
+  };
+
+  const pickNameResult = (found) => {
+    setQueryText(`${found.name} · ${found.phone}`);
+    setNameResults([]);
+    setShowResults(false);
+    patch({
+      phone: String(found.phone || '').replace(/\D/g, ''),
+      customer: found,
+      isNew: false,
+      name: found.name || '',
+      address: found.address || '',
+    });
+  };
+
   const showToggle = (section === 'full' || section === 'toggle') && !hideWalkIn;
   const showDetails =
     (section === 'full' || section === 'details') &&
@@ -150,21 +222,39 @@ export default function CustomerModePicker({
 
       {showDetails && (
         <div className={`space-y-1.5 rounded-lg border border-stone-200 bg-stone-50 ${compact ? 'p-2' : 'p-3'}`}>
-          <div>
-            <label className="block text-[11px] font-bold text-stone-800 mb-0.5">Phone *</label>
+          <div className="relative">
+            <label className="block text-[11px] font-bold text-stone-800 mb-0.5">Phone or Name *</label>
             <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-stone-400" />
               <input
-                type="tel"
-                inputMode="numeric"
-                value={phone}
-                onChange={(e) => patch({ phone: e.target.value.replace(/\D/g, '') })}
-                placeholder="98XXXXXXXX"
-                className="w-full px-2.5 py-1.5 border border-stone-200 rounded-md text-stone-900 font-medium text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                type="text"
+                value={queryText}
+                onChange={(e) => handleQueryChange(e.target.value)}
+                onFocus={() => setShowResults(true)}
+                onBlur={() => setTimeout(() => setShowResults(false), 150)}
+                placeholder="98XXXXXXXX or customer name"
+                className="w-full pl-7 pr-7 py-1.5 border border-stone-200 rounded-md text-stone-900 font-medium text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
-              {lookingUp && (
+              {(lookingUp || nameSearching) && (
                 <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 animate-spin text-stone-400" />
               )}
             </div>
+            {showResults && nameResults.length > 0 && (
+              <div className="absolute z-20 mt-1 w-full rounded-md border border-stone-200 bg-white shadow-lg max-h-48 overflow-y-auto">
+                {nameResults.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => pickNameResult(c)}
+                    className="w-full flex items-center justify-between px-2.5 py-1.5 text-left hover:bg-stone-50 border-b border-stone-100 last:border-0"
+                  >
+                    <span className="text-xs font-semibold text-stone-900 truncate">{c.name}</span>
+                    <span className="text-[11px] text-stone-500 shrink-0 ml-2">{c.phone}</span>
+                  </button>
+                ))}
+              </div>
+            )}
             {phone && phone.replace(/\D/g, '').length > 0 && phone.replace(/\D/g, '').length < 10 && (
               <p className="mt-0.5 text-[11px] font-medium text-amber-700">Need at least 10 digits</p>
             )}

@@ -6,11 +6,12 @@ import Link from 'next/link';
 import AdminLayout from '@/components/admin/admin-layout';
 import {
   ArrowLeft, Package, TrendingUp, TrendingDown, AlertTriangle, ChefHat,
-  Truck, Trash, Wrench, Repeat,
+  Truck, Trash, Wrench, Repeat, Pencil,
 } from 'lucide-react';
 import { useToast } from '@/components/ui/toast';
 import { friendlyFromError } from '@/lib/friendly-message';
 import QuickRestockModal from '@/components/inventory/quick-restock-modal';
+import ItemFormModal from '@/components/inventory/item-form-modal';
 import { formatNepalDate, formatNepalTime } from '@/lib/time-utils';
 
 function authedRequest(url, options = {}) {
@@ -51,9 +52,17 @@ export default function InventoryItemDetailPage() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showRestock, setShowRestock] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
+  const [suppliers, setSuppliers] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [menuItems, setMenuItems] = useState([]);
 
   useEffect(() => {
     fetchData();
+    // Edit picklists — same source the inventory list page uses.
+    authedRequest('/api/admin/suppliers').then((r) => r.json()).then((d) => setSuppliers(d.suppliers || [])).catch(() => {});
+    authedRequest('/api/admin/inventory-categories').then((r) => r.json()).then((d) => setCategories((d.categories || []).map((c) => c.name).filter(Boolean))).catch(() => {});
+    authedRequest('/api/admin/products').then((r) => r.json()).then((d) => setMenuItems(d.products || [])).catch(() => {});
   }, [id]);
 
   async function fetchData() {
@@ -97,12 +106,20 @@ export default function InventoryItemDetailPage() {
               <p className="text-gray-500 text-sm">{item.category || 'Uncategorized raw material'}</p>
             </div>
           </div>
-          <button
-            onClick={() => setShowRestock(true)}
-            className="flex items-center gap-1.5 px-3 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 font-semibold text-sm shrink-0"
-          >
-            <Truck className="w-4 h-4" /> Restock
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => setShowEdit(true)}
+              className="flex items-center gap-1.5 px-3 py-2.5 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 font-semibold text-sm"
+            >
+              <Pencil className="w-4 h-4" /> Edit
+            </button>
+            <button
+              onClick={() => setShowRestock(true)}
+              className="flex items-center gap-1.5 px-3 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 font-semibold text-sm"
+            >
+              <Truck className="w-4 h-4" /> Restock
+            </button>
+          </div>
         </div>
       </header>
 
@@ -205,6 +222,19 @@ export default function InventoryItemDetailPage() {
           onClose={() => setShowRestock(false)}
           onRestocked={() => {
             setShowRestock(false);
+            fetchData();
+          }}
+        />
+      )}
+      {showEdit && (
+        <ItemFormModal
+          item={item}
+          suppliers={suppliers}
+          categories={categories}
+          menuItems={menuItems}
+          onClose={() => setShowEdit(false)}
+          onSaved={() => {
+            setShowEdit(false);
             fetchData();
           }}
         />

@@ -10,7 +10,6 @@ import {
 import WastageModal from '@/components/inventory/wastage-modal'
 import WastageHistoryModal from '@/components/inventory/wastage-history-modal'
 import {
-  TABLE_STATUS_UI,
   formatElapsed,
   normalizeOrderStatus,
 } from '@/lib/restaurant-status'
@@ -25,6 +24,12 @@ import {
   filterReservations,
   filterTables,
 } from '@/lib/waiter-reservations'
+import {
+  groupTablesByRoom,
+  filterRoomGroups,
+  computeTableStatusCounts,
+  TableRoomBoard,
+} from '@/components/tables/table-room-board'
 
 const SEEN_KEY = 'waiter_alerts_seen'
 
@@ -70,7 +75,8 @@ function WaiterDashboardInner() {
   const [now, setNow] = useState(Date.now())
   const [showAlerts, setShowAlerts] = useState(false)
   const [seenIds, setSeenIds] = useState(() => new Set())
-  const [floorFilter, setFloorFilter] = useState(null)
+  const [tableRoomFilter, setTableRoomFilter] = useState('all')
+  const [tableStatusFilter, setTableStatusFilter] = useState('all')
   const [resSection, setResSection] = useState(null)
   const [waiterCallCount, setWaiterCallCount] = useState(0)
 
@@ -110,7 +116,7 @@ function WaiterDashboardInner() {
       if (posTablesRes?.ok) {
         const posData = await posTablesRes.json().catch(() => null)
         for (const t of posData?.tables || []) {
-          partiesByTable[t.id] = { parties: t.parties || [], party_count: t.party_count || 0 }
+          partiesByTable[t.id] = { parties: t.parties || [], party_count: t.party_count || 0, unsent_count: t.unsent_count || 0 }
         }
       }
       if (tablesRes.ok) {
@@ -119,8 +125,8 @@ function WaiterDashboardInner() {
         setTables(
           (data.tables || []).map((t) => {
             const tid = t.table_id || t.id
-            const extra = partiesByTable[tid] || { parties: [], party_count: 0 }
-            const merged = { ...t, parties: extra.parties, party_count: extra.party_count }
+            const extra = partiesByTable[tid] || { parties: [], party_count: 0, unsent_count: 0 }
+            const merged = { ...t, parties: extra.parties, party_count: extra.party_count, unsent_count: extra.unsent_count }
             if (merged.status === 'reserved' && merged.reservation_status === 'arrived') {
               return { ...merged, status: 'reserved_arrived' }
             }
@@ -195,19 +201,13 @@ function WaiterDashboardInner() {
     [filteredReservations, now, graceMinutes]
   )
 
-  const filteredTables = useMemo(() => {
-    let list = filterTables(tables, search)
-    if (floorFilter === 'free') {
-      list = list.filter((t) => t.status === 'available')
-    } else if (floorFilter === 'dining') {
-      list = list.filter((t) => ['dining', 'occupied', 'cooking', 'ready'].includes(t.status))
-    } else if (floorFilter === 'pay') {
-      list = list.filter((t) => t.status === 'awaiting_payment')
-    } else if (floorFilter === 'reserved') {
-      list = list.filter((t) => ['reserved', 'reserved_arrived'].includes(t.status))
-    }
-    return list
-  }, [tables, search, floorFilter])
+  const searchedTables = useMemo(() => filterTables(tables, search), [tables, search])
+  const tableRooms = useMemo(() => groupTablesByRoom(searchedTables), [searchedTables])
+  const visibleTableRooms = useMemo(
+    () => filterRoomGroups(tableRooms, tableRoomFilter, tableStatusFilter),
+    [tableRooms, tableRoomFilter, tableStatusFilter]
+  )
+  const tableStatusCounts = useMemo(() => computeTableStatusCounts(searchedTables), [searchedTables])
 
   const summary = useMemo(() => {
     const today = reservations.length
@@ -445,9 +445,9 @@ function WaiterDashboardInner() {
     { id: 'today', label: 'Today', value: summary.today, go: () => { setTab('reservations'); setResSection(null) } },
     { id: 'soon', label: 'Soon', value: summary.arrivingSoon, go: () => { setTab('reservations'); setResSection('upcoming') } },
     { id: 'wait', label: 'To seat', value: summary.waiting, go: () => { setTab('reservations'); setResSection('waiting') } },
-    { id: 'dining', label: 'Dining', value: summary.dining, go: () => { setTab('floor'); setFloorFilter('dining') } },
-    { id: 'pay', label: 'Pay', value: summary.pay, go: () => { setTab('floor'); setFloorFilter('pay') } },
-    { id: 'free', label: 'Free', value: summary.free, go: () => { setTab('floor'); setFloorFilter('free') } },
+    { id: 'dining', label: 'Dining', value: summary.dining, go: () => { setTab('floor'); setTableRoomFilter('all'); setTableStatusFilter('running') } },
+    { id: 'pay', label: 'Pay', value: summary.pay, go: () => { setTab('floor'); setTableRoomFilter('all'); setTableStatusFilter('running') } },
+    { id: 'free', label: 'Free', value: summary.free, go: () => { setTab('floor'); setTableRoomFilter('all'); setTableStatusFilter('available') } },
     { id: 'late', label: 'Late', value: summary.late, go: () => { setTab('reservations'); setResSection('late') } },
   ]
 
@@ -559,7 +559,8 @@ function WaiterDashboardInner() {
               type="button"
               onClick={() => {
                 setTab(t.id)
-                setFloorFilter(null)
+                setTableRoomFilter('all')
+                setTableStatusFilter('all')
                 setResSection(null)
                 router.replace(t.id === 'reservations' ? '/waiter?tab=reservations' : '/waiter', {
                   scroll: false,
@@ -671,115 +672,23 @@ function WaiterDashboardInner() {
 
       <div className="max-w-6xl mx-auto px-4 pt-4">
         {tab === 'floor' ? (
-          <>
-            <div className="flex gap-2 overflow-x-auto pb-3 -mx-1 px-1">
-              {Object.entries(TABLE_STATUS_UI).map(([key, meta]) => (
-                <span
-                  key={key}
-                  className={`shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${meta.badge}`}
-                >
-                  <span className={`w-2 h-2 rounded-full ${meta.bg}`} />
-                  {meta.label}
-                </span>
-              ))}
-            </div>
-
-            {loading ? (
-              <div className="py-20 text-center text-slate-500">Loading tables…</div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                {filteredTables.map((table) => {
-                  const status = table.status || 'available'
-                  const ui = TABLE_STATUS_UI[status] || TABLE_STATUS_UI.available
-                  const total = Number(table.current_amount || table.current_order_amount || 0)
-                  const elapsed = formatElapsed(table.order_created_at)
-                  const canAddParty = !['available', 'reserved', 'reserved_arrived'].includes(status)
-                  return (
-                    <button
-                      key={table.table_id || table.id}
-                      type="button"
-                      onClick={() => openFromTable(table)}
-                      className={`relative text-left rounded-2xl border ${ui.soft} bg-white shadow-sm overflow-hidden active:scale-[0.98] transition-transform`}
-                    >
-                      {canAddParty && (
-                        <span
-                          role="button"
-                          tabIndex={0}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setPartyPickerTable(table)
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.stopPropagation()
-                              setPartyPickerTable(table)
-                            }
-                          }}
-                          className="absolute top-2 right-2 z-10 h-6 w-6 rounded-full bg-slate-900/80 text-white text-xs font-bold flex items-center justify-center"
-                          aria-label="Table parties"
-                          title="Parties on this table"
-                        >
-                          +
-                        </span>
-                      )}
-                      <div className={`h-1.5 ${ui.bg}`} />
-                      <div className="p-3.5 space-y-2">
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <p className="text-2xl font-bold text-slate-900 tracking-tight">
-                              {table.table_number}
-                            </p>
-                            <p className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
-                              <Users className="w-3 h-3" />
-                              {table.capacity || '—'} seats
-                            </p>
-                          </div>
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${ui.badge}`}>
-                            {ui.short}
-                          </span>
-                        </div>
-
-                        {table.party_count > 1 && (
-                          <p className="text-[10px] font-semibold text-indigo-700 bg-indigo-50 rounded-full px-2 py-0.5 inline-block">
-                            {table.party_count} parties
-                          </p>
-                        )}
-
-                        {status === 'reserved' || status === 'reserved_arrived' ? (
-                          <div className="space-y-1 pt-1 border-t border-yellow-100">
-                            <p className="text-xs font-medium text-slate-900 truncate">
-                              {table.reservation_is_vip ? '★ ' : ''}
-                              {table.reservation_name || 'Reserved'}
-                            </p>
-                            <p className="text-[11px] text-slate-600">
-                              {table.reservation_time || 'Soon'}
-                              {table.reservation_guests ? ` · ${table.reservation_guests}` : ''}
-                            </p>
-                            <p className="text-xs font-semibold text-slate-800 pt-0.5">Tap for booking</p>
-                          </div>
-                        ) : status !== 'available' ? (
-                          <div className="space-y-1 pt-1 border-t border-slate-100">
-                            <div className="flex items-center justify-between text-xs">
-                              <span className="text-slate-500 flex items-center gap-1">
-                                <Clock className="w-3 h-3" />
-                                {elapsed}
-                              </span>
-                              <span className="font-semibold text-slate-900">Rs {total.toFixed(0)}</span>
-                            </div>
-                            {table.order_number && (
-                              <p className="text-[10px] text-slate-400 truncate">{table.order_number}</p>
-                            )}
-                          </div>
-                        ) : (
-                          <p className="text-xs text-emerald-700 font-medium pt-1">Tap to seat guests</p>
-                        )}
-                      </div>
-                    </button>
-                  )
-                })}
-              </div>
-            )}
-          </>
+          loading ? (
+            <div className="py-20 text-center text-slate-500">Loading tables…</div>
+          ) : tables.length === 0 ? (
+            <p className="py-20 text-center text-slate-400">No tables configured yet.</p>
+          ) : (
+            <TableRoomBoard
+              tables={searchedTables}
+              rooms={tableRooms}
+              visibleRooms={visibleTableRooms}
+              roomFilter={tableRoomFilter}
+              statusFilter={tableStatusFilter}
+              statusCounts={tableStatusCounts}
+              onRoomFilter={setTableRoomFilter}
+              onStatusFilter={setTableStatusFilter}
+              onTableClick={openFromTable}
+            />
+          )
         ) : (
           <div className="space-y-6 pb-4">
             {loading ? (
@@ -882,7 +791,7 @@ function WaiterDashboardInner() {
           </button>
           <button
             type="button"
-            onClick={() => router.push('/waiter/new-order')}
+            onClick={() => router.push('/waiter/new-order?type=takeaway')}
             className="flex-1 h-12 rounded-2xl bg-slate-900 text-white font-semibold flex items-center justify-center gap-2 shadow-lg"
           >
             <Plus className="w-5 h-5" />
@@ -890,12 +799,7 @@ function WaiterDashboardInner() {
           </button>
           <button
             type="button"
-            onClick={() => {
-              const bill = tables.find((t) => t.status === 'awaiting_payment')
-              if (bill?.current_order_id || bill?.order_id) {
-                router.push(`/waiter/order/${bill.current_order_id || bill.order_id}`)
-              }
-            }}
+            onClick={() => router.push('/waiter/bills')}
             className="h-12 px-4 rounded-2xl bg-white border border-slate-200 text-slate-800 font-semibold flex items-center gap-2 shadow-sm"
           >
             <Receipt className="w-5 h-5" />

@@ -383,8 +383,8 @@ export default function AdminLayout({ children }) {
         { icon: Wallet, label: 'Cash Drawer', href: '/admin/cash-drawer', color: 'text-orange-600' },
         { icon: Landmark, label: 'Bank', href: '/admin/bank', color: 'text-teal-600' },
         { icon: CreditCard, label: 'Settlements', href: '/admin/settlements', color: 'text-rose-600' },
-        { icon: Receipt, label: 'Accounts Receivable', href: '/admin/accounts-receivable', color: 'text-teal-700' },
-        { icon: Receipt, label: 'Accounts Payable', href: '/admin/accounts-payable', color: 'text-orange-700' },
+        { icon: Receipt, label: 'Customer Ledger', href: '/admin/accounts-receivable', color: 'text-teal-700' },
+        { icon: Receipt, label: 'Supplier Ledger', href: '/admin/accounts-payable', color: 'text-orange-700' },
         { icon: FileText, label: 'Financial Reports', href: '/admin/financial-reports', color: 'text-indigo-700' },
         { icon: Undo2, label: 'Corrections', href: '/admin/corrections', color: 'text-amber-700' },
       ],
@@ -397,6 +397,13 @@ export default function AdminLayout({ children }) {
   const cashierNavGroups = [
     { icon: Receipt, label: 'POS', href: '/cashier/pos', color: 'text-emerald-700' },
     { icon: LayoutDashboard, label: 'Order Desk', href: '/cashier', color: 'text-gray-700' },
+    {
+      label: 'Ledgers',
+      items: [
+        { icon: Receipt, label: 'Customer Ledger', href: '/cashier/accounts-receivable', color: 'text-teal-700' },
+        { icon: Receipt, label: 'Supplier Ledger', href: '/cashier/accounts-payable', color: 'text-orange-700' },
+      ],
+    },
     {
       label: 'Operations',
       items: [
@@ -425,8 +432,6 @@ export default function AdminLayout({ children }) {
         { icon: Wallet, label: 'Expenses', href: '/cashier/expenses', color: 'text-emerald-600' },
         { icon: ArrowRightLeft, label: 'Cash Exchange', href: '/cashier/cash-exchange', color: 'text-amber-600' },
         { icon: Wallet, label: 'Cash Drawer', href: '/cashier/cash-drawer', color: 'text-orange-600' },
-        { icon: Receipt, label: 'Receivables', href: '/cashier/accounts-receivable', color: 'text-teal-700' },
-        { icon: Receipt, label: 'Payables', href: '/cashier/accounts-payable', color: 'text-orange-700' },
         { icon: CalendarClock, label: 'Opening & Closing', href: '/cashier/business-days', color: 'text-gray-700' },
       ],
     },
