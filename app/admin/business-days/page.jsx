@@ -184,7 +184,7 @@ export default function BusinessDaysPage() {
       <History rows={history} onSelect={inspectDay} />
     </main>
 
-    <Dialog open={Boolean(selected)} onOpenChange={(open) => { if (!open) setSelected(null); }}><DialogContent className="sm:max-w-6xl" onClose={() => setSelected(null)}><DialogHeader><DialogTitle>Closing Report Â· {formatDate(selected?.day?.business_date)}</DialogTitle></DialogHeader>{selected?.summary && <div className="mt-6"><ClosingSummary summary={selected.summary} countedCash={selected.day?.counted_cash ?? ''} /></div>}<div className="mt-6 flex justify-end"><button type="button" onClick={() => window.print()} className="inline-flex h-10 items-center gap-2 border border-gray-300 px-4 text-sm font-semibold"><Printer className="h-4 w-4" />Print</button></div></DialogContent></Dialog>
+    <Dialog open={Boolean(selected)} onOpenChange={(open) => { if (!open) setSelected(null); }}><DialogContent className="sm:max-w-6xl" onClose={() => setSelected(null)}><DialogHeader><DialogTitle>Closing Report Â· {formatDate(selected?.day?.business_date)}</DialogTitle></DialogHeader><DayNotes day={selected?.day} />{selected?.summary && <div className="mt-6"><ClosingSummary summary={selected.summary} countedCash={selected.day?.counted_cash ?? ''} /></div>}<div className="mt-6 flex justify-end"><button type="button" onClick={() => window.print()} className="inline-flex h-10 items-center gap-2 border border-gray-300 px-4 text-sm font-semibold"><Printer className="h-4 w-4" />Print</button></div></DialogContent></Dialog>
   </AdminLayout>;
 }
 
@@ -244,3 +244,14 @@ function StaleBanner({ businessDate, reason, setReason, busy, onContinue }) {
 }
 
 function Status({ label, value }) { return <div><p className="text-xs font-medium text-emerald-700">{label}</p><p className="mt-0.5 max-w-48 truncate font-semibold text-gray-950">{value}</p></div>; }
+
+function DayNotes({ day }) {
+  if (!day) return null;
+  const items = [
+    day.opening_note && { label: 'Opening Note', text: day.opening_note, tone: 'default' },
+    day.force_closed && day.force_close_reason && { label: 'Force-Close Reason', text: day.force_close_reason, tone: 'warn' },
+    day.closing_note && { label: 'Closing Note', text: day.closing_note, tone: 'default' },
+  ].filter(Boolean);
+  if (!items.length) return null;
+  return <div className="mt-4 space-y-3">{items.map((item) => <div key={item.label} className={`border px-4 py-3 text-sm ${item.tone === 'warn' ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-gray-200 bg-gray-50 text-gray-800'}`}><p className="text-xs font-semibold uppercase tracking-wide opacity-70">{item.label}</p><p className="mt-1 whitespace-pre-wrap">{item.text}</p></div>)}</div>;
+}

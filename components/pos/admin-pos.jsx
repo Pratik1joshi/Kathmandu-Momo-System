@@ -127,6 +127,8 @@ export default function AdminPos() {
   const [customerSelection, setCustomerSelection] = useState(emptyCustomerSelection);
   const [deliveryAtCheckout, setDeliveryAtCheckout] = useState(false);
   const [deliveryFee, setDeliveryFee] = useState('');
+  const [deliveryExecutiveId, setDeliveryExecutiveId] = useState(null);
+  const [deliveryExecutives, setDeliveryExecutives] = useState([]);
 
   const kotKeyRef = useRef(null);
   const payKeyRef = useRef(null);
@@ -149,6 +151,7 @@ export default function AdminPos() {
     setCustomerSelection(emptyCustomerSelection);
     setDeliveryAtCheckout(false);
     setDeliveryFee('');
+    setDeliveryExecutiveId(null);
     payKeyRef.current = null;
   }, []);
 
@@ -368,14 +371,26 @@ export default function AdminPos() {
     if (!orderId) {
       setDeliveryAtCheckout(false);
       setDeliveryFee('');
+      setDeliveryExecutiveId(null);
       return;
     }
     const existingDelivery = String(workspace?.order?.order_type || '').toLowerCase() === 'delivery';
     setDeliveryAtCheckout(existingDelivery);
     setDeliveryFee(existingDelivery ? String(Number(workspace?.order?.delivery_fee || 0)) : '');
+    setDeliveryExecutiveId(existingDelivery ? (workspace?.order?.delivery_executive_id || null) : null);
   // The order id, not every workspace refresh, establishes checkout mode.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderId]);
+
+  // Delivery executive roster, loaded once — the picker filters/searches client-side.
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await api('/api/admin/delivery-executives');
+        setDeliveryExecutives(data.executives || []);
+      } catch { /* non-critical */ }
+    })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const calculateSubtotal = useCallback(
     () => allLines.reduce((sum, item) => sum + Number(item.subtotal || 0), 0),
@@ -808,6 +823,7 @@ export default function AdminPos() {
           customer_address: customerCheck.address || customerSelection.address || '',
           delivery: deliveryAtCheckout,
           delivery_fee: deliveryAtCheckout ? billTotals.deliveryFee : 0,
+          delivery_executive_id: deliveryAtCheckout ? deliveryExecutiveId : null,
         }),
       });
       printFinalBill(data.receipt, { size: paperSize });
@@ -817,7 +833,7 @@ export default function AdminPos() {
       await loadTables();
     } catch (e) { notify(e.message, 'error'); }
     finally { setBusy(false); }
-  }, [orderId, busy, allLines.length, unsentLines.length, notify, customerSelection, resetToNewSale, paperSize, workspace, loadTables, showSuccessFlash, buildAllocations, getTotals, deliveryAtCheckout]);
+  }, [orderId, busy, allLines.length, unsentLines.length, notify, customerSelection, resetToNewSale, paperSize, workspace, loadTables, showSuccessFlash, buildAllocations, getTotals, deliveryAtCheckout, deliveryExecutiveId]);
 
   const selectTable = useCallback(async (table) => {
     if (changeTableMode && orderId) {
@@ -1127,13 +1143,26 @@ export default function AdminPos() {
                   onClick={() => pickProduct(product)}
                   className="bg-white rounded-xl border border-blue-100 p-3 sm:p-4 text-left active:scale-[0.98] hover:border-blue-400 hover:shadow-md transition-transform overflow-hidden disabled:opacity-50"
                 >
-                  <div className="aspect-square rounded-lg mb-2 overflow-hidden bg-stone-100">
+                  <div className="relative aspect-square rounded-lg mb-2 overflow-hidden bg-stone-100">
                     <MenuItemImage
                       src={product.image_url}
                       alt={product.name}
                       size="card"
                       className="rounded-lg w-full h-full"
                     />
+                    {product.stock_quantity != null && (
+                      <span
+                        className={`absolute top-1 right-1 rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white ${
+                          Number(product.stock_quantity) <= 0
+                            ? 'bg-red-600'
+                            : Number(product.stock_quantity) <= 5
+                              ? 'bg-amber-500'
+                              : 'bg-emerald-600'
+                        }`}
+                      >
+                        {product.stock_quantity} {product.stock_unit || ''}
+                      </span>
+                    )}
                   </div>
                   <h3 className="font-semibold text-slate-900 text-xs sm:text-sm line-clamp-2 min-h-[2.5rem]">{product.name}</h3>
                   <p className="text-[11px] text-slate-500 truncate mb-1">{product.category_name || product.category || 'Menu'}</p>
@@ -1657,9 +1686,13 @@ export default function AdminPos() {
           if (enabled && !String(deliveryFee).trim()) {
             setDeliveryFee(String(settings.delivery_pricing_mode === 'fixed' ? Number(settings.delivery_fixed_fee || 0) : 0));
           }
+          if (!enabled) setDeliveryExecutiveId(null);
         }}
         deliveryFee={deliveryFee}
         onDeliveryFeeChange={setDeliveryFee}
+        executives={deliveryExecutives}
+        deliveryExecutiveId={deliveryExecutiveId}
+        onDeliveryExecutiveChange={setDeliveryExecutiveId}
       />
     </div>
   );

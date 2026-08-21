@@ -4,6 +4,7 @@ import Database from '@/lib/db/index.js';
 import { getOrderWorkspace, logPosEvent, ensureKotProSchema } from '@/lib/kot-service.js';
 import { OrderRepository } from '@/lib/db/repositories/orders.js';
 import { ensureColumn } from '@/lib/db/schema-helpers.js';
+import { assignOrderExecutive } from '@/lib/delivery.js';
 
 /** Full workspace for one order: items (sent/unsent), KOT history, bill state. */
 export async function GET(request, context) {
@@ -39,6 +40,17 @@ export async function PATCH(request, context) {
     const db = Database.getInstance();
     await ensureKotProSchema(db);
     await ensureColumn(db, 'orders', 'party_label', 'TEXT').catch(() => {});
+
+    // Delivery assignment is allowed regardless of order status (e.g. correcting
+    // who delivered it after completion), so it's handled before the active-only lookup below.
+    if (body.delivery_executive_id !== undefined) {
+      const exists = await db.get('SELECT id FROM orders WHERE id = ?', [orderId]);
+      if (!exists) return NextResponse.json({ error: 'Order not found.' }, { status: 404 });
+      const executiveId = body.delivery_executive_id ? parseInt(body.delivery_executive_id, 10) : null;
+      await assignOrderExecutive(db, orderId, executiveId);
+      const workspace = await getOrderWorkspace(db, orderId);
+      return NextResponse.json({ success: true, workspace });
+    }
 
     const order = await db.get(
       `SELECT * FROM orders WHERE id = ? AND status NOT IN ('completed','cancelled')`,

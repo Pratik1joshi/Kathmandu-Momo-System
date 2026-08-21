@@ -18,6 +18,7 @@ import { nextDocumentNumber } from '@/lib/document-numbers.js';
 import { currentBusinessDayId } from '@/lib/business-days.js';
 import { ensurePermissionCache, isPermissionAllowedSync } from '@/lib/permissions.js';
 import { ensureOrderColumns } from '@/lib/online-orders.js';
+import { ensureDeliverySchema } from '@/lib/delivery.js';
 
 const round2 = (v) => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
 const EPS = 0.01;
@@ -95,6 +96,7 @@ export async function POST(request, context) {
     await ensureKotProSchema(db);
     await ensureAccountingSchema(db);
     await ensureSplitPaymentSchema(db);
+    await ensureDeliverySchema(db);
 
     if (Number(data.discount || 0) > 0 && auth.user.role !== 'admin') {
       await ensurePermissionCache(db);
@@ -200,6 +202,13 @@ export async function POST(request, context) {
       const deliveryFee = isDelivery
         ? Math.max(0, Number.isFinite(requestedDeliveryFee) ? requestedDeliveryFee : 0)
         : 0;
+      // undefined (field omitted) preserves whatever was already assigned; an explicit
+      // null (cleared in the picker) or an id both replace it.
+      const deliveryExecutiveId = !isDelivery
+        ? null
+        : data.delivery_executive_id !== undefined
+          ? (data.delivery_executive_id ? parseInt(data.delivery_executive_id, 10) : null)
+          : (order.delivery_executive_id || null);
       const totals = calculateBillTotals(subtotal, {
         discountAmount: Number(data.discount || 0) > 0 ? Number(data.discount) : undefined,
         vatPercent,
@@ -270,12 +279,12 @@ export async function POST(request, context) {
         await tx.run(
         `UPDATE orders SET status = 'completed', order_type = ?, customer_id = COALESCE(?, customer_id),
              customer_name = COALESCE(?, customer_name), customer_phone = COALESCE(?, customer_phone),
-             payment_method = COALESCE(?, payment_method), delivery_fee = ?,
+             payment_method = COALESCE(?, payment_method), delivery_fee = ?, delivery_executive_id = ?,
              updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
           [
             finalOrderType,
             customerInfo.customer_id, customerInfo.customer_name, customerInfo.customer_phone,
-            primaryPaymentMethod(payment.allocations || []), totals.deliveryFee, orderId,
+            primaryPaymentMethod(payment.allocations || []), totals.deliveryFee, deliveryExecutiveId, orderId,
           ]
         );
         await completeOrderKots(tx, orderId);
@@ -305,7 +314,7 @@ export async function POST(request, context) {
           [orderId]
         );
         return {
-          order: { ...order, order_type: finalOrderType, delivery_fee: deliveryFee },
+          order: { ...order, order_type: finalOrderType, delivery_fee: deliveryFee, delivery_executive_id: deliveryExecutiveId },
           billId: reopenedBill.id,
           billNumber: reopenedBill.bill_number,
           totals,
@@ -361,12 +370,12 @@ export async function POST(request, context) {
       await tx.run(
         `UPDATE orders SET status = 'completed', order_type = ?, customer_id = COALESCE(?, customer_id),
            customer_name = COALESCE(?, customer_name), customer_phone = COALESCE(?, customer_phone),
-           payment_method = COALESCE(?, payment_method), delivery_fee = ?,
+           payment_method = COALESCE(?, payment_method), delivery_fee = ?, delivery_executive_id = ?,
            updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
         [
           finalOrderType,
           customerInfo.customer_id, customerInfo.customer_name, customerInfo.customer_phone,
-          primaryPaymentMethod(payment.allocations || allocations), totals.deliveryFee, orderId,
+          primaryPaymentMethod(payment.allocations || allocations), totals.deliveryFee, deliveryExecutiveId, orderId,
         ]
       );
       await completeOrderKots(tx, orderId);
@@ -395,7 +404,7 @@ export async function POST(request, context) {
         `SELECT * FROM order_items WHERE order_id = ? AND COALESCE(status,'') NOT IN ('voided','cancelled') ORDER BY id`,
         [orderId]
       );
-      return { order: { ...order, order_type: finalOrderType, delivery_fee: deliveryFee }, billId, billNumber, totals, payment, customerInfo, items, allocations, reopened: false, alreadyPaid: 0, due: totals.total, refundDue: 0 };
+      return { order: { ...order, order_type: finalOrderType, delivery_fee: deliveryFee, delivery_executive_id: deliveryExecutiveId }, billId, billNumber, totals, payment, customerInfo, items, allocations, reopened: false, alreadyPaid: 0, due: totals.total, refundDue: 0 };
     });
 
     // Reopen change summary: what items were added / removed / changed vs the

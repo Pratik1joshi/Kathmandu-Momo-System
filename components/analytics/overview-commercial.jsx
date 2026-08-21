@@ -1,7 +1,8 @@
 'use client';
 
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, BadgeDollarSign, ReceiptText, ShoppingBasket } from 'lucide-react';
+import { ArrowRight, BadgeDollarSign, ReceiptText, Search, ShoppingBasket } from 'lucide-react';
 import { BarChart, ChartCard, ChartGrid, RankBars, TrendChart } from '@/components/admin/report-kit';
 import DonutChart, { DEFAULT_COLORS } from '@/components/admin/donut-chart';
 import { financialTone } from '@/lib/financial-tone';
@@ -142,16 +143,46 @@ function DonutMix({ title, rows, centerLabel }) {
 
 export function MenuPerformance({ data }) {
   const menu = data.menu;
+  const [itemSearch, setItemSearch] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
   const categoryBars = (menu.categories || []).slice(0, 8).map((row) => ({ label: row.category, value: row.revenue, meta: `${row.quantity} items | ${row.orders} orders` }));
+  const soldItems = menu.soldItems || menu.topItems || [];
+  const categories = useMemo(
+    () => [...new Set(soldItems.map((row) => row.category).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    [soldItems]
+  );
+  const visibleItems = useMemo(() => {
+    const query = itemSearch.trim().toLowerCase();
+    return soldItems.filter((row) =>
+      (!categoryFilter || row.category === categoryFilter) &&
+      (!query || `${row.item} ${row.category}`.toLowerCase().includes(query))
+    );
+  }, [soldItems, itemSearch, categoryFilter]);
   return (
     <DashboardSection>
       <SectionHeading icon={ShoppingBasket} tone="amber" eyebrow="Menu intelligence" title="What guests are ordering" description="Item and category revenue are pre-discount menu mix figures; recipe margin is shown only when recipe coverage is complete." action={<Link href="/admin/reports?tab=menu" className="inline-flex items-center gap-1 text-sm font-medium text-gray-700">Menu analytics <ArrowRight className="h-4 w-4" /></Link>} />
       {!menu.recipeCoverage.reliable && <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">Margin ranking is hidden: {menu.recipeCoverage.recipes} of {menu.recipeCoverage.menuItems} menu items have recipes.</div>}
       <div className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
-        <TableWrap minWidth="680px">
-          <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-400"><tr><th className="px-4 py-2.5">Item</th><th className="px-4 py-2.5">Category</th><th className="px-4 py-2.5 text-right">Qty</th><th className="px-4 py-2.5 text-right">Orders</th><th className="px-4 py-2.5 text-right">Revenue</th></tr></thead>
-          <tbody className="divide-y divide-gray-100">{(menu.topItems || []).map((row) => <tr key={`${row.item}-${row.category}`}><td className="px-4 py-3 font-medium text-gray-900">{row.item}</td><td className="px-4 py-3 text-gray-500">{row.category}</td><td className="px-4 py-3 text-right tabular-nums">{row.quantity}</td><td className="px-4 py-3 text-right tabular-nums">{row.orders}</td><td className="px-4 py-3 text-right font-medium tabular-nums text-emerald-700">{money(row.revenue)}</td></tr>)}</tbody>
-        </TableWrap>
+        <div className="rounded-xl border border-gray-100 bg-white">
+          <div className="flex flex-col gap-2 border-b border-gray-100 p-3 sm:flex-row sm:items-center">
+            <div className="relative min-w-0 flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <input type="search" value={itemSearch} onChange={(event) => setItemSearch(event.target.value)} placeholder="Search sold items…" className="h-9 w-full rounded-lg border border-gray-300 pl-9 pr-3 text-sm text-gray-900" />
+            </div>
+            <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} className="h-9 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700">
+              <option value="">All categories</option>
+              {categories.map((category) => <option key={category} value={category}>{category}</option>)}
+            </select>
+          </div>
+          <p className="px-4 py-2 text-xs text-gray-500">{visibleItems.length} of {soldItems.length} sold item{soldItems.length === 1 ? '' : 's'}</p>
+          <div className="max-h-[440px] overflow-auto border-t border-gray-100">
+            <table className="w-full min-w-[680px] text-left text-sm">
+              <thead className="sticky top-0 z-10 bg-gray-50 text-xs uppercase tracking-wide text-gray-400"><tr><th className="px-4 py-2.5">Item</th><th className="px-4 py-2.5">Category</th><th className="px-4 py-2.5 text-right">Qty</th><th className="px-4 py-2.5 text-right">Orders</th><th className="px-4 py-2.5 text-right">Revenue</th></tr></thead>
+              <tbody className="divide-y divide-gray-100">{visibleItems.map((row) => <tr key={`${row.item}-${row.category}`}><td className="px-4 py-3 font-medium text-gray-900">{row.item}</td><td className="px-4 py-3 text-gray-500">{row.category}</td><td className="px-4 py-3 text-right tabular-nums">{row.quantity}</td><td className="px-4 py-3 text-right tabular-nums">{row.orders}</td><td className="px-4 py-3 text-right font-medium tabular-nums text-emerald-700">{money(row.revenue)}</td></tr>)}</tbody>
+            </table>
+            {!visibleItems.length && <p className="py-10 text-center text-sm text-gray-400">No sold items match these filters.</p>}
+          </div>
+        </div>
         <ChartCard title="Category Mix" isEmpty={!categoryBars.length} empty="No category sales."><RankBars data={categoryBars} color="slate" format="currency" /></ChartCard>
       </div>
       <div className="mt-5 grid gap-5 lg:grid-cols-2">

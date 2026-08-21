@@ -23,6 +23,7 @@ const emptyForm = {
   is_vegetarian: false,
   preparation_time: 15,
   inventory_item_id: '',
+  pos_stock_visible: false,
   unit: '',
   has_variants: false,
   variants: [],
@@ -198,6 +199,7 @@ export default function ProductsPage() {
       is_vegetarian: !!product.is_vegetarian,
       preparation_time: product.preparation_time || 15,
       inventory_item_id: product.inventory_item_id || '',
+      pos_stock_visible: !!product.pos_stock_visible,
       unit: product.unit || '',
       has_variants: variants.length > 0,
       variants: variants.length > 0 ? variants : [],
@@ -403,6 +405,18 @@ export default function ProductsPage() {
                       ))}
                     </select>
                     <p className="mt-1.5 text-xs text-gray-500">Use this for one-unit retail items. QTR/HALF/FULL drinks should use recipes.</p>
+                    {formData.inventory_item_id && (
+                      <label className="mt-2 flex items-center gap-2 text-sm text-gray-700">
+                        <input
+                          type="checkbox"
+                          checked={formData.pos_stock_visible}
+                          onChange={(e) => setFormData({ ...formData, pos_stock_visible: e.target.checked })}
+                          className="h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-400"
+                        />
+                        Show live stock count on this item in POS
+                      </label>
+                    )}
+                    <p className="mt-1 text-xs text-gray-400">Only tick this for exact-count stock — bottles, cans, packs. Prepared drinks (tea, coffee) track cups, not real stock.</p>
                   </div>
                 )}
                 </div>

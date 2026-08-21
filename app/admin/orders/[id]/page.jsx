@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import AdminLayout from '@/components/admin/admin-layout';
 import {
   ArrowLeft, Printer, Clock, User, Phone, CreditCard, MapPin, ExternalLink, Ban, Trash2, UserCog,
-  X, RotateCcw,
+  X, RotateCcw, Bike,
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/currency';
 import { formatNepalDateTime } from '@/lib/report-dates.js';
@@ -16,7 +16,7 @@ import { useConfirm } from '@/components/ui/confirm';
 import { printFinalBill } from '@/lib/pos-print.js';
 import { receiptFromOrderDetail } from '@/lib/bill-receipt.js';
 import ReviseSettlementForm from '@/components/billing/revise-settlement-form';
-import { orderTypeLabel } from '@/lib/order-types.js';
+import { orderTypeLabel, normalizedOrderType } from '@/lib/order-types.js';
 
 export default function OrderView() {
   const params = useParams();
@@ -35,6 +35,8 @@ export default function OrderView() {
   const [refundMethod, setRefundMethod] = useState('cash');
   const [refundReason, setRefundReason] = useState('');
   const [paySettings, setPaySettings] = useState({});
+  const [executives, setExecutives] = useState([]);
+  const [assigningExecutive, setAssigningExecutive] = useState(false);
 
   const fetchOrderDetails = useCallback(async () => {
     try {
@@ -60,6 +62,40 @@ export default function OrderView() {
   useEffect(() => {
     if (params.id) fetchOrderDetails();
   }, [params.id, fetchOrderDetails]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = localStorage.getItem('pos_token');
+        const res = await fetch('/api/admin/delivery-executives', { headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) setExecutives(data.executives || []);
+      } catch { /* ignore */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const assignExecutive = async (executiveId) => {
+    setAssigningExecutive(true);
+    try {
+      const token = localStorage.getItem('pos_token');
+      const res = await fetch(`/api/admin/orders/${order.id || params.id}`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ delivery_executive_id: executiveId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Could not update assignment');
+      addToast({ description: executiveId ? 'Delivery executive assigned.' : 'Assignment cleared.', variant: 'success' });
+      await fetchOrderDetails();
+    } catch (e) {
+      addToast({ description: e.message, variant: 'error' });
+    } finally {
+      setAssigningExecutive(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -476,6 +512,25 @@ export default function OrderView() {
                 {order.bill_number && (
                   <div className="text-sm text-gray-600">
                     Bill: <span className="font-semibold text-gray-900">{compactBillNumber(order.bill_number)}</span>
+                  </div>
+                )}
+                {normalizedOrderType(order) === 'delivery' && (
+                  <div className="flex items-center gap-3 pt-1">
+                    <Bike className="w-5 h-5 text-gray-700 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm text-gray-700">Delivery executive</div>
+                      <select
+                        disabled={assigningExecutive}
+                        value={order.delivery_executive_id || ''}
+                        onChange={(e) => assignExecutive(e.target.value ? Number(e.target.value) : null)}
+                        className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-900 disabled:opacity-50"
+                      >
+                        <option value="">Self / Unassigned</option>
+                        {executives.map((ex) => (
+                          <option key={ex.id} value={ex.id}>{ex.name}{ex.phone ? ` · ${ex.phone}` : ''}</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                 )}
               </div>

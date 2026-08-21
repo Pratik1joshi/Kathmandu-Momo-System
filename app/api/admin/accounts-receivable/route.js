@@ -36,7 +36,7 @@ export async function GET(request) {
     }
 
     const [receivables, ageing, ar_balance, banks] = await Promise.all([
-      customerReceivables(db),
+      customerReceivables(db, { from: q.get('from'), to: q.get('to') }),
       receivableAgeing(db),
       arAccountBalance(db),
       listBankAccounts(db),

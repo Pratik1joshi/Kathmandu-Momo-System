@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import AdminLayout from '@/components/admin/admin-layout';
-import { Search, X, Building2, ExternalLink, Wallet, ShieldAlert, ChevronRight } from 'lucide-react';
+import { Search, X, Building2, ExternalLink, Wallet, ShieldAlert, ChevronRight, Printer } from 'lucide-react';
+import { printCreditStatement } from '@/lib/pos-print';
 import { useToast } from '@/components/ui/toast';
 import { friendlyMessage, friendlyFromError } from '@/lib/friendly-message';
 import { apiJson } from '@/lib/authed-fetch';
@@ -33,6 +34,7 @@ export default function AccountsPayablePage() {
 
   const [overview, setOverview] = useState({ payables: [], liabilities: [], banks: [] });
   const [loading, setLoading] = useState(true);
+  const [settings, setSettings] = useState({});
 
   const [period, setPeriod] = useState('all');
   const [from, setFrom] = useState('');
@@ -56,6 +58,9 @@ export default function AccountsPayablePage() {
     finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    apiJson('/api/admin/settings').then((r) => setSettings(r.settings || {})).catch(() => {});
+  }, []);
 
   const choosePeriod = (id) => {
     setPeriod(id);
@@ -85,6 +90,31 @@ export default function AccountsPayablePage() {
   }, [selected, from, to]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const outstandingTotal = detail.invoices.reduce((s, i) => s + Number(i.outstanding || 0), 0);
+
+  // Supplier statement lines carry no running balance (credit increases what we
+  // owe, same convention as LedgerTable's debitNormal={false}) — build it here.
+  const withRunningBalance = (lines) => {
+    let bal = 0;
+    return lines.map((l) => {
+      bal += Number(l.credit || 0) - Number(l.debit || 0);
+      return { date: l.entry_date, memo: l.memo, debit: l.debit, credit: l.credit, balance: bal };
+    });
+  };
+
+  const printStatement = (supplier, lines, outstanding) => {
+    printCreditStatement(
+      { kind: 'supplier', name: supplier.name, phone: supplier.phone, outstanding, lines: withRunningBalance(lines) },
+      { settings }
+    );
+  };
+
+  const printRowStatement = async (e, s) => {
+    e.stopPropagation();
+    try {
+      const d = await apiJson(`/api/admin/accounts-payable?${new URLSearchParams({ supplier_id: s.id })}`);
+      printStatement(s, d.statement || [], s.outstanding);
+    } catch (error) { addToast(friendlyFromError(error, 'load_failed')); }
+  };
 
   const openPay = () => {
     if (!selected) return;
@@ -199,19 +229,29 @@ export default function AccountsPayablePage() {
           <Panel title={`Suppliers with dues (${visibleSuppliers.length})`}>
             <div className="divide-y divide-gray-100">
               {visibleSuppliers.map((s) => (
-                <button
+                <div
                   key={s.id}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   onClick={() => openSupplier(s)}
-                  className="flex w-full items-center gap-3 px-5 py-3 text-left hover:bg-gray-50"
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') openSupplier(s); }}
+                  className="flex w-full cursor-pointer items-center gap-3 px-5 py-3 text-left hover:bg-gray-50"
                 >
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-gray-900">{s.name}</p>
                     {s.phone && <p className="text-xs text-gray-400">{s.phone}</p>}
                   </div>
                   <span className="shrink-0 text-sm font-semibold tabular-nums text-rose-700">{money(s.outstanding)}</span>
+                  <button
+                    type="button"
+                    onClick={(e) => printRowStatement(e, s)}
+                    className="shrink-0 rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                    title="Print statement"
+                  >
+                    <Printer className="h-4 w-4" />
+                  </button>
                   <ChevronRight className="h-4 w-4 shrink-0 text-gray-300" />
-                </button>
+                </div>
               ))}
             </div>
           </Panel>
@@ -244,6 +284,9 @@ export default function AccountsPayablePage() {
                 </Link>
                 <button type="button" disabled={outstandingTotal <= 0} onClick={openPay} className="rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-800 disabled:opacity-40">
                   Pay supplier
+                </button>
+                <button type="button" onClick={() => printStatement(selected, detail.statement, outstandingTotal)} className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                  <Printer className="h-4 w-4" /> Print statement
                 </button>
               </div>
 

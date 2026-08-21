@@ -7,7 +7,7 @@ import { formatValue } from '@/components/admin/report-kit';
 import { formatNepalDateTime } from '@/lib/report-dates.js';
 import {
   Search, RotateCcw, X, ReceiptText, ExternalLink, RefreshCw, AlertCircle, Info,
-  CheckCircle2, History, UserCog, Trash2,
+  CheckCircle2, History, UserCog, Trash2, LayoutGrid, ShoppingBag, Bike, Globe,
 } from 'lucide-react';
 import SplitPaymentFields, { emptySplitPayment } from '@/components/billing/split-payment-fields';
 import ReviseSettlementForm from '@/components/billing/revise-settlement-form';
@@ -54,8 +54,29 @@ const BILL_BADGE = {
 const CHANNEL_BADGE = {
   counter: 'bg-slate-100 text-slate-700',
   takeaway: 'bg-sky-100 text-sky-700',
+  delivery: 'bg-orange-100 text-orange-700',
   online: 'bg-indigo-100 text-indigo-700',
 };
+const CHANNEL_LABEL = {
+  counter: 'Table',
+  takeaway: 'Takeaway',
+  delivery: 'Delivery',
+  online: 'Online',
+};
+const CHANNEL_ICON = {
+  counter: LayoutGrid,
+  takeaway: ShoppingBag,
+  delivery: Bike,
+  online: Globe,
+};
+function ChannelBadge({ channel }) {
+  const Icon = CHANNEL_ICON[channel] || ShoppingBag;
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${CHANNEL_BADGE[channel] || 'bg-gray-100 text-gray-700'}`}>
+      <Icon className="h-3 w-3" /> {CHANNEL_LABEL[channel] || channel}
+    </span>
+  );
+}
 
 function authHeaders() {
   const token = typeof window !== 'undefined' ? localStorage.getItem('pos_token') : null;
@@ -222,6 +243,7 @@ export default function BillsPage() {
             <option value="">All channels</option>
             <option value="counter">Table orders</option>
             <option value="takeaway">Takeaway</option>
+            <option value="delivery">Delivery</option>
             <option value="online">Online</option>
           </select>
           <select value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value)} className="h-9 min-w-[164px] rounded-lg border border-gray-200 bg-white px-2.5 text-sm text-gray-700 outline-none focus:border-gray-400">
@@ -357,7 +379,7 @@ function BillTable({ bills, onSelect, onDeleteActive }) {
                     {b.reopened && <span className="ml-1 rounded bg-blue-100 px-1 text-blue-600">reopened</span>}
                   </div>
                 </td>
-                <td className="px-4 py-3"><span className={`rounded-full px-2 py-0.5 text-xs capitalize ${CHANNEL_BADGE[b.channel]}`}>{b.channel}</span></td>
+                <td className="px-4 py-3"><ChannelBadge channel={b.channel} /></td>
                 <td className="px-4 py-3 text-gray-700">
                   {b.customerName || '—'}
                   {b.tableNumber ? <span className="block text-xs text-gray-400">Table {b.tableNumber}</span> : null}
@@ -408,7 +430,7 @@ function BillTable({ bills, onSelect, onDeleteActive }) {
               <span className="font-medium text-gray-900">{b.billNumber ? shortBillNumber(b.billNumber) : 'Open order'}</span>
               <span className={`rounded-full px-2 py-0.5 text-xs capitalize ${BILL_BADGE[b.billStatus] || 'bg-gray-100 text-gray-700'}`}>{prettyStatus(b.billStatus)}</span>
             </div>
-            <div className="mt-1 text-xs text-gray-400">{shortOrderNumber(b.orderNumber)} · <span className="capitalize">{b.channel}</span>{b.tableNumber ? ` · Table ${b.tableNumber}` : ''}{b.reopened && ' · reopened'}</div>
+            <div className="mt-1 flex items-center gap-1 text-xs text-gray-400">{shortOrderNumber(b.orderNumber)} · <ChannelBadge channel={b.channel} />{b.tableNumber ? ` · Table ${b.tableNumber}` : ''}{b.reopened && ' · reopened'}</div>
             <div className="mt-2 flex items-center justify-between text-sm">
               <span className="text-gray-500">{b.customerName || '—'}</span>
               <span className="font-semibold tabular-nums">{formatValue(b.total, 'currency')}</span>
@@ -539,7 +561,7 @@ function BillDetailPanel({ id, onClose, onChanged }) {
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-lg font-bold text-gray-900">{shortBillNumber(bill.billNumber)}</p>
-                <p className="text-xs text-gray-400">{shortOrderNumber(bill.orderNumber)} · <span className="capitalize">{bill.channel}</span></p>
+                <p className="mt-1 flex items-center gap-1.5 text-xs text-gray-400">{shortOrderNumber(bill.orderNumber)} · <ChannelBadge channel={bill.channel} /></p>
               </div>
               <div className="text-right">
                 <span className={`rounded-full px-2 py-0.5 text-xs capitalize ${BILL_BADGE[bill.billStatus] || 'bg-gray-100 text-gray-700'}`}>{prettyStatus(bill.billStatus)}</span>

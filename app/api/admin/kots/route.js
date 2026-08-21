@@ -3,6 +3,16 @@ import { requireAuth, handleRouteError } from '@/lib/api-guard.js';
 import Database from '@/lib/db/index.js';
 import { ensureKotProSchema } from '@/lib/kot-service.js';
 
+// An original ticket auto-voids once every item on it is cancelled — but a
+// dedicated "cancellation notice" ticket already tells that story to the
+// kitchen. Showing both is a redundant duplicate, so the auto-voided original
+// is hidden whenever a notice exists that amends it.
+const HIDE_SUPERSEDED_ORIGINAL = `NOT (
+  COALESCE(k.voided, 0) = 1
+  AND k.void_reason = 'All items on this ticket were cancelled.'
+  AND EXISTS (SELECT 1 FROM kots ck WHERE ck.amends_kot_id = k.id AND COALESCE(ck.kot_type, '') = 'cancellation')
+)`;
+
 function kotTabFilter(tab) {
   const cancelled = `(
     COALESCE(k.voided, 0) = 1
@@ -51,6 +61,7 @@ export async function GET(request) {
 
     const effectiveTab = ['active', 'completed', 'cancelled', 'all'].includes(tab) ? tab : 'active';
     where.push(kotTabFilter(effectiveTab));
+    where.push(HIDE_SUPERSEDED_ORIGINAL);
     where.push(...dateWhere);
     params.push(...dateParams);
 
@@ -69,7 +80,7 @@ export async function GET(request) {
 
     const counts = {};
     for (const key of ['active', 'completed', 'cancelled', 'all']) {
-      const countWhere = [kotTabFilter(key), ...dateWhere];
+      const countWhere = [kotTabFilter(key), HIDE_SUPERSEDED_ORIGINAL, ...dateWhere];
       const countParams = [...dateParams];
       if (search) {
         countWhere.push(`(

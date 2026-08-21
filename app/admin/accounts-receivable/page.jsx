@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import AdminLayout from '@/components/admin/admin-layout';
-import { Search, X, User, ExternalLink, Wallet, ShieldAlert, Tag, ChevronRight } from 'lucide-react';
+import { Search, X, User, ExternalLink, Wallet, ShieldAlert, Tag, ChevronRight, Printer } from 'lucide-react';
+import { printCreditStatement } from '@/lib/pos-print';
 import { useToast } from '@/components/ui/toast';
 import { friendlyMessage, friendlyFromError } from '@/lib/friendly-message';
 import { apiJson } from '@/lib/authed-fetch';
@@ -64,11 +65,16 @@ export default function AccountsReceivablePage() {
   const keyRef = useRef(newKey());
 
   const load = async () => {
-    try { setOverview(await apiJson('/api/admin/accounts-receivable')); }
+    try {
+      const params = new URLSearchParams();
+      if (from) params.set('from', from);
+      if (to) params.set('to', to);
+      setOverview(await apiJson(`/api/admin/accounts-receivable?${params}`));
+    }
     catch (error) { addToast(friendlyFromError(error, 'load_failed')); }
     finally { setLoading(false); }
   };
-  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [from, to]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     apiJson('/api/admin/settings').then((r) => setSettings(r.settings || {})).catch(() => {});
   }, []);
@@ -99,6 +105,21 @@ export default function AccountsReceivablePage() {
       finally { setLoadingDetail(false); }
     })();
   }, [selected, from, to]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const printStatement = (customer, lines, outstanding) => {
+    printCreditStatement(
+      { kind: 'customer', name: customer.name, phone: customer.phone, outstanding, lines },
+      { settings }
+    );
+  };
+
+  const printRowStatement = async (e, c) => {
+    e.stopPropagation();
+    try {
+      const d = await apiJson(`/api/admin/accounts-receivable?${new URLSearchParams({ customer_id: c.id })}`);
+      printStatement(c, d.statement || [], c.outstanding);
+    } catch (error) { addToast(friendlyFromError(error, 'load_failed')); }
+  };
 
   const openOrder = async (bill) => {
     setSelectedBill(bill);
@@ -204,7 +225,7 @@ export default function AccountsReceivablePage() {
               </button>
             ))}
           </div>
-          <p className="text-xs text-gray-400">Applies to the statement inside each customer&rsquo;s ledger — the list below is everyone currently owing.</p>
+          <p className="text-xs text-gray-400">Shows customers with ledger activity (charged or paid) in this period — the amount shown is still their current total owed.</p>
 
           <div className="flex flex-wrap items-end gap-3">
             <label className="block">
@@ -249,11 +270,13 @@ export default function AccountsReceivablePage() {
           <Panel title={`Customers with dues (${visibleCustomers.length})`}>
             <div className="divide-y divide-gray-100">
               {visibleCustomers.map((c) => (
-                <button
+                <div
                   key={c.id}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   onClick={() => openCustomer(c)}
-                  className="flex w-full items-center gap-3 px-5 py-3 text-left hover:bg-gray-50"
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') openCustomer(c); }}
+                  className="flex w-full cursor-pointer items-center gap-3 px-5 py-3 text-left hover:bg-gray-50"
                 >
                   <div className="min-w-0 flex-1">
                     <p className="flex items-center gap-2 text-sm font-medium text-gray-900">
@@ -263,8 +286,16 @@ export default function AccountsReceivablePage() {
                     {c.phone && <p className="text-xs text-gray-400">{c.phone}</p>}
                   </div>
                   <span className="shrink-0 text-sm font-semibold tabular-nums text-rose-700">{money(c.outstanding)}</span>
+                  <button
+                    type="button"
+                    onClick={(e) => printRowStatement(e, c)}
+                    className="shrink-0 rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                    title="Print statement"
+                  >
+                    <Printer className="h-4 w-4" />
+                  </button>
                   <ChevronRight className="h-4 w-4 shrink-0 text-gray-300" />
-                </button>
+                </div>
               ))}
             </div>
           </Panel>
@@ -303,6 +334,9 @@ export default function AccountsReceivablePage() {
                 </button>
                 <button type="button" disabled={outstandingTotal <= 0} onClick={() => openAction('customer', 'writeoff')} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-40">
                   <Tag className="h-4 w-4" /> Give discount
+                </button>
+                <button type="button" onClick={() => printStatement(selected, detail.statement, outstandingTotal)} className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                  <Printer className="h-4 w-4" /> Print statement
                 </button>
               </div>
 

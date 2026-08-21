@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, X, Wallet, QrCode, Building2, Sparkles, Receipt, Truck } from 'lucide-react';
+import { Loader2, X, Wallet, QrCode, Building2, Sparkles, Receipt, Truck, Bike, Search } from 'lucide-react';
 import { formatCurrency } from '@/lib/currency';
 import CustomerModePicker, {
   emptyCustomerSelection,
@@ -78,9 +78,20 @@ export default function BillPaymentPanel({
   onDeliveryEnabledChange,
   deliveryFee = '',
   onDeliveryFeeChange,
+  executives = [],
+  deliveryExecutiveId = null,
+  onDeliveryExecutiveChange,
 }) {
   const [qrModal, setQrModal] = useState({ open: false, title: '', image: '' });
+  const [executiveSearch, setExecutiveSearch] = useState('');
   const customerSectionRef = useRef(null);
+
+  const selectedExecutive = executives.find((ex) => ex.id === deliveryExecutiveId) || null;
+  const matchingExecutives = useMemo(() => {
+    const q = executiveSearch.trim().toLowerCase();
+    if (!q) return executives;
+    return executives.filter((ex) => ex.name?.toLowerCase().includes(q) || String(ex.phone || '').includes(q));
+  }, [executives, executiveSearch]);
 
   const amountDue = useMemo(
     () => Math.round((Number(totals?.total || 0) - Number(alreadyPaid || 0)) * 100) / 100,
@@ -240,19 +251,73 @@ export default function BillPaymentPanel({
                 </span>
               </label>
               {deliveryEnabled && (
-                <label className="mt-3 block text-xs font-bold text-slate-900">
-                  Delivery charge (Rs)
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    inputMode="decimal"
-                    value={deliveryFee}
-                    onChange={(e) => onDeliveryFeeChange?.(e.target.value)}
-                    className="mt-1 w-full rounded-lg border-2 border-sky-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
-                    placeholder="0.00"
-                  />
-                </label>
+                <>
+                  <label className="mt-3 block text-xs font-bold text-slate-900">
+                    Delivery charge (Rs)
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      inputMode="decimal"
+                      value={deliveryFee}
+                      onChange={(e) => onDeliveryFeeChange?.(e.target.value)}
+                      className="mt-1 w-full rounded-lg border-2 border-sky-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                      placeholder="0.00"
+                    />
+                  </label>
+
+                  <div className="mt-3">
+                    <label className="flex items-center gap-1.5 text-xs font-bold text-slate-900">
+                      <Bike className="h-3.5 w-3.5 text-sky-700" /> Delivery executive
+                    </label>
+                    {selectedExecutive ? (
+                      <div className="mt-1 flex items-center justify-between rounded-lg border-2 border-sky-300 bg-white px-3 py-2">
+                        <span className="text-sm font-semibold text-slate-900">
+                          {selectedExecutive.name}{selectedExecutive.phone ? ` · ${selectedExecutive.phone}` : ''}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => onDeliveryExecutiveChange?.(null)}
+                          className="text-xs font-bold text-sky-700 hover:underline"
+                        >
+                          Change
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="relative mt-1">
+                          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                          <input
+                            type="text"
+                            value={executiveSearch}
+                            onChange={(e) => setExecutiveSearch(e.target.value)}
+                            placeholder="Search by name..."
+                            className="w-full rounded-lg border-2 border-sky-200 bg-white py-2 pl-8 pr-3 text-sm font-medium text-slate-900 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                          />
+                        </div>
+                        <div className="mt-1.5 max-h-32 space-y-1 overflow-y-auto">
+                          {matchingExecutives.length === 0 ? (
+                            <p className="px-1 py-1 text-xs text-slate-500">
+                              {executives.length === 0 ? 'No delivery executives added yet — self / unassigned.' : 'No match.'}
+                            </p>
+                          ) : (
+                            matchingExecutives.map((ex) => (
+                              <button
+                                key={ex.id}
+                                type="button"
+                                onClick={() => onDeliveryExecutiveChange?.(ex.id)}
+                                className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-left text-sm hover:border-sky-400 hover:bg-sky-50"
+                              >
+                                <span className="font-medium text-slate-900">{ex.name}</span>
+                                <span className="text-xs text-slate-500">{ex.phone || ''}</span>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </>
               )}
             </div>
           )}

@@ -1,7 +1,9 @@
-SELECT order_number, status, table_number FROM orders ORDER BY id;
--- expect only O013, O014
+GRANT USAGE ON SCHEMA public TO thehairc_aadharuser;
 
-SELECT COUNT(*) AS busy
-FROM tables
-WHERE status <> 'available' OR current_order_id IS NOT NULL;
--- expect 0
+GRANT SELECT, INSERT, UPDATE, DELETE
+ON ALL TABLES IN SCHEMA public
+TO thehairc_aadharuser;
+
+GRANT USAGE, SELECT, UPDATE
+ON ALL SEQUENCES IN SCHEMA public
+TO thehairc_aadharuser;

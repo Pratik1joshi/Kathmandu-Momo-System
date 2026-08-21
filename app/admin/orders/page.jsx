@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import AdminLayout from '@/components/admin/admin-layout';
-import { Eye, Filter, Printer, ExternalLink, Ban, Trash2 } from 'lucide-react';
+import { Eye, Filter, Printer, ExternalLink, Ban, Trash2, LayoutGrid, ShoppingBag, Bike } from 'lucide-react';
 import DataGrid, { StatusBadge } from '@/components/admin/data-grid';
 import DateRangeFilter from '@/components/ui/date-range-filter';
 import useServerList from '@/lib/use-server-list';
@@ -20,7 +20,15 @@ import { formatNepalDateTime } from '@/lib/report-dates.js';
 import { compactOrderNumber } from '@/lib/document-display.js';
 import { printFinalBill } from '@/lib/pos-print.js';
 import { receiptFromOrderDetail } from '@/lib/bill-receipt.js';
-import { orderTypeLabel } from '@/lib/order-types.js';
+import { orderTypeLabel, normalizedOrderType } from '@/lib/order-types.js';
+
+const CHANNEL_ICON = { dine_in: LayoutGrid, takeaway: ShoppingBag, delivery: Bike };
+const CHANNEL_ICON_TONE = { dine_in: 'text-slate-500', takeaway: 'text-sky-600', delivery: 'text-orange-600' };
+function ChannelIcon({ order }) {
+  const type = normalizedOrderType(order);
+  const Icon = CHANNEL_ICON[type] || ShoppingBag;
+  return <Icon className={`h-3.5 w-3.5 shrink-0 ${CHANNEL_ICON_TONE[type] || 'text-slate-400'}`} />;
+}
 
 const STATUS_TONE = {
   pending: 'amber',
@@ -79,6 +87,7 @@ export default function AdminOrders() {
   const { addToast } = useToast();
   const { confirm, prompt, alert } = useConfirm();
   const [statusFilter, setStatusFilter] = useState('all');
+  const [channelFilter, setChannelFilter] = useState('all');
   const [dateRange, setDateRange] = useState({ period: '', from: '', to: '' });
   const [busyId, setBusyId] = useState(null);
   const [paySettings, setPaySettings] = useState({});
@@ -98,8 +107,8 @@ export default function AdminOrders() {
   }, []);
 
   const filters = useMemo(
-    () => ({ status: statusFilter, from: dateRange.from, to: dateRange.to }),
-    [statusFilter, dateRange]
+    () => ({ status: statusFilter, order_type: channelFilter, from: dateRange.from, to: dateRange.to }),
+    [statusFilter, channelFilter, dateRange]
   );
 
   const { rows, extra, server, loading, reload } = useServerList({
@@ -225,7 +234,8 @@ export default function AdminOrders() {
         render: (o) => (
           <div className="min-w-0">
             <div className="truncate text-gray-900">{o.customer_name || 'Walk-in'}</div>
-            <div className="truncate text-[11px] text-gray-400">
+            <div className="flex items-center gap-1 truncate text-[11px] text-gray-400">
+              <ChannelIcon order={o} />
               {o.table_number
                 ? `Table ${o.table_number}${o.party_label ? ` · ${o.party_label}` : ''}`
                 : orderTypeLabel(o)}
@@ -293,12 +303,16 @@ export default function AdminOrders() {
 
       <div className="space-y-5 bg-gray-50 p-4 sm:p-6 lg:p-8">
         <div className="grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-3 xl:grid-cols-6">
-          {tiles.map((t) => (
-            <div key={t.label} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
-              <p className="text-xs font-medium text-gray-500 sm:text-sm">{t.label}</p>
-              <h3 className="mt-2 truncate text-xl font-bold tabular-nums text-gray-900 sm:text-2xl">{t.value}</h3>
-            </div>
-          ))}
+          {tiles.map((t) => {
+            const len = String(t.value).length;
+            const sizeClass = len > 12 ? 'text-base sm:text-lg' : len > 8 ? 'text-lg sm:text-xl' : 'text-xl sm:text-2xl';
+            return (
+              <div key={t.label} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
+                <p className="text-xs font-medium text-gray-500 sm:text-sm">{t.label}</p>
+                <h3 className={`mt-2 truncate font-bold tabular-nums text-gray-900 ${sizeClass}`}>{t.value}</h3>
+              </div>
+            );
+          })}
         </div>
 
         <DataGrid
@@ -328,6 +342,17 @@ export default function AdminOrders() {
                   ))}
                 </select>
               </label>
+              <select
+                value={channelFilter}
+                onChange={(e) => setChannelFilter(e.target.value)}
+                className="h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700"
+                aria-label="Filter by channel"
+              >
+                <option value="all">All channels</option>
+                <option value="dine_in">Table</option>
+                <option value="takeaway">Takeaway</option>
+                <option value="delivery">Delivery</option>
+              </select>
               <DateRangeFilter value={dateRange} onChange={setDateRange} />
             </div>
           }

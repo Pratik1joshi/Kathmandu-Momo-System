@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import AdminLayout from '@/components/admin/admin-layout';
-import { Search, Plus, Edit, Trash2, Phone, Mail, Eye } from 'lucide-react';
+import { Search, Plus, Edit, Trash2, Phone, Mail, Eye, Users, Crown, ShieldAlert, Wallet, ShoppingBag } from 'lucide-react';
+import { formatCurrency } from '@/lib/currency';
 import { usePathname, useRouter } from 'next/navigation';
 import { useToast } from '@/components/ui/toast';
 import { useConfirm } from '@/components/ui/confirm';
@@ -42,6 +43,7 @@ export default function AdminCustomers() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [quickFilter, setQuickFilter] = useState('all'); // all | vip | credit | blacklisted
   const [showModal, setShowModal] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [formData, setFormData] = useState(emptyForm);
@@ -233,12 +235,25 @@ export default function AdminCustomers() {
     }
   };
 
-  const filteredCustomers = customers.filter(
+  const searchedCustomers = customers.filter(
     (customer) =>
       customer.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       customer.phone?.includes(searchTerm) ||
       customer.email?.toLowerCase().includes(searchTerm.toLowerCase())
   );
+  const filteredCustomers = searchedCustomers.filter((c) => {
+    if (quickFilter === 'vip') return !!c.is_vip;
+    if (quickFilter === 'credit') return Number(c.current_credit || 0) > 0.009;
+    if (quickFilter === 'blacklisted') return !!c.is_blacklisted;
+    return true;
+  });
+
+  const summary = {
+    total: customers.length,
+    vip: customers.filter((c) => c.is_vip).length,
+    withCredit: customers.filter((c) => Number(c.current_credit || 0) > 0.009).length,
+    outstanding: customers.reduce((s, c) => s + Number(c.current_credit || 0), 0),
+  };
 
   return (
     <AdminLayout>
@@ -266,7 +281,23 @@ export default function AdminCustomers() {
       </header>
 
       <div className="p-4 sm:p-6 lg:p-8">
-        <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
+        <div className="mb-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+          {[
+            { label: 'Total Customers', value: summary.total.toLocaleString(), icon: Users, tone: 'text-gray-900' },
+            { label: 'VIP', value: summary.vip.toLocaleString(), icon: Crown, tone: 'text-amber-600' },
+            { label: 'With Credit Due', value: summary.withCredit.toLocaleString(), icon: Wallet, tone: 'text-rose-600' },
+            { label: 'Total Outstanding', value: formatCurrency(summary.outstanding), icon: Wallet, tone: 'text-rose-600' },
+          ].map((t) => (
+            <div key={t.label} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+              <div className="flex items-center gap-2 text-xs font-medium text-gray-500 sm:text-sm">
+                <t.icon className="h-3.5 w-3.5" /> {t.label}
+              </div>
+              <h3 className={`mt-2 truncate text-lg font-bold tabular-nums sm:text-xl ${t.tone}`}>{t.value}</h3>
+            </div>
+          ))}
+        </div>
+
+        <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6 space-y-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-700 w-5 h-5" />
             <input
@@ -277,6 +308,25 @@ export default function AdminCustomers() {
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-700 text-gray-900"
             />
           </div>
+          <div className="flex flex-wrap gap-2">
+            {[
+              { id: 'all', label: `All (${summary.total})` },
+              { id: 'vip', label: `VIP (${summary.vip})` },
+              { id: 'credit', label: `Has credit due (${summary.withCredit})` },
+              { id: 'blacklisted', label: `Blacklisted (${customers.filter((c) => c.is_blacklisted).length})` },
+            ].map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => setQuickFilter(f.id)}
+                className={`rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors ${
+                  quickFilter === f.id ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -285,14 +335,20 @@ export default function AdminCustomers() {
           ) : filteredCustomers.length === 0 ? (
             <div className="col-span-full text-center py-12 text-gray-800">No customers found</div>
           ) : (
-            filteredCustomers.map((customer) => (
+            filteredCustomers.map((customer) => {
+              const credit = Number(customer.current_credit || customer.credit_balance || 0);
+              return (
               <div
                 key={customer.id}
                 className="bg-white rounded-lg border border-gray-200 p-6 hover:shadow-lg transition-shadow"
               >
                 <div className="flex items-start justify-between mb-4">
                   <button type="button" onClick={() => router.push(`${panelCustomerPath()}/${customer.id}`)} className="text-left">
-                    <h3 className="text-lg font-semibold text-gray-900 hover:text-blue-700">{customer.name}</h3>
+                    <h3 className="flex items-center gap-1.5 text-lg font-semibold text-gray-900 hover:text-blue-700">
+                      {customer.name}
+                      {customer.is_vip ? <Crown className="h-4 w-4 text-amber-500" /> : null}
+                      {customer.is_blacklisted ? <ShieldAlert className="h-4 w-4 text-red-500" /> : null}
+                    </h3>
                     <p className="text-sm text-gray-700">ID: {customer.id}</p>
                   </button>
                   <div className="flex gap-2">
@@ -339,28 +395,23 @@ export default function AdminCustomers() {
                   {customer.address && <p className="text-sm text-gray-800 mt-2">{customer.address}</p>}
                 </div>
 
-                <div className="mt-4 pt-4 border-t border-gray-200">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-800">Credit Balance</span>
-                    <span
-                      className={`text-sm font-semibold ${
-                        (customer.current_credit || customer.credit_balance || 0) > 0
-                          ? 'text-red-600'
-                          : 'text-green-600'
-                      }`}
-                    >
-                      Rs {Math.abs(customer.current_credit || customer.credit_balance || 0).toFixed(2)}
-                    </span>
+                <div className="mt-4 grid grid-cols-3 gap-2 border-t border-gray-100 pt-4">
+                  <div className="rounded-xl bg-gray-50 px-2.5 py-2 text-center">
+                    <p className="flex items-center justify-center gap-1 text-[10px] uppercase tracking-wide text-gray-400"><ShoppingBag className="h-3 w-3" /> Visits</p>
+                    <p className="mt-0.5 text-sm font-bold text-gray-900">{Number(customer.total_visits || 0)}</p>
                   </div>
-                  <div className="flex items-center justify-between mt-2">
-                    <span className="text-sm text-gray-800">Credit Limit</span>
-                    <span className="text-sm font-medium text-gray-900">
-                      Rs {(customer.credit_limit || 0).toFixed(2)}
-                    </span>
+                  <div className="rounded-xl bg-gray-50 px-2.5 py-2 text-center">
+                    <p className="text-[10px] uppercase tracking-wide text-gray-400">Lifetime</p>
+                    <p className="mt-0.5 truncate text-sm font-bold text-gray-900">{formatCurrency(customer.total_spent || 0)}</p>
+                  </div>
+                  <div className={`rounded-xl px-2.5 py-2 text-center ${credit > 0.009 ? 'bg-rose-50' : 'bg-gray-50'}`}>
+                    <p className="text-[10px] uppercase tracking-wide text-gray-400">Credit due</p>
+                    <p className={`mt-0.5 truncate text-sm font-bold ${credit > 0.009 ? 'text-rose-700' : 'text-gray-900'}`}>{formatCurrency(credit)}</p>
                   </div>
                 </div>
               </div>
-            ))
+              );
+            })
           )}
         </div>
       </div>

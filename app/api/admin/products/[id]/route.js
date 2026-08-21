@@ -2,8 +2,10 @@ import { NextResponse } from 'next/server';
 import Database from '@/lib/db/index';
 import { requireAuth, handleRouteError } from '@/lib/api-guard.js';
 import { ensureMenuVariantsSchema, replaceVariants } from '@/lib/menu-variants.js';
+import { ensureColumn } from '@/lib/db/schema-helpers.js';
 
-async function syncInventoryLink(db, menuItemId, inventoryItemId) {
+async function syncInventoryLink(db, menuItemId, inventoryItemId, posStockVisible) {
+  await ensureColumn(db, 'inventory_items', 'pos_stock_visible', 'INTEGER DEFAULT 0');
   const inventoryId = inventoryItemId === '' || inventoryItemId == null ? null : Number(inventoryItemId);
   if (inventoryId != null && (!Number.isInteger(inventoryId) || inventoryId <= 0)) {
     throw Object.assign(new Error('Choose a valid inventory item to link.'), { status: 400 });
@@ -15,8 +17,10 @@ async function syncInventoryLink(db, menuItemId, inventoryItemId) {
       throw Object.assign(new Error(`Inventory item "${inventory.item_name}" is already linked to another menu item.`), { status: 409 });
     }
   }
-  await db.run('UPDATE inventory_items SET menu_item_id = NULL WHERE menu_item_id = ?', [menuItemId]);
-  if (inventoryId != null) await db.run('UPDATE inventory_items SET menu_item_id = ? WHERE id = ?', [menuItemId, inventoryId]);
+  await db.run('UPDATE inventory_items SET menu_item_id = NULL, pos_stock_visible = 0 WHERE menu_item_id = ?', [menuItemId]);
+  if (inventoryId != null) {
+    await db.run('UPDATE inventory_items SET menu_item_id = ?, pos_stock_visible = ? WHERE id = ?', [menuItemId, posStockVisible ? 1 : 0, inventoryId]);
+  }
 }
 
 export async function PUT(request, context) {
@@ -55,13 +59,15 @@ export async function PUT(request, context) {
       id,
     ]);
 
-    await syncInventoryLink(db, id, hasVariants ? null : data.inventory_item_id);
+    await syncInventoryLink(db, id, hasVariants ? null : data.inventory_item_id, data.pos_stock_visible);
 
     const product = await db.get(`
       SELECT
         mi.*,
         mi.base_price as price,
-        mc.name as category
+        mc.name as category,
+        (SELECT i.id FROM inventory_items i WHERE i.menu_item_id = mi.id AND COALESCE(i.is_archived, 0) = 0 LIMIT 1) AS inventory_item_id,
+        (SELECT COALESCE(i.pos_stock_visible, 0) FROM inventory_items i WHERE i.menu_item_id = mi.id AND COALESCE(i.is_archived, 0) = 0 LIMIT 1) AS pos_stock_visible
       FROM menu_items mi
       LEFT JOIN menu_categories mc ON mi.category_id = mc.id
       WHERE mi.id = ?

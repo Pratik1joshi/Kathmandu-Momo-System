@@ -695,13 +695,26 @@ export default function WalkInBilling({ variant = 'admin' }) {
                     onClick={() => addToCart(product)}
                     className="bg-white rounded-xl border border-blue-100 p-3 sm:p-4 text-left active:scale-[0.98] hover:border-blue-400 hover:shadow-md transition-transform overflow-hidden"
                   >
-                    <div className="aspect-square rounded-lg mb-2 overflow-hidden bg-stone-100">
+                    <div className="relative aspect-square rounded-lg mb-2 overflow-hidden bg-stone-100">
                       <MenuItemImage
                         src={product.image_url}
                         alt={product.name}
                         size="card"
                         className="rounded-lg w-full h-full"
                       />
+                      {product.stock_quantity != null && (
+                        <span
+                          className={`absolute top-1 right-1 rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white ${
+                            Number(product.stock_quantity) <= 0
+                              ? 'bg-red-600'
+                              : Number(product.stock_quantity) <= 5
+                                ? 'bg-amber-500'
+                                : 'bg-emerald-600'
+                          }`}
+                        >
+                          {product.stock_quantity} {product.stock_unit || ''}
+                        </span>
+                      )}
                     </div>
                     <h3 className="font-semibold text-slate-900 text-xs sm:text-sm line-clamp-2 min-h-[2.5rem]">{product.name}</h3>
                     <p className="text-[11px] text-slate-500 truncate mb-1">{product.category_name || product.category || 'Menu'}</p>

@@ -5,6 +5,7 @@ import { ensureOrderColumns } from '@/lib/online-orders.js';
 import { ensureColumn } from '@/lib/db/schema-helpers.js';
 import { OrderRepository } from '@/lib/db/repositories/orders.js';
 import { voidBillAdmin } from '@/lib/bills-admin.js';
+import { ensureDeliverySchema, assignOrderExecutive } from '@/lib/delivery.js';
 
 export async function GET(request, { params }) {
   try {
@@ -17,11 +18,14 @@ export async function GET(request, { params }) {
     await ensureColumn(db, 'orders', 'party_label', 'TEXT').catch(() => {});
     await ensureColumn(db, 'bills', 'payment_status', "TEXT DEFAULT 'unpaid'").catch(() => {});
     await ensureColumn(db, 'bills', 'outstanding_amount', 'REAL DEFAULT 0').catch(() => {});
+    await ensureDeliverySchema(db);
 
     const order = await db.get(
       `
       SELECT o.*,
              o.id as order_id,
+             de.name AS delivery_executive_name,
+             de.phone AS delivery_executive_phone,
              (
                SELECT COALESCE(SUM(oi.subtotal), 0)
                FROM order_items oi
@@ -47,6 +51,7 @@ export async function GET(request, { params }) {
       LEFT JOIN bills b ON b.order_id = o.id AND b.id = (
         SELECT MAX(b2.id) FROM bills b2 WHERE b2.order_id = o.id
       )
+      LEFT JOIN delivery_executives de ON de.id = o.delivery_executive_id
       WHERE o.id = ?
     `,
       [id]
@@ -187,6 +192,32 @@ export async function POST(request, { params }) {
   } catch (error) {
     if (error?.status) return NextResponse.json({ error: error.message }, { status: error.status });
     return handleRouteError(error, 'Could not update the order.');
+  }
+}
+
+/**
+ * Assign (or clear) the delivery executive for a delivery order.
+ * Body: { delivery_executive_id } — null/omitted clears the assignment.
+ */
+export async function PATCH(request, { params }) {
+  try {
+    const auth = await requireAuth(request, { roles: ['admin', 'cashier', 'waiter'] });
+    if (auth.error) return auth.error;
+    const { id } = await params;
+    const orderId = parseInt(id, 10);
+    if (!Number.isFinite(orderId)) return NextResponse.json({ error: 'Invalid order.' }, { status: 400 });
+
+    const db = Database.getInstance();
+    const order = await db.get('SELECT id FROM orders WHERE id = ?', [orderId]);
+    if (!order) return NextResponse.json({ error: 'Order not found.' }, { status: 404 });
+
+    const body = await request.json().catch(() => ({}));
+    const executiveId = body.delivery_executive_id ? parseInt(body.delivery_executive_id, 10) : null;
+    await assignOrderExecutive(db, orderId, executiveId);
+
+    return NextResponse.json({ success: true, message: 'Delivery assignment updated.' });
+  } catch (error) {
+    return handleRouteError(error, 'Could not update the delivery assignment.');
   }
 }
 
