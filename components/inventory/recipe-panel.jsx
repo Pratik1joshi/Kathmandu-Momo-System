@@ -26,6 +26,7 @@ export default function RecipePanel({ recipeId, seedType = 'menu_item', recipes,
   const [saving, setSaving] = useState(false);
   const [materials, setMaterials] = useState([]);
   const [menuItems, setMenuItems] = useState([]);
+  const [menuItemSearch, setMenuItemSearch] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [form, setForm] = useState({
     name: '',
@@ -136,6 +137,15 @@ export default function RecipePanel({ recipeId, seedType = 'menu_item', recipes,
 
   const foodCost = costed.reduce((s, l) => s + l.subtotal, 0);
   const menuItem = menuItems.find((m) => String(m.id) === String(form.menu_item_id));
+
+  // The form stores the stable id, while the field shows a human-readable
+  // name. Keeping those separate lets typing filter the native dropdown
+  // without accidentally saving a menu-item name where an id is required.
+  useEffect(() => {
+    if (!form.menu_item_id) return;
+    const selected = menuItems.find((m) => String(m.id) === String(form.menu_item_id));
+    if (selected) setMenuItemSearch(selected.name || '');
+  }, [form.menu_item_id, menuItems]);
   const sellingPrice = Number(menuItem?.base_price ?? menuItem?.price ?? 0);
   const profit = sellingPrice - foodCost;
   const margin = sellingPrice > 0 ? (profit / sellingPrice) * 100 : null;
@@ -283,13 +293,22 @@ export default function RecipePanel({ recipeId, seedType = 'menu_item', recipes,
                 </Field>
                 {form.type === 'menu_item' && (
                   <Field label="Linked menu item">
-                    <select value={form.menu_item_id} onChange={(e) => set({ menu_item_id: e.target.value })} className={INPUT}>
-                      <option value="">Not linked yet</option>
-                      {menuItems.map((m) => (
-                        <option key={m.id} value={m.id}>{m.name}</option>
-                      ))}
-                    </select>
-                    <span className="mt-1 block text-xs text-gray-500">Required for stock to deduct on each order.</span>
+                    <input
+                      list="recipe-menu-items"
+                      value={menuItemSearch}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setMenuItemSearch(value);
+                        const match = menuItems.find((m) => String(m.name || '').toLowerCase() === value.trim().toLowerCase());
+                        set({ menu_item_id: match ? String(match.id) : '' });
+                      }}
+                      className={INPUT}
+                      placeholder="Type to search menu items…"
+                    />
+                    <datalist id="recipe-menu-items">
+                      {menuItems.map((m) => <option key={m.id} value={m.name} />)}
+                    </datalist>
+                    <span className="mt-1 block text-xs text-gray-500">Type to search or select from the dropdown. Required for stock to deduct on each order.</span>
                   </Field>
                 )}
                 <Field label="This recipe makes">

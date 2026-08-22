@@ -7,6 +7,8 @@ import { financialToneClass } from '@/lib/financial-tone';
 
 const amount = (value) => `Rs ${Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const count = (value) => Number(value || 0).toLocaleString('en-IN');
+const CASH_DENOMINATIONS = [1000, 500, 100, 50, 20, 10, 5, 1];
+const emptyDenominationCounts = () => Object.fromEntries(CASH_DENOMINATIONS.map((value) => [value, '']));
 
 function Metric({ label, value, money = true, tone }) {
   return <div className="min-w-0 border-l-2 border-gray-200 pl-3"><p className="text-xs font-medium text-gray-500">{label}</p><p className={`mt-1 truncate text-base font-semibold tabular-nums ${money ? financialToneClass({ label, value, tone }) : 'text-gray-950'}`}>{money ? amount(value) : count(value)}</p></div>;
@@ -19,8 +21,10 @@ function Section({ icon: Icon, title, children }) {
   </section>;
 }
 
-export default function ClosingSummary({ summary, countedCash = '', onCountedCashChange, interactive = false }) {
+export default function ClosingSummary({ summary, countedCash = '', onCountedCashChange, denominationCounts: controlledDenominationCounts, onDenominationCountsChange, interactive = false }) {
   const [showCash, setShowCash] = React.useState(false);
+  const [localDenominationCounts, setLocalDenominationCounts] = React.useState(emptyDenominationCounts);
+  const denominationCounts = controlledDenominationCounts || localDenominationCounts;
   const expected = Number(summary?.cash?.expected_cash || 0);
   const hasCount = countedCash !== '' && countedCash != null;
   const difference = hasCount ? Number(countedCash) - expected : null;
@@ -28,6 +32,29 @@ export default function ClosingSummary({ summary, countedCash = '', onCountedCas
   const sales = summary?.sales || {};
   const collections = summary?.collections || {};
   const breakdown = summary?.cash?.breakdown || {};
+  const denominationTotal = CASH_DENOMINATIONS.reduce(
+    (total, denomination) => total + (Number(denominationCounts[denomination]) || 0) * denomination,
+    0,
+  );
+
+  const updateDenominationCount = (denomination, value) => {
+    const quantity = value === '' ? '' : Math.max(0, Math.floor(Number(value) || 0));
+    const next = { ...denominationCounts, [denomination]: quantity };
+    if (onDenominationCountsChange) onDenominationCountsChange(next);
+    else setLocalDenominationCounts(next);
+    const total = CASH_DENOMINATIONS.reduce(
+      (sum, note) => sum + (Number(next[note]) || 0) * note,
+      0,
+    );
+    onCountedCashChange(String(total));
+  };
+
+  const clearDenominationCount = () => {
+    const empty = emptyDenominationCounts();
+    if (onDenominationCountsChange) onDenominationCountsChange(empty);
+    else setLocalDenominationCounts(empty);
+    onCountedCashChange('');
+  };
 
   return <div className="space-y-0">
     <Section icon={ReceiptText} title="Sales summary">
@@ -66,8 +93,8 @@ export default function ClosingSummary({ summary, countedCash = '', onCountedCas
         </div>
         <div className="border border-white/20 bg-white p-5 text-gray-950">
           <label className="block text-xs font-semibold uppercase text-gray-500">Counted Cash</label>
-          {interactive ? <div className="mt-2 flex items-center border-b-2 border-gray-950 pb-1"><span className="mr-2 text-xl font-semibold">Rs</span><input aria-label="Counted cash" type="number" min="0" step="0.01" inputMode="decimal" value={countedCash} onChange={(event) => onCountedCashChange(event.target.value)} className="min-w-0 flex-1 bg-transparent text-3xl font-bold tabular-nums outline-none sm:text-4xl" placeholder="0.00" /></div>
-            : <p className="mt-2 text-3xl font-bold tabular-nums sm:text-4xl">{amount(summary?.reconciliation?.counted_cash ?? summary?.business_day?.counted_cash)}</p>}
+          {interactive ? <><div className="mt-2 flex items-baseline justify-between gap-3 border-b-2 border-gray-950 pb-2"><p className="text-3xl font-bold tabular-nums sm:text-4xl">{amount(denominationTotal)}</p><button type="button" onClick={clearDenominationCount} className="text-xs font-semibold text-gray-500 hover:text-gray-950">Clear</button></div><p className="mt-3 text-xs text-gray-500">Enter how many notes you have for each denomination. The total is calculated automatically.</p><div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">{CASH_DENOMINATIONS.map((denomination) => { const value = (Number(denominationCounts[denomination]) || 0) * denomination; return <label key={denomination} className="grid grid-cols-[auto_minmax(70px,1fr)_auto] items-center gap-2 border border-gray-200 bg-gray-50 px-3 py-2.5"><span className="shrink-0 text-sm font-bold tabular-nums text-gray-900">Rs {denomination.toLocaleString('en-IN')} ×</span><input aria-label={`Number of Rs ${denomination} notes`} type="number" min="0" step="1" inputMode="numeric" value={denominationCounts[denomination]} onChange={(event) => updateDenominationCount(denomination, event.target.value)} className="min-w-0 border-b border-gray-300 bg-white px-2 py-1.5 text-center text-base font-bold tabular-nums outline-none focus:border-gray-950" placeholder="0" /><span className="shrink-0 text-sm font-semibold tabular-nums text-gray-600">= {amount(value)}</span></label>; })}</div></>
+            : <><p className="mt-2 text-3xl font-bold tabular-nums sm:text-4xl">{amount(summary?.reconciliation?.counted_cash ?? summary?.business_day?.counted_cash)}</p><DenominationBreakdown counts={summary?.reconciliation?.cash_denominations} /></>}
           <div className={`mt-4 border-l-4 pl-3 ${state === 'SHORT' ? 'border-rose-600 text-rose-700' : state === 'OVER' ? 'border-amber-500 text-amber-700' : state === 'MATCHED' ? 'border-emerald-600 text-emerald-700' : 'border-gray-300 text-gray-500'}`}>
             <p className="text-xs font-bold uppercase">{state || 'Difference'}</p>
             <p className="text-xl font-bold tabular-nums">{difference == null ? 'Enter counted cash' : amount(Math.abs(difference))}</p>
@@ -112,4 +139,10 @@ export default function ClosingSummary({ summary, countedCash = '', onCountedCas
 function CashLine({ label, value, sign = '' }) {
   const tone = sign === '+' ? 'text-emerald-400' : sign === '-' ? 'text-rose-400' : 'text-white';
   return <div><p className="text-xs text-gray-400">{label}</p><p className={`mt-0.5 font-semibold tabular-nums ${tone}`}>{sign} {amount(value)}</p></div>;
+}
+
+function DenominationBreakdown({ counts }) {
+  const recorded = Object.entries(counts || {}).filter(([, quantity]) => Number(quantity) > 0);
+  if (!recorded.length) return <p className="mt-3 text-xs text-gray-500">Note breakdown was not recorded for this closing.</p>;
+  return <div className="mt-4 border-t border-gray-200 pt-3"><p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Recorded note count</p><div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-4">{recorded.sort(([a], [b]) => Number(b) - Number(a)).map(([denomination, quantity]) => <span key={denomination} className="tabular-nums text-gray-700">Rs {Number(denomination).toLocaleString('en-IN')} × {quantity} = <strong>{amount(Number(denomination) * Number(quantity))}</strong></span>)}</div></div>;
 }

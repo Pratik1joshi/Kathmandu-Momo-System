@@ -20,7 +20,7 @@ const DRAWER_ROLES = ['admin', 'cashier'];
 
 export async function GET(request) {
   try {
-    const auth = await requireAuth(request, { roles: DRAWER_ROLES });
+    const auth = await requireAuth(request, { roles: DRAWER_ROLES, permission: 'cash_drawer.manage' });
     if (auth.error) return auth.error;
     const db = Database.getInstance();
     await ensureAccountingSchema(db);
@@ -61,7 +61,7 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    const auth = await requireAuth(request, { roles: DRAWER_ROLES });
+    const auth = await requireAuth(request, { roles: DRAWER_ROLES, permission: 'cash_drawer.manage' });
     if (auth.error) return auth.error;
     const db = Database.getInstance();
     await ensureAccountingSchema(db);
@@ -105,7 +105,7 @@ export async function POST(request) {
 
 export async function PUT(request) {
   try {
-    const auth = await requireAuth(request, { roles: DRAWER_ROLES });
+    const auth = await requireAuth(request, { roles: DRAWER_ROLES, permission: 'cash_drawer.manage' });
     if (auth.error) return auth.error;
     const db = Database.getInstance();
     await ensureAccountingSchema(db);

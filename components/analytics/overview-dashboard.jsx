@@ -5,13 +5,13 @@ import {
   Activity, BarChart3, ChefHat, ClipboardCheck, PackageSearch, ShoppingBasket, Users,
 } from 'lucide-react';
 import AnalyticsHome, { AnalyticsKeyMetrics } from './analytics-home';
+import OrderOperationsAnalytics from './order-operations-analytics';
 
 import { MenuPerformance, PaymentFinance } from './overview-commercial';
 import {
   AttentionCenter, Controls,
   FloorAndReservations,
   InventorySupplier,
-  LifecycleKitchen,
   LiveStatus,
   ManagementSummary,
   PeoplePerformance,
@@ -31,7 +31,7 @@ export default function OverviewDashboard({
     ['sales', 'Sales & Money', BarChart3],
     ['stock', 'Purchases & Stock', PackageSearch],
     ['menu', 'Menu & Tables', ShoppingBasket],
-    ['kitchen', 'Kitchen', ChefHat],
+    ['kitchen', 'Orders & Billing', ChefHat],
     ['people', 'Customers & Team', Users],
     ['control', 'Controls & Activity', ClipboardCheck],
   ];
@@ -53,7 +53,7 @@ export default function OverviewDashboard({
       {view === 'sales' && <div className="space-y-5"><PaymentFinance data={data} /></div>}
       {view === 'stock' && <div className="space-y-5"><InventorySupplier data={data} /></div>}
       {view === 'menu' && <div className="space-y-5"><MenuPerformance data={data} /><FloorAndReservations data={data} /></div>}
-      {view === 'kitchen' && <div className="space-y-5"><LiveStatus data={data} /><LifecycleKitchen data={data} /></div>}
+      {view === 'kitchen' && <div className="space-y-5"><LiveStatus data={data} /><OrderOperationsAnalytics data={data.orderOperations} live={data.live} /></div>}
       {view === 'people' && <div className="space-y-5"><PeoplePerformance data={data} /></div>}
       {view === 'control' && <div className="space-y-5">
         <AttentionCenter rows={data.attention} />

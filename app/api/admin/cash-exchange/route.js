@@ -7,7 +7,7 @@ import { currentBusinessDayId } from '@/lib/business-days.js';
 
 export async function GET(request) {
   try {
-    const auth = await requireAuth(request, { roles: ['admin', 'cashier'] });
+    const auth = await requireAuth(request, { roles: ['admin', 'cashier'], permission: 'cash_exchange.manage' });
     if (auth.error) return auth.error;
     const db = Database.getInstance();
     await ensureAccountingSchema(db);
@@ -24,7 +24,7 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    const auth = await requireAuth(request, { roles: ['admin', 'cashier'] });
+    const auth = await requireAuth(request, { roles: ['admin', 'cashier'], permission: 'cash_exchange.manage' });
     if (auth.error) return auth.error;
     const db = Database.getInstance();
     await ensureAccountingSchema(db);

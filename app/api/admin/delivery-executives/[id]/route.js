@@ -5,7 +5,7 @@ import { updateDeliveryExecutive } from '@/lib/delivery.js';
 
 export async function PATCH(request, context) {
   try {
-    const auth = await requireAuth(request, { roles: ['admin'] });
+    const auth = await requireAuth(request, { roles: ['admin', 'cashier'], permission: 'delivery.manage' });
     if (auth.error) return auth.error;
     const { id } = await context.params;
     const db = Database.getInstance();

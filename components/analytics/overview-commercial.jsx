@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, BadgeDollarSign, ReceiptText, Search, ShoppingBasket } from 'lucide-react';
+import { ArrowRight, BadgeDollarSign, Banknote, CircleAlert, Landmark, Layers3, ReceiptText, Search, ShoppingBasket } from 'lucide-react';
 import { BarChart, ChartCard, ChartGrid, RankBars, TrendChart } from '@/components/admin/report-kit';
 import DonutChart, { DEFAULT_COLORS } from '@/components/admin/donut-chart';
 import { financialTone } from '@/lib/financial-tone';
@@ -32,7 +32,7 @@ export function SalesPerformance({ data }) {
         action={<Link href="/admin/reports?tab=sales" className="inline-flex items-center gap-1 text-sm font-medium text-gray-700 hover:text-gray-950">Sales analytics <ArrowRight className="h-4 w-4" /></Link>}
       />
       <ChartGrid>
-        <ChartCard title="Net Sales Trend" hint="Item sales less discounts and period refunds" isEmpty={!trend.length} empty="No settled sales in this period.">
+        <ChartCard title="Net Item Sales Trend" hint="Menu item sales after discounts; before tax, service and refunds" isEmpty={!trend.length} empty="No settled sales in this period.">
           <TrendChart data={trend} color="blue" format="currency" height={230} />
         </ChartCard>
         <ChartCard title="Collections by Hour" hint="Actual payment rows, Nepal time" isEmpty={!hourly.length} empty="No collections in this period.">
@@ -51,10 +51,11 @@ export function SalesPerformance({ data }) {
           </TableWrap>
         </div>
         <div className="grid grid-cols-2 gap-4 rounded-xl border border-gray-100 bg-gray-50 p-4">
-          <Metric label="Gross Item Sales" value={data.totals.itemSales} format="currency" />
-          <Metric label="Net Sales" value={data.totals.netSales} format="currency" tone="positive" />
-          <Metric label="Discount" value={data.totals.discounts} format="currency" />
+          <Metric label="Total Item Sales" value={data.totals.itemSales} format="currency" />
+          <Metric label="Less: Discounts" value={data.totals.discounts} format="currency" />
+          <Metric label="Net Item Sales" value={data.totals.netItemSales} format="currency" tone="positive" />
           <Metric label="Tax + Service" value={data.totals.tax + data.totals.serviceCharge} format="currency" />
+          <Metric label="Net Revenue" value={data.totals.netSales} format="currency" tone="positive" />
           <Metric label="Bills" value={data.totals.bills} />
           <Metric label="Items Sold" value={data.totals.itemsSold} />
         </div>
@@ -76,13 +77,15 @@ export function PaymentFinance({ data }) {
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         {reportKpis.map((row) => (
           <div key={row.key} className="rounded-xl border border-gray-100 bg-gray-50 p-4">
-            <Metric label={row.label} value={row.value} format={row.format} tone={row.key === 'refunds' || row.key === 'cancelled' ? 'negative' : row.key === 'net' ? 'positive' : 'default'} />
+            <Metric label={row.label} value={row.value} format={row.format} tone={row.key === 'refunds' || row.key === 'cancelled' || row.key === 'discounts' ? 'negative' : row.key === 'net' || row.key === 'net_item_sales' ? 'positive' : 'default'} />
           </div>
         ))}
       </div>
 
+      <PaymentSummary data={data} />
+
       <div className="mt-5 grid gap-5 xl:grid-cols-2">
-        <ChartCard title="Revenue Trend" hint="Settled sales less discounts and refunds" isEmpty={!sales.trend?.length} empty="No settled sales in this period.">
+        <ChartCard title="Net Item Sales Trend" hint="Menu item sales after discounts; before tax, service and refunds" isEmpty={!sales.trend?.length} empty="No settled sales in this period.">
           <TrendChart data={sales.trend || []} color="blue" format="currency" height={230} />
         </ChartCard>
         <ChartCard title="By Hour" hint="Settled bill value by Nepal hour" isEmpty={!sales.hourly?.length} empty="No hourly sales in this period.">
@@ -95,6 +98,8 @@ export function PaymentFinance({ data }) {
         <DonutMix title="By Group" rows={groupRows} centerLabel="Sales" />
         <DonutMix title="By Category" rows={categoryRows} centerLabel="Sales" />
       </div>
+
+      <ChannelPaymentMix rows={sales.channelPayments} />
 
       <div className="mt-5 grid gap-4 rounded-2xl border border-gray-800 bg-gray-950 p-5 text-white sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 sm:p-6">
         {[
@@ -109,8 +114,88 @@ export function PaymentFinance({ data }) {
         <Link href="/admin/financial-reports?report=pnl" className="inline-flex items-center gap-1 text-gray-600 hover:text-gray-950"><BadgeDollarSign className="h-4 w-4" /> View P&amp;L</Link>
         <Link href="/admin/finance-dashboard" className="inline-flex items-center gap-1 text-gray-600 hover:text-gray-950"><ReceiptText className="h-4 w-4" /> Full finance</Link>
       </div>
+      <PaymentDetailTables breakdown={data.payments?.breakdown} />
     </DashboardSection>
   );
+}
+
+function PaymentSummary({ data }) {
+  const breakdown = data.payments?.breakdown;
+  if (!breakdown) return null;
+  const summary = breakdown.summary || {};
+  const rows = [
+    ['Cash sales', summary.cash?.amount, summary.cash?.transactions, 'cash'],
+    ['Online / bank sales', summary.online?.amount, summary.online?.transactions, 'online'],
+    ['Split payments', summary.split?.amount, summary.split?.transactions, 'split'],
+    ['Due / unpaid bills', summary.due?.amount, summary.due?.transactions, 'due'],
+    ['Ledger payment (cash)', summary.ledgerCash, null, 'ledger'],
+    ['Ledger payment (online / bank)', summary.ledgerOnline, null, 'ledger'],
+  ];
+  return (
+    <section className="mt-5 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
+      <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-400">Payment reconciliation</p>
+          <h3 className="mt-0.5 text-base font-semibold text-gray-950">Payment summary</h3>
+          <p className="mt-1 text-sm text-gray-500">{data.range?.start} to {data.range?.end} · Split orders are shown once, separately from cash and online sales.</p>
+        </div>
+        <span className="inline-flex w-fit rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">{summary.transactions || 0} sales / due entries</span>
+      </div>
+      <TableWrap minWidth="620px">
+        <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-400"><tr><th className="px-4 py-2.5">Payment method</th><th className="px-4 py-2.5 text-right">Amount</th><th className="px-4 py-2.5 text-right">Orders / entries</th></tr></thead>
+        <tbody className="divide-y divide-gray-100">
+          {rows.map(([label, amount, transactions, tone]) => <tr key={label} className="hover:bg-gray-50/70"><td className="px-4 py-3 font-medium text-gray-900"><PaymentIcon tone={tone} />{label}</td><td className="px-4 py-3 text-right font-semibold tabular-nums text-gray-900">{money(amount)}</td><td className="px-4 py-3 text-right tabular-nums text-gray-600">{transactions == null ? <span className="text-gray-300">—</span> : transactions}</td></tr>)}
+        </tbody>
+        <tfoot className="border-t-2 border-gray-900 bg-gray-50"><tr><td className="px-4 py-3.5 font-semibold text-gray-950">Total sales &amp; ledger (collected + due)</td><td className="px-4 py-3.5 text-right text-base font-bold tabular-nums text-gray-950">{money(summary.total)}</td><td className="px-4 py-3.5 text-right font-bold tabular-nums text-gray-950">{summary.transactions || 0}</td></tr></tfoot>
+      </TableWrap>
+
+    </section>
+  );
+}
+
+function PaymentDetailTables({ breakdown }) {
+  if (!breakdown) return null;
+  return <div className="mt-8 border-t border-gray-200 pt-6"><div className="mb-4"><p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-400">Payment records</p><h3 className="mt-0.5 text-base font-semibold text-gray-950">Order-level payment details</h3><p className="mt-1 text-sm text-gray-500">Detailed sales and outstanding balances for the selected period.</p></div><div className="grid gap-5 2xl:grid-cols-2"><PaymentOrderTable icon={Banknote} tone="emerald" title="Cash sales" note="Cash-only orders" rows={breakdown.rows?.cash} /><PaymentOrderTable icon={Landmark} tone="blue" title="Online / bank sales" note="Online or bank-only orders" rows={breakdown.rows?.online} /><SplitOrderTable rows={breakdown.rows?.split} /><DueOrderTable rows={breakdown.rows?.due} /></div></div>;
+}
+
+function PaymentIcon({ tone }) {
+  const Icon = tone === 'cash' ? Banknote : tone === 'online' ? Landmark : tone === 'split' ? Layers3 : CircleAlert;
+  const color = tone === 'cash' ? 'text-emerald-600' : tone === 'online' ? 'text-blue-600' : tone === 'split' ? 'text-violet-600' : tone === 'due' ? 'text-amber-600' : 'text-gray-500';
+  return <Icon className={`mr-2 inline-block h-4 w-4 ${color}`} />;
+}
+
+function OrderLabel({ row }) {
+  const value = row.orderNumber || row.billNumber || '—';
+  return <span className="font-medium text-gray-900">{String(value).startsWith('#') ? value : `#${value}`}</span>;
+}
+
+function DateTime({ value, dateOnly = false }) {
+  if (!value) return <span className="text-gray-300">—</span>;
+  const date = new Date(value);
+  const options = dateOnly ? { timeZone: 'Asia/Kathmandu', year: 'numeric', month: 'short', day: '2-digit' } : { timeZone: 'Asia/Kathmandu', year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' };
+  return <span className="whitespace-nowrap">{new Intl.DateTimeFormat('en-GB', options).format(date)}</span>;
+}
+
+function PaymentOrderTable({ icon: Icon, tone, title, note, rows = [] }) {
+  return <div className="overflow-hidden rounded-xl border border-gray-200"><div className="flex items-start justify-between gap-3 border-b border-gray-100 bg-gray-50 px-4 py-3"><div className="flex gap-2.5"><span className={`mt-0.5 rounded-lg p-1.5 ${tone === 'emerald' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}><Icon className="h-4 w-4" /></span><div><h4 className="text-sm font-semibold text-gray-950">{title} <span className="text-gray-400">({rows.length})</span></h4><p className="text-xs text-gray-500">{note}</p></div></div><span className="text-sm font-semibold tabular-nums text-gray-900">{money(rows.reduce((sum, row) => sum + Number(row.paid || 0), 0))}</span></div><div className="max-h-[360px] overflow-auto"><table className="w-full min-w-[650px] text-left text-sm"><thead className="sticky top-0 z-10 bg-white text-xs uppercase tracking-wide text-gray-400"><tr><th className="px-4 py-2.5">S.N.</th><th className="px-4 py-2.5">Order #</th><th className="px-4 py-2.5">Date / time</th><th className="px-4 py-2.5">Customer</th><th className="px-4 py-2.5 text-right">Amount</th></tr></thead><tbody className="divide-y divide-gray-100">{rows.map((row, index) => <tr key={row.id}><td className="px-4 py-3 text-gray-400">{index + 1}</td><td className="px-4 py-3"><OrderLabel row={row} /></td><td className="px-4 py-3 text-gray-600"><DateTime value={row.dateTime} /></td><td className="px-4 py-3 text-gray-700">{row.customer}</td><td className="px-4 py-3 text-right font-semibold tabular-nums text-gray-900">{money(row.paid)}</td></tr>)}</tbody></table>{!rows.length && <p className="py-8 text-center text-sm text-gray-400">No {title.toLowerCase()} in this period.</p>}</div></div>;
+}
+
+function SplitOrderTable({ rows = [] }) {
+  return <div className="overflow-hidden rounded-xl border border-violet-100"><div className="flex items-start justify-between gap-3 border-b border-violet-100 bg-violet-50 px-4 py-3"><div className="flex gap-2.5"><span className="mt-0.5 rounded-lg bg-violet-100 p-1.5 text-violet-700"><Layers3 className="h-4 w-4" /></span><div><h4 className="text-sm font-semibold text-gray-950">Split payment orders <span className="text-gray-400">({rows.length})</span></h4><p className="text-xs text-gray-500">Orders paid with multiple methods</p></div></div><span className="text-sm font-semibold tabular-nums text-gray-900">{money(rows.reduce((sum, row) => sum + Number(row.paid || 0), 0))}</span></div><div className="max-h-[360px] overflow-auto"><table className="w-full min-w-[770px] text-left text-sm"><thead className="sticky top-0 z-10 bg-white text-xs uppercase tracking-wide text-gray-400"><tr><th className="px-4 py-2.5">S.N.</th><th className="px-4 py-2.5">Order #</th><th className="px-4 py-2.5">Date / time</th><th className="px-4 py-2.5">Customer</th><th className="px-4 py-2.5 text-right">Cash</th><th className="px-4 py-2.5 text-right">Online / bank</th><th className="px-4 py-2.5 text-right">Amount</th></tr></thead><tbody className="divide-y divide-gray-100">{rows.map((row, index) => <tr key={row.id}><td className="px-4 py-3 text-gray-400">{index + 1}</td><td className="px-4 py-3"><OrderLabel row={row} /></td><td className="px-4 py-3 text-gray-600"><DateTime value={row.dateTime} /></td><td className="px-4 py-3 text-gray-700">{row.customer}</td><td className="px-4 py-3 text-right tabular-nums text-gray-600">{money(row.cash)}</td><td className="px-4 py-3 text-right tabular-nums text-gray-600">{money(row.online)}</td><td className="px-4 py-3 text-right font-semibold tabular-nums text-gray-900">{money(row.paid)}</td></tr>)}</tbody></table>{!rows.length && <p className="py-8 text-center text-sm text-gray-400">No split payment orders in this period.</p>}</div></div>;
+}
+
+function DueOrderTable({ rows = [] }) {
+  return <div className="overflow-hidden rounded-xl border border-amber-100"><div className="flex items-start justify-between gap-3 border-b border-amber-100 bg-amber-50 px-4 py-3"><div className="flex gap-2.5"><span className="mt-0.5 rounded-lg bg-amber-100 p-1.5 text-amber-700"><CircleAlert className="h-4 w-4" /></span><div><h4 className="text-sm font-semibold text-gray-950">Due / unpaid bills <span className="text-gray-400">({rows.length})</span></h4><p className="text-xs text-gray-500">Outstanding balance from bills in this period</p></div></div><span className="text-sm font-semibold tabular-nums text-amber-800">{money(rows.reduce((sum, row) => sum + Number(row.outstanding || 0), 0))}</span></div><div className="max-h-[360px] overflow-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="sticky top-0 z-10 bg-white text-xs uppercase tracking-wide text-gray-400"><tr><th className="px-4 py-2.5">S.N.</th><th className="px-4 py-2.5">Order #</th><th className="px-4 py-2.5">Date</th><th className="px-4 py-2.5">Customer</th><th className="px-4 py-2.5 text-right">Amount</th><th className="px-4 py-2.5 text-right">Paid</th><th className="px-4 py-2.5 text-right">Outstanding</th></tr></thead><tbody className="divide-y divide-gray-100">{rows.map((row, index) => <tr key={row.id}><td className="px-4 py-3 text-gray-400">{index + 1}</td><td className="px-4 py-3"><OrderLabel row={row} /></td><td className="px-4 py-3 text-gray-600"><DateTime value={row.dateTime} dateOnly /></td><td className="px-4 py-3 text-gray-700">{row.customer}</td><td className="px-4 py-3 text-right tabular-nums text-gray-600">{money(row.amount)}</td><td className="px-4 py-3 text-right tabular-nums text-gray-600">{money(row.paid)}</td><td className="px-4 py-3 text-right font-semibold tabular-nums text-amber-800">{money(row.outstanding)}</td></tr>)}</tbody></table>{!rows.length && <p className="py-8 text-center text-sm text-gray-400">No outstanding bills from this period.</p>}</div></div>;
+}
+
+function ChannelPaymentMix({ rows = [] }) {
+  const preferredOrder = ['Dine In', 'Takeaway', 'Delivery'];
+  const ordered = [...rows].sort((a, b) => {
+    const aIndex = preferredOrder.indexOf(a.channel);
+    const bIndex = preferredOrder.indexOf(b.channel);
+    return (aIndex === -1 ? 99 : aIndex) - (bIndex === -1 ? 99 : bIndex);
+  });
+  return <div className="mt-7 border-t border-gray-100 pt-6"><div className="mb-4"><p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-400">Channel payment mix</p><h3 className="mt-1 text-base font-semibold text-gray-950">How each order channel was paid</h3><p className="mt-1 text-sm text-gray-500">Cash, bank / QR, and credit collections for dine-in, takeaway, and delivery orders.</p></div><div className="grid gap-5 xl:grid-cols-2">{ordered.length ? ordered.map((row) => <DonutMix key={row.channel} title={`${row.channel} payments`} rows={row.methods} centerLabel={row.channel} />) : <div className="rounded-xl border border-dashed border-gray-200 py-10 text-center text-sm text-gray-400 xl:col-span-2">No channel payment data for this period.</div>}</div></div>;
 }
 
 function DonutMix({ title, rows, centerLabel }) {
@@ -130,7 +215,7 @@ function DonutMix({ title, rows, centerLabel }) {
             <div key={row.label} className="flex items-center justify-between gap-3 text-sm">
               <span className="min-w-0 inline-flex items-center gap-2 text-gray-600">
                 <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: row.color }} />
-                <span className="truncate">{row.label}</span>
+                <span className="break-words">{row.label}</span>
               </span>
               <span className="shrink-0 font-medium tabular-nums text-gray-900">{money(row.value)}</span>
             </div>

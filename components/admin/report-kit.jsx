@@ -164,9 +164,9 @@ export function KpiCards({ kpis }) {
 }
 
 /** One chart per card — never two. */
-export function ChartCard({ title, hint, children, isEmpty, empty }) {
+export function ChartCard({ title, hint, children, isEmpty, empty, className = '' }) {
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6 animate-in fade-in duration-300">
+    <div className={`rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6 animate-in fade-in duration-300 ${className}`}>
       <div className="mb-5">
         <h2 className="text-base font-semibold text-gray-900">{title}</h2>
         {hint && <p className="mt-0.5 text-xs text-gray-400">{hint}</p>}

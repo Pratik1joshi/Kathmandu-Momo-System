@@ -10,7 +10,7 @@ import { friendlyMessage, friendlyFromError } from '@/lib/friendly-message';
 import FieldError, { inputErrorClass } from '@/components/ui/field-error';
 import { numbersOnlyInput, validateName, validatePositiveNumber, firstError } from '@/lib/form-validation';
 
-const emptyVariant = () => ({ variant_name: '', price: '', stock_quantity: '', stock_unit: '', inventory_item_id: '' });
+const emptyVariant = () => ({ variant_name: '', price: '', stock_quantity: '', stock_unit: '', inventory_item_id: '', pos_stock_visible: false });
 
 const emptyForm = {
   name: '',
@@ -186,6 +186,7 @@ export default function ProductsPage() {
       stock_quantity: v.stock_quantity ?? '',
       stock_unit: v.stock_unit || '',
       inventory_item_id: v.inventory_item_id || '',
+      pos_stock_visible: !!v.pos_stock_visible,
       is_default: !!v.is_default,
     }));
     setFormData({
@@ -635,6 +636,17 @@ export default function ProductsPage() {
                                   <option key={item.id} value={item.id}>{item.item_name || item.name} · {Number(item.quantity || 0)} {item.unit || ''}</option>
                                 ))}
                               </select>
+                              <label className="mt-2 flex items-center gap-2 text-xs text-gray-700">
+                                <input
+                                  type="checkbox"
+                                  checked={!!variant.pos_stock_visible}
+                                  disabled={!variant.inventory_item_id}
+                                  onChange={(e) => updateVariant(index, { pos_stock_visible: e.target.checked })}
+                                  className="h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-400 disabled:cursor-not-allowed"
+                                />
+                                Show this variation&apos;s live stock in POS
+                              </label>
+                              {!variant.inventory_item_id && <p className="mt-1 text-xs text-gray-400">Choose its inventory item first to show a live count.</p>}
                             </div>
                           </div>
                         </div>
@@ -682,6 +694,7 @@ export default function ProductsPage() {
                   <div className="min-w-0">
                     <h3 className="font-bold text-gray-900 truncate">{product.name}</h3>
                     <p className="text-xs text-gray-500">{product.category_name || '-'}</p>
+                    {product.variants?.length > 0 && <p className="mt-1 text-xs font-semibold text-blue-600">{product.variants.length} options</p>}
                   </div>
                   <span className={`px-2.5 py-1 rounded-full text-xs font-bold flex-shrink-0 ${
                     product.is_available
@@ -727,6 +740,7 @@ export default function ProductsPage() {
                   <td className="px-6 py-4">
                     <div className="font-medium text-gray-900">{product.name}</div>
                     {product.description && <div className="text-sm text-gray-800">{product.description}</div>}
+                    {product.variants?.length > 0 && <div className="mt-1 text-xs font-semibold text-blue-600">{product.variants.length} options available</div>}
                   </td>
                   <td className="px-6 py-4 text-gray-700">{product.category_name || '-'}</td>
                   <td className="px-6 py-4 font-medium text-gray-900">Rs {product.price}</td>

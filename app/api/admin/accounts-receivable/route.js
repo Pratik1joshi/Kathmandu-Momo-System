@@ -56,6 +56,11 @@ export async function POST(request) {
     const body = await request.json();
     const actorId = auth.user?.id || null;
     const actorRole = auth.user?.role || 'admin';
+    const isCreditDiscount = body.action === 'writeoff';
+    if (isCreditDiscount) {
+      const discountAuth = await requireAuth(request, { permission: 'credit.writeoff' });
+      if (discountAuth.error) return discountAuth.error;
+    }
 
     // A bill_id scopes the action to exactly that invoice (the order-detail
     // popup's "Pay"/"Discount") instead of FIFO-applying across every open
@@ -64,6 +69,7 @@ export async function POST(request) {
       if (body.action === 'writeoff') {
         const result = await writeOffCreditBalance(db, {
           billId: body.bill_id, amount: body.amount, reason: body.note, actorId, actorRole,
+          allowCreditWriteOff: true,
           requestKey: body.external_ref || newKey(),
         });
         return NextResponse.json({ message: 'Discount / write-off recorded.', ...result }, { status: 201 });
@@ -86,7 +92,7 @@ export async function POST(request) {
     }
 
     if (body.action === 'writeoff') {
-      const result = await writeOffCustomerCredit(db, { ...body, actorId, actorRole });
+      const result = await writeOffCustomerCredit(db, { ...body, actorId, actorRole, allowCreditWriteOff: true });
       return NextResponse.json({ message: 'Discount / write-off recorded.', ...result }, { status: 201 });
     }
     const result = await collectCustomerCredit(db, { ...body, actorId, actorRole });

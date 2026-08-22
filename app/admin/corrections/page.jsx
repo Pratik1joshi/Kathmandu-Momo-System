@@ -20,7 +20,26 @@ export default function CorrectionsPage() {
   const [reverseForm, setReverseForm] = useState({ journal_id: '', reason: '' });
   const keyRef = useRef(newKey());
 
-  const load = () => apiJson('/api/admin/corrections').then((d) => setHistory(d.bill_corrections || [])).catch(() => {});
+  const load = () => apiJson('/api/admin/corrections').then((d) => {
+    const billHistory = (d.bill_corrections || []).map((row) => ({
+      ...row,
+      history_id: `bill-${row.id}`,
+      reference: row.bill_number || '—',
+    }));
+    // Refunds already have a richer bill-level history row. Include only
+    // stand-alone journal reversals here so an operator can audit the reverse
+    // action that was previously invisible below the form.
+    const reversalHistory = (d.corrections || [])
+      .filter((row) => row.source_type === 'reversal')
+      .map((row) => ({
+        ...row,
+        history_id: `journal-${row.id}`,
+        type: 'reversal',
+        reference: `Journal #${row.source_id}`,
+        reason: row.memo || 'Journal reversal',
+      }));
+    setHistory([...billHistory, ...reversalHistory].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''))));
+  }).catch(() => {});
   useEffect(() => { load(); }, []);
 
   const post = async (body, done) => {
@@ -95,21 +114,21 @@ export default function CorrectionsPage() {
         </div>
 
         <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
-          <div className="border-b border-gray-200 px-5 py-4"><h2 className="text-sm font-semibold text-gray-900">Refund &amp; void history</h2></div>
+          <div className="border-b border-gray-200 px-5 py-4"><h2 className="text-sm font-semibold text-gray-900">Correction history</h2><p className="mt-0.5 text-xs text-gray-500">Refunds, bill voids and journal reversals.</p></div>
           <table className="w-full text-sm">
             <tbody className="divide-y divide-gray-100">
               {history.map((h) => (
-                <tr key={h.id} className="hover:bg-gray-50">
+                <tr key={h.history_id} className="hover:bg-gray-50">
                   <td className="px-5 py-2.5">
-                    <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${h.type === 'void' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>{h.type}</span>
+                    <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${h.type === 'void' ? 'bg-rose-100 text-rose-700' : h.type === 'reversal' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>{h.type}</span>
                   </td>
-                  <td className="px-5 py-2.5 font-medium text-gray-900">{h.bill_number || '—'}</td>
+                  <td className="px-5 py-2.5 font-medium text-gray-900">{h.reference}</td>
                   <td className="px-5 py-2.5 text-gray-600">{h.reason}{h.restocked ? ' · restocked' : ''}</td>
                   <td className="px-5 py-2.5 text-right tabular-nums text-gray-900">{money(h.amount)}</td>
                   <td className="px-5 py-2.5 text-right text-xs text-gray-500">{formatNepalTime(h.created_at)}{h.by_name ? ` · ${h.by_name}` : ''}</td>
                 </tr>
               ))}
-              {history.length === 0 && <tr><td colSpan={5} className="px-5 py-8 text-center text-gray-500">No refunds or voids yet.</td></tr>}
+              {history.length === 0 && <tr><td colSpan={5} className="px-5 py-8 text-center text-gray-500">No corrections or reversals yet.</td></tr>}
             </tbody>
           </table>
         </div>

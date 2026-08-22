@@ -9,7 +9,7 @@ import { ensureBusinessDaySchema } from '@/lib/business-days.js';
 
 export async function GET(request) {
   try {
-    const auth = await requireAuth(request, { roles: ['admin'] });
+    const auth = await requireAuth(request, { roles: ['admin', 'cashier'], permission: 'reports.view' });
     if (auth.error) return auth.error;
 
     const { searchParams } = new URL(request.url);

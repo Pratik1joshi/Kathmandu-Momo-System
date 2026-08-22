@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import AdminLayout from '@/components/admin/admin-layout';
 import {
@@ -13,6 +13,7 @@ import { friendlyFromError } from '@/lib/friendly-message';
 import QuickRestockModal from '@/components/inventory/quick-restock-modal';
 import ItemFormModal from '@/components/inventory/item-form-modal';
 import { formatNepalDate, formatNepalTime } from '@/lib/time-utils';
+import { useCapabilities } from '@/lib/use-capabilities.js';
 
 function authedRequest(url, options = {}) {
   const token = localStorage.getItem('pos_token');
@@ -48,6 +49,12 @@ function statusOf(item) {
 export default function InventoryItemDetailPage() {
   const { id } = useParams();
   const router = useRouter();
+  const pathname = usePathname();
+  const cashierPanel = pathname?.startsWith('/cashier');
+  const inventoryBase = cashierPanel ? '/cashier/inventory' : '/admin/inventory';
+  const recipeBase = cashierPanel ? '/cashier/recipes' : '/admin/recipes';
+  const { role, can } = useCapabilities();
+  const canManage = role === 'admin' || can('inventory.manage');
   const { addToast } = useToast();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -98,7 +105,7 @@ export default function InventoryItemDetailPage() {
       <header className="bg-white border-b border-gray-200 px-4 sm:px-6 lg:px-8 py-5 sm:py-6">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            <button onClick={() => router.push('/admin/inventory')} className="p-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 shrink-0">
+            <button onClick={() => router.push(inventoryBase)} className="p-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 shrink-0">
               <ArrowLeft className="w-5 h-5" />
             </button>
             <div className="min-w-0">
@@ -107,12 +114,12 @@ export default function InventoryItemDetailPage() {
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <button
+            {canManage && <button
               onClick={() => setShowEdit(true)}
               className="flex items-center gap-1.5 px-3 py-2.5 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 font-semibold text-sm"
             >
               <Pencil className="w-4 h-4" /> Edit
-            </button>
+            </button>}
             <button
               onClick={() => setShowRestock(true)}
               className="flex items-center gap-1.5 px-3 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 font-semibold text-sm"
@@ -157,7 +164,7 @@ export default function InventoryItemDetailPage() {
               {recipesUsing.map((r) => (
                 <Link
                   key={r.id}
-                  href={`/admin/recipes/${r.id}`}
+                  href={`${recipeBase}/${r.id}`}
                   className="flex items-center justify-between rounded-lg border border-gray-100 px-3 py-2 text-sm hover:bg-gray-50"
                 >
                   <span className="font-medium text-gray-800">{r.menu_item_name || r.name}</span>

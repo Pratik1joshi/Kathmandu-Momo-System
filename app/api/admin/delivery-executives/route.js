@@ -5,7 +5,7 @@ import { listDeliveryExecutives, createDeliveryExecutive } from '@/lib/delivery.
 
 export async function GET(request) {
   try {
-    const auth = await requireAuth(request, { roles: ['admin', 'cashier'] });
+    const auth = await requireAuth(request, { roles: ['admin', 'cashier'], permission: 'delivery.manage' });
     if (auth.error) return auth.error;
     const db = Database.getInstance();
     const search = new URL(request.url).searchParams.get('search') || '';
@@ -18,7 +18,7 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    const auth = await requireAuth(request, { roles: ['admin'] });
+    const auth = await requireAuth(request, { roles: ['admin', 'cashier'], permission: 'delivery.manage' });
     if (auth.error) return auth.error;
     const db = Database.getInstance();
     const body = await request.json();

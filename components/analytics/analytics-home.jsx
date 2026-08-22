@@ -5,7 +5,8 @@ import {
   ArrowRight, CircleDollarSign, CreditCard, PackageSearch,
   ShoppingBasket, WalletCards,
 } from 'lucide-react';
-import { ChartCard, RankBars, formatValue } from '@/components/admin/report-kit';
+import { ChartCard, RankBars, TrendChart, formatValue } from '@/components/admin/report-kit';
+import DonutChart, { DEFAULT_COLORS } from '@/components/admin/donut-chart';
 import { financialToneClass } from '@/lib/financial-tone';
 
 const money = (value) => formatValue(value, 'currency');
@@ -28,7 +29,9 @@ export function AnalyticsKeyMetrics({ data }) {
   const openingBalance = data.businessDayMetrics?.openingCash ?? finance.openingBalance;
   const metrics = [
     ['Opening Balance', openingBalance, 'currency', 'Drawer at opening'],
-    ['Total Sales', totals.netSales, 'currency', `${number(totals.bills)} orders`],
+    ['Total Item Sales', totals.itemSales, 'currency', 'Before customer discounts'],
+    ['Less: Discounts', totals.discounts, 'currency', 'Customer discounts'],
+    ['Net Item Sales', totals.netItemSales, 'currency', 'After customer discounts'],
     ['Ledger Collections', finance.ledgerCollections, 'currency', 'Past dues paid'],
     ['Total Purchases', inventory.purchaseValue, 'currency', `${number(inventory.purchases)} records`],
     ['Total Expenses', finance.operatingExpenses, 'currency', 'Operating expenses'],
@@ -36,7 +39,7 @@ export function AnalyticsKeyMetrics({ data }) {
     ['Net Profit', finance.operatingProfit, 'currency', 'After operating expenses'],
     ['Profit Margin', finance.profitMargin, 'percent', 'Of total sales'],
     ['Avg Order', averageOrder, 'currency', `${number(totals.bills)} bills`],
-    ['Total Discount', totals.discounts, 'currency', 'Customer discounts'],
+    ['Net Revenue', totals.netSales, 'currency', 'After refunds; tax/service included'],
   ];
 
   return (
@@ -78,11 +81,6 @@ export default function AnalyticsHome({ data }) {
   const totals = data.totals || {};
   const inventory = data.inventory || {};
   const payments = data.payments || {};
-  const topItems = (data.menu?.topItems || []).slice(0, 7).map((row) => ({
-    label: row.item,
-    value: row.revenue,
-    meta: `${number(row.quantity)} sold`,
-  }));
   const tableEarnings = (data.tables?.rows || []).slice(0, 7).map((row) => ({
     label: `Table ${row.table_number}`,
     value: row.revenue,
@@ -90,6 +88,14 @@ export default function AnalyticsHome({ data }) {
   }));
   const paymentTotal = Number(payments.cashCollected || 0) + Number(payments.onlineCollected || 0);
   const cashShare = paymentTotal ? Math.min(100, (Number(payments.cashCollected || 0) / paymentTotal) * 100) : 0;
+  const purchasing = data.suppliers?.purchasing || {};
+  const chartRows = {
+    payments: (payments.methods || []).map((row) => ({ label: row.label, value: row.amount, meta: `${number(row.transactions)} transactions` })),
+    salesCategories: (data.sales?.byCategory || []).map((row) => ({ label: row.label, value: row.value, meta: row.meta })),
+    masterCategories: (data.sales?.byGroup || []).map((row) => ({ label: row.label, value: row.value, meta: `${number(row.quantity)} sold` })),
+    purchaseCategories: (purchasing.purchases?.categories || []).map((row) => ({ label: row.category, value: row.amount, meta: percent(row.share) })),
+    expenseCategories: (purchasing.expenses?.categories || []).map((row) => ({ label: row.category, value: row.amount, meta: percent(row.share) })),
+  };
 
   return (
     <div className="space-y-5">
@@ -106,19 +112,34 @@ export default function AnalyticsHome({ data }) {
           </div>
         </OverviewCard>
         <OverviewCard title="Purchases" icon={ShoppingBasket} tone="amber" moneyTone="text-rose-700" href="/admin/purchases" value={money(inventory.purchaseValue)} detail={`${number(inventory.purchases)} purchase records`} />
-        <OverviewCard title="Sales" icon={CircleDollarSign} tone="emerald" moneyTone="text-emerald-700" href="/admin/reports?tab=sales" value={money(totals.netSales)} detail={`${number(totals.bills)} orders · ${number(totals.itemsSold)} items${data.live?.openOrdersValue > 0 ? ` · +${money(data.live.openOrdersValue)} on open tables` : ''}`} />
+        <OverviewCard title="Sales" icon={CircleDollarSign} tone="emerald" moneyTone="text-emerald-700" href="/admin/reports?tab=sales" value={money(totals.netItemSales)} detail={`${money(totals.itemSales)} total − ${money(totals.discounts)} discounts${data.live?.openOrdersValue > 0 ? ` · +${money(data.live.openOrdersValue)} on open tables` : ''}`} />
         <OverviewCard title="Expenses" icon={WalletCards} tone="rose" moneyTone="text-rose-700" href="/admin/expenses" value={money(finance.operatingExpenses)} detail={`Food cost ${money(finance.cogs)}`} />
         <OverviewCard title="Stock" icon={PackageSearch} tone="violet" href="/admin/inventory" value={money(inventory.value)} detail={`${number(inventory.low)} low stock · ${number(inventory.out)} out`} />
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-2" aria-label="Sales rankings">
-        <ChartCard title="Top Selling Items" hint="Highest earning menu items" isEmpty={!topItems.length} empty="No item sales in this period.">
-          <RankBars data={topItems} color="emerald" format="currency" limit={7} />
-        </ChartCard>
-        <ChartCard title="Table Earnings" hint="Revenue earned by each dine-in table" isEmpty={!tableEarnings.length} empty="No settled table sales in this period.">
-          <RankBars data={tableEarnings} color="blue" format="currency" limit={7} />
-        </ChartCard>
+      <section aria-label="Visual business breakdown" className="border-t border-gray-200 pt-7">
+        <div className="mb-5"><p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-400">Visual dashboard</p><h2 className="mt-1 text-lg font-semibold text-gray-950">What is driving the business</h2><p className="mt-1 text-sm text-gray-500">Hover, tap, or focus a donut segment to inspect its share.</p></div>
+        <div className="grid gap-5 xl:grid-cols-2">
+          <ChartCard title="Sales Trend" hint="Net item sales by day" isEmpty={!data.sales?.trend?.length} empty="No settled sales in this period." className="xl:col-span-2">
+            <TrendChart data={data.sales?.trend || []} color="blue" format="currency" height={250} />
+          </ChartCard>
+          <VisualDonut title="Payment Methods" rows={chartRows.payments} centerLabel="Collected" />
+          <VisualDonut title="Sales by Category" rows={chartRows.salesCategories} centerLabel="Sales" />
+          <VisualDonut title="Sales by Master Category" rows={chartRows.masterCategories} centerLabel="Sales" />
+          <VisualDonut title="Purchases by Category" rows={chartRows.purchaseCategories} centerLabel="Purchases" />
+          <VisualDonut title="Expenses by Category" rows={chartRows.expenseCategories} centerLabel="Expenses" />
+          <ChartCard title="Table Earnings" hint="Revenue earned by each dine-in table" isEmpty={!tableEarnings.length} empty="No settled table sales in this period.">
+            <RankBars data={tableEarnings} color="blue" format="currency" limit={7} />
+          </ChartCard>
+        </div>
       </section>
     </div>
   );
+}
+
+function VisualDonut({ title, rows = [], centerLabel }) {
+  const usableRows = rows.filter((row) => Number(row.value || 0) > 0).slice(0, 8);
+  const total = usableRows.reduce((sum, row) => sum + Number(row.value || 0), 0);
+  const segments = usableRows.map((row, index) => ({ ...row, color: DEFAULT_COLORS[index % DEFAULT_COLORS.length] }));
+  return <ChartCard title={title} isEmpty={!segments.length} empty={`No ${title.toLowerCase()} in this period.`}><div className="grid items-center gap-5 sm:grid-cols-[190px_minmax(0,1fr)]"><DonutChart segments={segments} size={190} thickness={28} centerLabel={centerLabel} centerValue={money(total)} /><div className="max-h-[210px] space-y-2.5 overflow-auto pr-2">{segments.map((row) => <div key={row.label} className="flex items-center justify-between gap-3 text-xs"><span className="min-w-0 inline-flex items-center gap-1.5 text-gray-600"><span className="h-2 w-2 shrink-0 rounded-sm" style={{ backgroundColor: row.color }} /><span className="truncate">{row.label}</span></span><span className="shrink-0 text-right"><span className="block font-medium tabular-nums text-gray-900">{money(row.value)}</span>{row.meta && <span className="block text-[10px] text-gray-400">{row.meta}</span>}</span></div>)}</div></div></ChartCard>;
 }

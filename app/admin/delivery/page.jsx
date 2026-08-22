@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import AdminLayout from '@/components/admin/admin-layout';
 import { Search, Download, Plus, X, ChevronRight, Bike } from 'lucide-react';
 import { apiJson } from '@/lib/authed-fetch';
@@ -23,6 +23,8 @@ const STATUS_CLASS = {
 
 export default function DeliveryExecutivesPage() {
   const router = useRouter();
+  const pathname = usePathname();
+  const orderBase = pathname?.startsWith('/cashier') ? '/cashier/orders' : '/admin/orders';
   const { addToast } = useToast();
 
   const [executives, setExecutives] = useState([]);
@@ -238,7 +240,7 @@ export default function DeliveryExecutivesPage() {
                     <button
                       key={o.id}
                       type="button"
-                      onClick={() => router.push(`/admin/orders/${o.id}`)}
+                      onClick={() => router.push(`${orderBase}/${o.id}`)}
                       className="flex w-full flex-wrap items-center gap-3 px-5 py-3 text-left hover:bg-gray-50"
                     >
                       <span className="min-w-0 flex-1">

@@ -1,7 +1,7 @@
 'use client';
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
-import { ShieldCheck, RefreshCw, Save, History } from 'lucide-react';
+import { ShieldCheck, RefreshCw, Save, History, UserCog } from 'lucide-react';
 import AdminLayout from '@/components/admin/admin-layout';
 import { apiJson } from '@/lib/authed-fetch';
 import { friendlyFromError, friendlyMessage } from '@/lib/friendly-message';
@@ -53,6 +53,14 @@ export default function PermissionsPage() {
 
   const dirtyCount = Object.keys(pending).length;
 
+  const enableCashierManager = () => {
+    const next = { ...pending };
+    for (const item of data?.catalog || []) {
+      if (!item.roles || item.roles.includes('cashier')) next[`cashier:${item.key}`] = true;
+    }
+    setPending(next);
+  };
+
   const save = async () => {
     if (!dirtyCount) return;
     setSaving(true);
@@ -87,6 +95,7 @@ export default function PermissionsPage() {
           <div><h1 className="text-2xl font-bold text-gray-950 sm:text-3xl">Staff Permissions</h1><p className="mt-1 text-sm text-gray-500">Control exactly which sensitive actions waiters, cashiers and kitchen staff can perform. Admin always has full access.</p></div>
         </div>
         <div className="flex gap-2">
+          <button type="button" onClick={enableCashierManager} disabled={loading} className="inline-flex h-10 items-center gap-2 border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"><UserCog className="h-4 w-4" />Enable cashier manager</button>
           <button type="button" onClick={loadAudit} className="inline-flex h-10 items-center gap-2 border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-50"><History className="h-4 w-4" />{showAudit ? 'Hide history' : 'Change history'}</button>
           <button type="button" onClick={load} disabled={loading} title="Refresh" className="inline-flex h-10 w-10 items-center justify-center border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /></button>
         </div>

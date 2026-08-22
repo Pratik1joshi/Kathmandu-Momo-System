@@ -1,5 +1,7 @@
 'use client';
 
+import { useState } from 'react';
+
 /**
  * Simple SVG donut chart from [{ label, value, color }].
  */
@@ -10,6 +12,7 @@ export default function DonutChart({
   centerLabel = 'Total',
   centerValue = null,
 }) {
+  const [activeIndex, setActiveIndex] = useState(null);
   const total = segments.reduce((s, x) => s + Number(x.value || 0), 0);
   const r = 40;
   const c = 2 * Math.PI * r;
@@ -44,6 +47,7 @@ export default function DonutChart({
         {arcs.map(({ seg, i, value, len, strokeDashoffset }) => {
           if (value <= 0) return null;
           const dash = `${len} ${c - len}`;
+          const active = activeIndex === i;
           return (
             <circle
               key={i}
@@ -52,19 +56,30 @@ export default function DonutChart({
               r={r}
               fill="none"
               stroke={colors[i]}
-              strokeWidth={thickness / 2.5}
               strokeDasharray={dash}
               strokeDashoffset={strokeDashoffset}
               strokeLinecap="butt"
+              className="cursor-pointer transition-[opacity,stroke-width] duration-150 ease-out"
+              opacity={activeIndex == null || active ? 1 : 0.3}
+              strokeWidth={active ? thickness / 2 : thickness / 2.5}
+              role="button"
+              tabIndex={0}
+              aria-label={`${seg.label}: ${value}`}
+              onMouseEnter={() => setActiveIndex(i)}
+              onMouseLeave={() => setActiveIndex(null)}
+              onFocus={() => setActiveIndex(i)}
+              onBlur={() => setActiveIndex(null)}
+              onClick={() => setActiveIndex(active ? null : i)}
+              onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setActiveIndex(active ? null : i); } }}
             />
           );
         })}
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center px-4 text-center">
         <p className="text-sm sm:text-base font-bold text-gray-900 tabular-nums leading-tight break-all">
-          {centerValue != null ? centerValue : '100%'}
+          {activeIndex != null ? `${Math.round((Number(segments[activeIndex]?.value || 0) / total) * 100)}%` : (centerValue != null ? centerValue : '100%')}
         </p>
-        <p className="text-[10px] sm:text-xs text-gray-500 mt-0.5">{centerLabel}</p>
+        <p className="text-[10px] sm:text-xs text-gray-500 mt-0.5 truncate max-w-full">{activeIndex != null ? segments[activeIndex]?.label : centerLabel}</p>
       </div>
     </div>
   );

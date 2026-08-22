@@ -5,7 +5,8 @@ import {
   AlertTriangle, Award, ArrowRight, CheckCircle2, ChefHat, CircleDollarSign,
   Clock3, Download, Info, LayoutGrid, PackageSearch, ReceiptText, ShieldAlert, Users,
 } from 'lucide-react';
-import { BarChart, ChartCard, RankBars } from '@/components/admin/report-kit';
+import { ChartCard, RankBars } from '@/components/admin/report-kit';
+import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import PaginationControls from '@/components/ui/pagination-controls';
 import {
   DashboardSection, Metric, NepalTime, SectionHeading, StatCell, StatusPill, TableWrap,
@@ -50,7 +51,7 @@ const SEVERITY = {
 
 export function AttentionCenter({ rows }) {
   return (
-    <DashboardSection>
+    <DashboardSection className="!p-6 sm:!p-8">
       <SectionHeading eyebrow="Attention center" title="What needs management action" description="Rule-based alerts only. Normal operations remain quiet." />
       <div className="grid gap-3 lg:grid-cols-2">
         {(rows || []).map((row, index) => {
@@ -99,12 +100,11 @@ export function LifecycleKitchen({ data }) {
 export function FloorAndReservations({ data }) {
   const table = data.tables;
   const reservations = data.reservations;
-  const tableBars = (table.rows || []).slice(0, 8).map((row) => ({ label: `Table ${row.table_number}`, value: row.revenue, meta: `${row.orders} orders` }));
   return (
     <DashboardSection>
       <SectionHeading icon={LayoutGrid} tone="cyan" eyebrow="Floor" title="Tables and reservations" description="Historical table results use the table snapshot saved on each order; live occupancy uses current table state." />
-      <div className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
-        <ChartCard title="Revenue by Table" isEmpty={!tableBars.length} empty="No settled dine-in bills in this period."><RankBars data={tableBars} color="slate" format="currency" /></ChartCard>
+      <div className="grid gap-5 xl:grid-cols-[1.35fr_0.65fr]">
+        <TablePaymentChart rows={table.paymentMix || []} />
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4 rounded-xl border border-gray-100 bg-gray-50 p-4 sm:grid-cols-3">
             <Metric label="Occupancy Now" value={table.occupancy} format="percent" />
@@ -124,16 +124,30 @@ export function FloorAndReservations({ data }) {
   );
 }
 
+function TablePaymentChart({ rows = [] }) {
+  const height = Math.max(360, rows.length * 54);
+  return <ChartCard title="Table revenue by payment method" hint="Every ordered table · hover a bar to inspect cash, bank / QR, and credit collections" isEmpty={!rows.length} empty="No settled dine-in bills in this period."><div className="mb-4 flex flex-wrap gap-x-5 gap-y-2 text-xs font-medium text-gray-600"><span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-500" /> Cash</span><span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-blue-500" /> Bank / QR</span><span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-violet-500" /> Credit</span></div><div style={{ height }}><ResponsiveContainer width="100%" height="100%"><BarChart data={rows} layout="vertical" margin={{ top: 4, right: 22, left: 4, bottom: 4 }} barCategoryGap="22%"><CartesianGrid horizontal={false} stroke="#e5e7eb" /><XAxis type="number" tickFormatter={(value) => `Rs ${(Number(value) / 1000).toFixed(Number(value) >= 10000 ? 0 : 1)}k`} tick={{ fontSize: 11, fill: '#6b7280' }} axisLine={false} tickLine={false} /><YAxis type="category" dataKey="table_number" width={76} tickFormatter={(value) => `Table ${value}`} tick={{ fontSize: 12, fill: '#374151', fontWeight: 600 }} axisLine={false} tickLine={false} /><Tooltip cursor={{ fill: '#f8fafc' }} content={<TablePaymentTooltip />} /><Legend wrapperStyle={{ display: 'none' }} /><Bar dataKey="cash" stackId="payments" fill="#10b981" radius={[0, 0, 0, 0]} /><Bar dataKey="online" stackId="payments" fill="#3b82f6" /><Bar dataKey="credit" stackId="payments" fill="#8b5cf6" radius={[0, 4, 4, 0]} /></BarChart></ResponsiveContainer></div></ChartCard>;
+}
+
+function TablePaymentTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null;
+  const values = Object.fromEntries(payload.map((item) => [item.dataKey, Number(item.value || 0)]));
+  const total = Number(values.cash || 0) + Number(values.online || 0) + Number(values.credit || 0);
+  return <div className="rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-xs shadow-lg"><p className="mb-2 font-semibold text-gray-900">Table {label}</p><div className="space-y-1.5"><p className="flex justify-between gap-5 text-emerald-700"><span>Cash</span><span className="font-semibold tabular-nums">{money(values.cash)}</span></p><p className="flex justify-between gap-5 text-blue-700"><span>Bank / QR</span><span className="font-semibold tabular-nums">{money(values.online)}</span></p><p className="flex justify-between gap-5 text-violet-700"><span>Credit</span><span className="font-semibold tabular-nums">{money(values.credit)}</span></p><p className="flex justify-between gap-5 border-t border-gray-100 pt-1.5 font-semibold text-gray-900"><span>Total</span><span className="tabular-nums">{money(total)}</span></p></div></div>;
+}
+
 export function InventorySupplier({ data }) {
   const inv = data.inventory;
   const suppliers = data.suppliers;
   const supplierBars = (suppliers.top || []).map((row) => ({ label: row.supplier, value: row.spend, meta: `${row.purchases} purchases` }));
   return (
-    <DashboardSection>
+    <DashboardSection className="!p-6 sm:!p-8">
+      <PurchasingDetails data={suppliers.purchasing} range={data.range} />
+      <div className="mt-12 border-t border-gray-200 pt-10">
       <SectionHeading icon={PackageSearch} tone="teal" eyebrow="Stock and purchasing" title="Inventory and supplier health" description="Current stock health is live; movement, wastage, and purchasing totals use the selected period." />
-      <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4 rounded-xl border border-gray-100 bg-gray-50 p-4 sm:grid-cols-3">
+      <div className="mt-2 grid gap-8 xl:grid-cols-[0.9fr_1.1fr]">
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 gap-5 rounded-2xl border border-gray-100 bg-gray-50/70 p-5 sm:grid-cols-3 sm:p-6">
             <Metric label="Inventory Value" value={inv.value} format="currency" />
             <Metric label="Low Stock" value={inv.low} tone={inv.low ? 'warning' : 'default'} />
             <Metric label="Out of Stock" value={inv.out} tone={inv.out ? 'negative' : 'default'} />
@@ -141,22 +155,53 @@ export function InventorySupplier({ data }) {
             <Metric label="Wastage" value={inv.wastageValue} format="currency" />
             <Metric label="Purchases" value={inv.purchaseValue} format="currency" />
           </div>
-          <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
+          <div className="rounded-2xl border border-gray-100 bg-gray-50/70 p-5 sm:p-6">
             <h3 className="flex items-center gap-2 text-sm font-semibold"><PackageSearch className="h-4 w-4" /> Stock alerts</h3>
             <div className="mt-2 divide-y divide-gray-100">{inv.alerts?.length ? inv.alerts.map((row) => <div key={row.id} className="flex items-center justify-between py-2.5 text-sm"><span className="font-medium text-gray-800">{row.name}</span><StatusPill tone={row.status === 'out' ? 'negative' : 'warning'}>{row.quantity} {row.unit || ''}</StatusPill></div>) : <p className="py-5 text-center text-sm text-gray-400">All tracked stock is above reorder level.</p>}</div>
           </div>
         </div>
-        <div className="space-y-4">
+        <div className="space-y-6">
           <ChartCard title="Top Suppliers by Spend" isEmpty={!supplierBars.length} empty="No purchases recorded in this period."><RankBars data={supplierBars} color="blue" format="currency" /></ChartCard>
-          <div className="grid grid-cols-3 gap-4 rounded-xl border border-gray-100 bg-gray-50 p-4">
+          <div className="grid grid-cols-3 gap-5 rounded-2xl border border-gray-100 bg-gray-50/70 p-5 sm:p-6">
             <Metric label="Purchase Records" value={suppliers.purchases} />
             <Metric label="Purchase Value" value={suppliers.purchaseValue} format="currency" />
             <Metric label="Outstanding AP" value={suppliers.outstandingPayables} format="currency" tone={suppliers.outstandingPayables ? 'warning' : 'default'} />
           </div>
         </div>
       </div>
+      </div>
     </DashboardSection>
   );
+}
+
+function PurchasingDetails({ data, range }) {
+  if (!data) return null;
+  const purchases = data.purchases || {};
+  const expenses = data.expenses || {};
+  return <div className="space-y-12">
+    <div className="rounded-2xl border border-gray-200 bg-slate-50/50 p-5 sm:p-7"><DetailTitle eyebrow="Purchasing" title="Purchase summary" range={range} description="Purchases are grouped by the payment method saved on their linked expense record." /><SummaryTable rows={[["Cash purchases", purchases.cash], ["Online purchases", purchases.online], ["Credit purchases", purchases.credit]]} totalLabel="Total purchases" total={purchases.total} totalTransactions={purchases.transactions} /><div className="mt-8 grid gap-7 xl:grid-cols-2"><CategoryTable rows={purchases.categories} /><PurchaseTable title="Cash purchases" rows={purchases.cash?.rows} /><PurchaseTable title="Online purchases" rows={purchases.online?.rows} /><PurchaseTable title="Credit purchases" rows={purchases.credit?.rows} /></div></div>
+    <div className="rounded-2xl border border-gray-200 bg-slate-50/50 p-5 sm:p-7"><DetailTitle eyebrow="Operating costs" title="Expense summary" range={range} description="Manual and non-purchase expenses, separated by how they were paid." /><SummaryTable rows={[["Cash expenses", expenses.cash], ["Online expenses", expenses.online], ["Cheque expenses", expenses.cheque], ["Credit expenses (outstanding)", expenses.credit]]} totalLabel="Total expenses" total={expenses.total} totalTransactions={expenses.transactions} /><div className="mt-8 grid gap-7 xl:grid-cols-2"><ExpenseTable title="Cash expenses" rows={expenses.cash?.rows} /><ExpenseTable title="Online expenses" rows={expenses.online?.rows} /><ExpenseTable title="Cheque expenses" rows={expenses.cheque?.rows} /><ExpenseTable title="Credit expenses" rows={expenses.credit?.rows} /></div></div>
+  </div>;
+}
+
+function DetailTitle({ eyebrow, title, range, description }) {
+  return <div className="mb-6"><p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-400">{eyebrow}</p><h3 className="mt-1 text-lg font-semibold text-gray-950">{title}</h3><p className="mt-1.5 text-sm text-gray-500">{range?.start} to {range?.end} · {description}</p></div>;
+}
+
+function SummaryTable({ rows, totalLabel, total, totalTransactions }) {
+  return <TableWrap minWidth="500px"><thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-400"><tr><th className="px-4 py-2.5">Payment type</th><th className="px-4 py-2.5 text-right">Amount</th><th className="px-4 py-2.5 text-right">Transactions</th></tr></thead><tbody className="divide-y divide-gray-100">{rows.map(([label, value]) => <tr key={label}><td className="px-4 py-3 font-medium text-gray-800">{label}</td><td className="px-4 py-3 text-right font-semibold tabular-nums">{money(value?.amount)}</td><td className="px-4 py-3 text-right tabular-nums text-gray-600">{value?.transactions || 0}</td></tr>)}</tbody><tfoot className="border-t-2 border-gray-900 bg-gray-50"><tr><td className="px-4 py-3 font-semibold text-gray-950">{totalLabel}</td><td className="px-4 py-3 text-right font-bold tabular-nums text-gray-950">{money(total)}</td><td className="px-4 py-3 text-right font-bold tabular-nums text-gray-950">{totalTransactions || 0}</td></tr></tfoot></TableWrap>;
+}
+
+function CategoryTable({ rows = [] }) {
+  return <TableWrap minWidth="440px"><thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-400"><tr><th className="px-4 py-2.5">Purchase category</th><th className="px-4 py-2.5 text-right">Amount</th><th className="px-4 py-2.5 text-right">% of total</th></tr></thead><tbody className="divide-y divide-gray-100">{rows.map((row) => <tr key={row.category}><td className="px-4 py-3 font-medium text-gray-800">{row.category}</td><td className="px-4 py-3 text-right font-semibold tabular-nums">{money(row.amount)}</td><td className="px-4 py-3 text-right tabular-nums text-gray-600">{percent(row.share)}</td></tr>)}</tbody></TableWrap>;
+}
+
+function PurchaseTable({ title, rows = [] }) {
+  return <div className="overflow-hidden rounded-xl border border-gray-200"><div className="flex items-center justify-between border-b border-gray-100 bg-gray-50 px-4 py-3"><h4 className="text-sm font-semibold text-gray-950">{title} <span className="text-gray-400">({rows.length})</span></h4><span className="font-semibold tabular-nums text-gray-900">{money(rows.reduce((sum, row) => sum + Number(row.total || 0), 0))}</span></div><div className="max-h-[340px] overflow-auto"><table className="w-full min-w-[580px] text-left text-sm"><thead className="sticky top-0 bg-white text-xs uppercase tracking-wide text-gray-400"><tr><th className="px-4 py-2.5">PO #</th><th className="px-4 py-2.5">Date</th><th className="px-4 py-2.5">Supplier</th><th className="px-4 py-2.5 text-right">Amount</th></tr></thead><tbody className="divide-y divide-gray-100">{rows.map((row) => <tr key={row.id}><td className="px-4 py-3 font-medium text-gray-900">{row.invoice_number || `PO-${row.id}`}</td><td className="px-4 py-3 text-gray-600">{row.invoice_date || '—'}</td><td className="px-4 py-3 text-gray-700">{row.supplier}</td><td className="px-4 py-3 text-right font-semibold tabular-nums">{money(row.total)}</td></tr>)}</tbody></table>{!rows.length && <p className="py-8 text-center text-sm text-gray-400">No {title.toLowerCase()} in this period.</p>}</div></div>;
+}
+
+function ExpenseTable({ title, rows = [] }) {
+  return <div className="overflow-hidden rounded-xl border border-gray-200"><div className="flex items-center justify-between border-b border-gray-100 bg-gray-50 px-4 py-3"><h4 className="text-sm font-semibold text-gray-950">{title} <span className="text-gray-400">({rows.length})</span></h4><span className="font-semibold tabular-nums text-gray-900">{money(rows.reduce((sum, row) => sum + Number(row.amount || 0), 0))}</span></div><div className="max-h-[340px] overflow-auto"><table className="w-full min-w-[460px] text-left text-sm"><thead className="sticky top-0 bg-white text-xs uppercase tracking-wide text-gray-400"><tr><th className="px-4 py-2.5">Title</th><th className="px-4 py-2.5">Date</th><th className="px-4 py-2.5 text-right">Amount</th></tr></thead><tbody className="divide-y divide-gray-100">{rows.map((row) => <tr key={row.id}><td className="px-4 py-3 font-medium text-gray-800">{row.description || 'Untitled expense'}</td><td className="px-4 py-3 text-gray-600">{row.expense_date || '—'}</td><td className="px-4 py-3 text-right font-semibold tabular-nums">{money(row.amount)}</td></tr>)}</tbody></table>{!rows.length && <p className="py-8 text-center text-sm text-gray-400">No {title.toLowerCase()} in this period.</p>}</div></div>;
 }
 
 export function PeoplePerformance({ data }) {

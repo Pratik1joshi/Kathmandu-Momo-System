@@ -13,12 +13,15 @@ export async function GET(request) {
     const auth = await requireAuth(request);
     if (auth.error) return auth.error;
     await ensurePermissionCache(Database.getInstance());
-    return NextResponse.json({
-      role: auth.user.role,
-      capabilities: Object.fromEntries(
-        PERMISSION_CATALOG.map(({ key }) => [key, isPermissionAllowedSync(auth.user.role, key)])
-      ),
-    });
+    return NextResponse.json(
+      {
+        role: auth.user.role,
+        capabilities: Object.fromEntries(
+          PERMISSION_CATALOG.map(({ key }) => [key, isPermissionAllowedSync(auth.user.role, key)])
+        ),
+      },
+      { headers: { 'Cache-Control': 'no-store, max-age=0' } },
+    );
   } catch (error) {
     return handleRouteError(error, 'Could not load staff permissions.');
   }

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import AdminLayout from '@/components/admin/admin-layout';
 import {
   DollarSign, ShoppingCart, TrendingUp, TrendingDown, LayoutGrid,
@@ -103,6 +103,9 @@ const ACTIVITY_META = {
 
 export default function AdminDashboard() {
   const router = useRouter();
+  const pathname = usePathname();
+  const cashierPanel = pathname?.startsWith('/cashier');
+  const panelPath = (adminPath, cashierPath) => cashierPanel ? cashierPath : adminPath;
   const { addToast } = useToast();
   const { confirm } = useConfirm();
   const { greeting, GreetingIcon, isOpen, shift, timeLabel } = useTimeContext();
@@ -251,11 +254,11 @@ export default function AdminDashboard() {
 
   const handleTableClick = (table) => {
     if (isReservedTable(table)) {
-      router.push('/admin/leads');
+      router.push(panelPath('/admin/leads', '/cashier/reservations'));
       return;
     }
     if (!isRunningTable(table)) {
-      router.push(`/admin/pos?table=${table.id}`);
+      router.push(`${panelPath('/admin/pos', '/cashier/pos')}?table=${table.id}`);
       return;
     }
     setMenuTable(table);
@@ -323,14 +326,14 @@ export default function AdminDashboard() {
           <div className="flex flex-wrap items-center gap-3 text-sm">
             <button
               type="button"
-              onClick={() => router.push('/admin/pos')}
+              onClick={() => router.push(panelPath('/admin/pos', '/cashier/pos'))}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-900 text-white text-xs font-semibold hover:bg-gray-800"
             >
               Takeaway
             </button>
             <button
               type="button"
-              onClick={() => router.push('/admin/business-days')}
+              onClick={() => router.push(panelPath('/admin/business-days', '/cashier/business-days'))}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 text-xs font-semibold hover:bg-emerald-100"
             >
               <CalendarClock className="h-3.5 w-3.5" />
@@ -379,7 +382,7 @@ export default function AdminDashboard() {
               </div>
               <button
                 type="button"
-                onClick={() => router.push('/admin/business-days')}
+                onClick={() => router.push(panelPath('/admin/business-days', '/cashier/business-days'))}
                 className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-lg bg-gray-950 px-5 text-sm font-semibold text-white hover:bg-black"
               >
                 <CalendarClock className="h-4 w-4" />
@@ -496,7 +499,7 @@ export default function AdminDashboard() {
                       >
                         <button
                           type="button"
-                          onClick={() => router.push(`/admin/pos?order=${p.order_id}`)}
+                          onClick={() => router.push(`${panelPath('/admin/pos', '/cashier/pos')}?order=${p.order_id}`)}
                           className="flex flex-1 items-center justify-between px-4 py-3 text-left"
                         >
                           <div>
@@ -518,7 +521,7 @@ export default function AdminDashboard() {
                     {!(menuTable.parties || []).length && menuTable.current_order_id && (
                       <button
                         type="button"
-                        onClick={() => router.push(`/admin/pos?order=${menuTable.current_order_id}`)}
+                        onClick={() => router.push(`${panelPath('/admin/pos', '/cashier/pos')}?order=${menuTable.current_order_id}`)}
                         className="w-full rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-left font-semibold text-sky-900"
                       >
                         a. Add items
@@ -536,7 +539,7 @@ export default function AdminDashboard() {
                         });
                         if (!ok) return;
                         setMenuTable(null);
-                        router.push(`/admin/pos?table=${menuTable.id}&new_party=1`);
+                        router.push(`${panelPath('/admin/pos', '/cashier/pos')}?table=${menuTable.id}&new_party=1`);
                       }}
                       className="w-full rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-left font-semibold text-violet-900 hover:border-violet-400"
                     >
@@ -547,7 +550,7 @@ export default function AdminDashboard() {
                       onClick={() => {
                         const party = primaryParty(menuTable);
                         const oid = party?.order_id || menuTable.current_order_id;
-                        if (oid) router.push(`/admin/pos?order=${oid}&change=1`);
+                        if (oid) router.push(`${panelPath('/admin/pos', '/cashier/pos')}?order=${oid}&change=1`);
                       }}
                       className="w-full rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-left font-semibold text-amber-900 hover:border-amber-400"
                     >
@@ -635,7 +638,7 @@ export default function AdminDashboard() {
                     </div>
                   </div>
                   <button
-                    onClick={() => router.push('/admin/orders/online')}
+                    onClick={() => router.push(panelPath('/admin/orders/online', '/cashier/online-orders'))}
                     className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700"
                   >
                     Review orders
@@ -645,7 +648,7 @@ export default function AdminDashboard() {
                   {onlineOrders.slice(0, 4).map((o) => (
                     <button
                       key={o.id}
-                      onClick={() => router.push(`/admin/orders/${o.id}`)}
+                      onClick={() => router.push(`${panelPath('/admin/orders', '/cashier/orders')}/${o.id}`)}
                       className="rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-left text-xs hover:border-amber-400"
                     >
                       <span className="font-semibold text-gray-900">{o.customer_name || 'Guest'}</span>
@@ -705,18 +708,18 @@ export default function AdminDashboard() {
 
             {/* Live floor / counter pulse — blends API KPIs with live table board */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <button type="button" onClick={() => router.push('/admin/pos')} className="text-left bg-white border border-gray-200 rounded-xl p-4 hover:border-gray-300 shadow-sm transition">
+              <button type="button" onClick={() => router.push(panelPath('/admin/pos', '/cashier/pos'))} className="text-left bg-white border border-gray-200 rounded-xl p-4 hover:border-gray-300 shadow-sm transition">
                 <p className="text-2xl font-bold text-gray-900 tabular-nums">{Math.max(kpis?.activeOrders?.value ?? 0, occupiedTables.length)}</p>
                 <p className="text-xs text-gray-500 mt-1">Active orders</p>
                 {floorAmount > 0 && (
                   <p className="text-[11px] text-sky-700 mt-0.5 tabular-nums">{formatCurrency(floorAmount)} on floor</p>
                 )}
               </button>
-              <button type="button" onClick={() => router.push('/admin/bills')} className="text-left bg-white border border-gray-200 rounded-xl p-4 hover:border-gray-300 shadow-sm transition">
+              <button type="button" onClick={() => router.push(panelPath('/admin/bills', '/cashier/bills'))} className="text-left bg-white border border-gray-200 rounded-xl p-4 hover:border-gray-300 shadow-sm transition">
                 <p className="text-2xl font-bold text-gray-900 tabular-nums">{kpis?.openBills?.value ?? 0}</p>
                 <p className="text-xs text-gray-500 mt-1">Open bills</p>
               </button>
-              <button type="button" onClick={() => router.push('/admin/bills')} className="text-left bg-white border border-gray-200 rounded-xl p-4 hover:border-gray-300 shadow-sm transition">
+              <button type="button" onClick={() => router.push(panelPath('/admin/bills', '/cashier/bills'))} className="text-left bg-white border border-gray-200 rounded-xl p-4 hover:border-gray-300 shadow-sm transition">
                 <p className="text-2xl font-bold text-violet-700 tabular-nums">{kpis?.reopenedBills?.value ?? 0}</p>
                 <p className="text-xs text-gray-500 mt-1">Reopened in POS</p>
               </button>
@@ -801,13 +804,13 @@ export default function AdminDashboard() {
                           : 'Place an order in POS or accept an online order to kick things off.'}
                     </p>
                     <div className="mt-3 flex justify-center gap-2">
-                      <button type="button" onClick={() => router.push('/admin/pos')} className="rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white">Takeaway</button>
-                      <button type="button" onClick={() => router.push('/admin/business-days')} className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800">
+                      <button type="button" onClick={() => router.push(panelPath('/admin/pos', '/cashier/pos'))} className="rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white">Takeaway</button>
+                      <button type="button" onClick={() => router.push(panelPath('/admin/business-days', '/cashier/business-days'))} className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800">
                         <CalendarClock className="h-3.5 w-3.5" />
                         Opening & Closing
                       </button>
                       {onlineOrders.length > 0 && (
-                        <button type="button" onClick={() => router.push('/admin/orders/online')} className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800">Online orders</button>
+                        <button type="button" onClick={() => router.push(panelPath('/admin/orders/online', '/cashier/online-orders'))} className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800">Online orders</button>
                       )}
                     </div>
                   </div>
@@ -973,7 +976,7 @@ export default function AdminDashboard() {
                 <div className="flex items-center justify-between gap-3 mb-4">
                   <h2 className="text-base font-semibold text-gray-900">Inventory Snapshot</h2>
                   <button
-                    onClick={() => router.push('/admin/inventory')}
+                    onClick={() => router.push(panelPath('/admin/inventory', '/cashier/inventory'))}
                     className="text-xs font-medium text-gray-600 hover:text-gray-900 px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50"
                   >
                     View Inventory
@@ -1001,7 +1004,7 @@ export default function AdminDashboard() {
                 <div className="flex items-center justify-between gap-3 mb-4">
                   <h2 className="text-base font-semibold text-gray-900">Reservation Snapshot</h2>
                   <button
-                    onClick={() => router.push('/admin/leads')}
+                    onClick={() => router.push(panelPath('/admin/leads', '/cashier/reservations'))}
                     className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50"
                   >
                     <Inbox className="w-3.5 h-3.5" /> Open Host Desk

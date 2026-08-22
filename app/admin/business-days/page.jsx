@@ -43,6 +43,7 @@ export default function BusinessDaysPage() {
   const [busy, setBusy] = useState(false);
   const [opening, setOpening] = useState({ business_date: nepalToday(), opening_cash: '', opening_note: '', opening_cash_reason: '', opening_cash_note: '' });
   const [countedCash, setCountedCash] = useState('');
+  const [cashDenominations, setCashDenominations] = useState({});
   const [closingNote, setClosingNote] = useState('');
   const [forceMode, setForceMode] = useState(false);
   const [forceReason, setForceReason] = useState('');
@@ -109,10 +110,11 @@ export default function BusinessDaysPage() {
     try {
       await apiJson('/api/admin/business-days', { method: 'PUT', body: JSON.stringify({
         counted_cash: Number(countedCash), closing_note: closingNote.trim() || null,
+        cash_denominations: cashDenominations,
         force, force_close_reason: force ? forceReason.trim() : null,
       }) });
       addToast(friendlyMessage('save_success', { description: force ? 'Business day force closed.' : 'Business day closed.' }));
-      setCountedCash(''); setClosingNote(''); setForceMode(false); setForceReason('');
+      setCountedCash(''); setCashDenominations({}); setClosingNote(''); setForceMode(false); setForceReason('');
       await load({ quiet: true });
     } catch (error) {
       const blockerText = error?.blockers?.items?.map((item) => `${item.count} ${item.label}`).join(', ');
@@ -169,7 +171,7 @@ export default function BusinessDaysPage() {
 
         <div className="border border-gray-200 bg-white px-4 py-6 sm:px-6 lg:px-8">
           <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 pb-5"><div><h2 className="text-xl font-bold text-gray-950">Business day closing</h2><p className="mt-1 text-sm text-gray-500">Review the entire day before closing. Figures refresh from operational and accounting records.</p></div><button type="button" onClick={() => load({ quiet: true })} className="inline-flex h-9 items-center gap-2 border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50"><RefreshCw className="h-4 w-4" />Refresh figures</button></div>
-          {summary && <ClosingSummary summary={summary} countedCash={countedCash} onCountedCashChange={setCountedCash} interactive />}
+          {summary && <ClosingSummary summary={summary} countedCash={countedCash} onCountedCashChange={setCountedCash} denominationCounts={cashDenominations} onDenominationCountsChange={setCashDenominations} interactive />}
           <div className="border-t border-gray-200 pt-6">
             <label className="block"><span className="mb-2 block text-sm font-semibold text-gray-900">Closing Note <span className="font-normal text-gray-500">optional</span></span><textarea value={closingNote} onChange={(event) => setClosingNote(event.target.value)} rows={3} maxLength={1000} className="w-full border border-gray-300 px-3 py-2 text-sm outline-none focus:border-gray-900" placeholder="Handover details or notes for management" /></label>
             <div className="mt-5 flex flex-wrap items-center justify-between gap-4">

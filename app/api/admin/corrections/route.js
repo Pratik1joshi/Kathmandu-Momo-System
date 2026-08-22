@@ -7,8 +7,7 @@ import { voidPaidBill, refundBill, listBillCorrections } from '@/lib/bill-correc
 
 export async function GET(request) {
   try {
-    // Void/refund is a manager action — admin only.
-    const auth = await requireAuth(request, { roles: ['admin'] });
+    const auth = await requireAuth(request, { roles: ['admin', 'cashier'], permission: 'corrections.manage' });
     if (auth.error) return auth.error;
     const db = Database.getInstance();
     await ensureAccountingSchema(db);
@@ -21,7 +20,7 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    const auth = await requireAuth(request, { roles: ['admin'] });
+    const auth = await requireAuth(request, { roles: ['admin', 'cashier'], permission: 'corrections.manage' });
     if (auth.error) return auth.error;
     const db = Database.getInstance();
     await ensureAccountingSchema(db);

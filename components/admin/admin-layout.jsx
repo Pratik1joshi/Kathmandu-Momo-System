@@ -138,12 +138,26 @@ export default function AdminLayout({ children }) {
   useEffect(() => {
     if (loading || !isCashierPanel) return undefined;
     let cancelled = false;
-    const token = localStorage.getItem('pos_token');
-    fetch('/api/auth/capabilities', { headers: { Authorization: `Bearer ${token}` } })
-      .then((res) => res.ok ? res.json() : null)
-      .then((data) => { if (!cancelled) setCapabilities(data?.capabilities || {}); })
-      .catch(() => { if (!cancelled) setCapabilities({}); });
-    return () => { cancelled = true; };
+    const refreshCapabilities = () => {
+      const token = localStorage.getItem('pos_token');
+      if (!token) return;
+      fetch('/api/auth/capabilities', {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      })
+        .then((res) => res.ok ? res.json() : null)
+        .then((data) => { if (!cancelled) setCapabilities(data?.capabilities || {}); })
+        .catch(() => { if (!cancelled) setCapabilities({}); });
+    };
+
+    refreshCapabilities();
+    window.addEventListener('focus', refreshCapabilities);
+    const refreshTimer = window.setInterval(refreshCapabilities, 60_000);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', refreshCapabilities);
+      window.clearInterval(refreshTimer);
+    };
   }, [loading, isCashierPanel, pathname]);
 
   // When entering POS, force-collapse (don't overwrite user's saved preference).
@@ -305,8 +319,14 @@ export default function AdminLayout({ children }) {
     const el = navScrollRef.current;
     if (!el) return;
     const saved = readNavScrollSync();
-    if (saved > 0 && Math.abs(el.scrollTop - saved) > 1) el.scrollTop = saved;
-  }, [pathname, sidebarOpen, isDesktop]);
+    if (saved <= 0) return;
+    // Cashier entries arrive after the capability request. Restoring before
+    // they render makes the browser clamp the position to zero.
+    const frame = window.requestAnimationFrame(() => {
+      if (Math.abs(el.scrollTop - saved) > 1) el.scrollTop = saved;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [pathname, sidebarOpen, isDesktop, capabilities]);
 
   const navigate = (href) => {
     saveNavScroll();
@@ -414,6 +434,17 @@ export default function AdminLayout({ children }) {
   const cashierNavGroups = [
     { icon: Receipt, label: 'POS', href: '/cashier/pos', color: 'text-emerald-700' },
     { icon: LayoutDashboard, label: 'Order Desk', href: '/cashier', color: 'text-gray-700' },
+    { icon: Gauge, label: 'Dashboard', href: '/cashier/dashboard', color: 'text-indigo-700', requiredPermission: 'dashboard.view' },
+    { icon: FileText, label: 'Reports', href: '/cashier/reports', color: 'text-purple-600', requiredPermission: 'reports.view' },
+    {
+      label: 'Menu',
+      tint: 'blue',
+      items: [
+        { icon: Package, label: 'Menu Items', href: '/cashier/menu-items', color: 'text-blue-600', requiredPermission: 'menu.manage' },
+        { icon: FolderOpen, label: 'Categories', href: '/cashier/categories', color: 'text-purple-600', requiredPermission: 'menu.manage' },
+        { icon: ChefHat, label: 'Recipes', href: '/cashier/recipes', color: 'text-rose-600', requiredPermission: 'menu.manage' },
+      ],
+    },
     {
       label: 'Ledgers',
       tint: 'indigo',
@@ -432,6 +463,7 @@ export default function AdminLayout({ children }) {
         { icon: ReceiptText, label: 'Bills', href: '/cashier/bills', color: 'text-emerald-600' },
         { icon: ChefHat, label: 'KOT History', href: '/cashier/kots', color: 'text-orange-600' },
         { icon: CreditCard, label: 'Payments', href: '/cashier/payment-history', color: 'text-blue-600' },
+        { icon: Bike, label: 'Delivery Executives', href: '/cashier/delivery', color: 'text-lime-600', requiredPermission: 'delivery.manage' },
       ],
     },
     {
@@ -439,10 +471,13 @@ export default function AdminLayout({ children }) {
       tint: 'violet',
       items: [
         { icon: Users, label: 'Customers', href: '/cashier/customers', color: 'text-pink-600' },
-        { icon: Warehouse, label: 'Inventory', href: '/cashier/inventory', color: 'text-indigo-600' },
+        { icon: Gauge, label: 'Inventory Dashboard', href: '/cashier/inventory/dashboard', color: 'text-indigo-700', requiredPermission: 'inventory.dashboard.view' },
+        { icon: Warehouse, label: 'All Inventory', href: '/cashier/inventory', color: 'text-indigo-600', requiredPermission: 'inventory.manage' },
+        { icon: FolderOpen, label: 'Inventory Categories', href: '/cashier/inventory-categories', color: 'text-violet-600', requiredPermission: 'inventory.setup.manage' },
+        { icon: Ruler, label: 'Unit Conversion', href: '/cashier/unit-conversion', color: 'text-sky-600', requiredPermission: 'inventory.setup.manage' },
         { icon: Truck, label: 'Purchases', href: '/cashier/purchases', color: 'text-teal-600', requiredPermission: 'purchases.view' },
         { icon: Building2, label: 'Suppliers', href: '/cashier/suppliers', color: 'text-slate-600', requiredPermission: 'suppliers.view' },
-        { icon: Trash, label: 'Wastage', href: '/cashier/wastage', color: 'text-red-600' },
+        { icon: Trash, label: 'Wastage', href: '/cashier/wastage', color: 'text-red-600', requiredPermission: 'wastage.manage' },
         { icon: WalletCards, label: 'Salary & Advances', href: '/cashier/payroll', color: 'text-emerald-700', requiredPermission: 'payroll.view' },
       ],
     },
@@ -450,10 +485,19 @@ export default function AdminLayout({ children }) {
       label: 'Cash & Credit',
       tint: 'emerald',
       items: [
-        { icon: Wallet, label: 'Expenses', href: '/cashier/expenses', color: 'text-emerald-600' },
-        { icon: ArrowRightLeft, label: 'Cash Exchange', href: '/cashier/cash-exchange', color: 'text-amber-600' },
-        { icon: Wallet, label: 'Cash Drawer', href: '/cashier/cash-drawer', color: 'text-orange-600' },
-        { icon: CalendarClock, label: 'Opening & Closing', href: '/cashier/business-days', color: 'text-gray-700' },
+        { icon: Wallet, label: 'Expenses', href: '/cashier/expenses', color: 'text-emerald-600', requiredPermission: 'expenses.manage' },
+        { icon: PiggyBank, label: 'Savings & Deposits', href: '/cashier/savings', color: 'text-sky-700', requiredPermission: 'savings.manage' },
+        { icon: ArrowRightLeft, label: 'Cash Exchange', href: '/cashier/cash-exchange', color: 'text-amber-600', requiredPermission: 'cash_exchange.manage' },
+        { icon: Wallet, label: 'Cash Drawer', href: '/cashier/cash-drawer', color: 'text-orange-600', requiredPermission: 'cash_drawer.manage' },
+        { icon: CalendarClock, label: 'Opening & Closing', href: '/cashier/business-days', color: 'text-gray-700', requiredPermission: 'business_days.view' },
+      ],
+    },
+    {
+      label: 'Accounting',
+      tint: 'indigo',
+      items: [
+        { icon: Undo2, label: 'Corrections', href: '/cashier/corrections', color: 'text-amber-700', requiredPermission: 'corrections.manage' },
+        { icon: ScrollText, label: 'General Ledger', href: '/cashier/general-ledger', color: 'text-slate-600', requiredPermission: 'general_ledger.view' },
       ],
     },
   ];
@@ -464,7 +508,11 @@ export default function AdminLayout({ children }) {
   // entries and drop any group left empty. Routes still exist for historical data.
   const navGroups = rawNavGroups
     .map((group) => {
-      if (!group.items) return isNavHidden(group.href) ? null : group;
+      if (!group.items) {
+        if (isNavHidden(group.href)) return null;
+        if (isCashierPanel && group.requiredPermission && capabilities?.[group.requiredPermission] !== true) return null;
+        return group;
+      }
       const items = group.items.filter((it) =>
         !isNavHidden(it.href)
         && (!isCashierPanel || !it.requiredPermission || capabilities?.[it.requiredPermission] === true)

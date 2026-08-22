@@ -1197,7 +1197,10 @@ export default function AdminPos() {
                   className="w-full flex items-center justify-between px-4 py-3 rounded-xl border border-stone-200 hover:border-blue-400 hover:bg-blue-50 active:scale-[0.98] transition-transform"
                 >
                   <span className="font-medium text-stone-900">{variant.variant_name}</span>
-                  <span className="font-bold text-blue-600">{formatCurrency(variant.price || 0)}</span>
+                  <span className="flex items-center gap-2">
+                    {variant.pos_stock_quantity != null && <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white ${Number(variant.pos_stock_quantity) <= 0 ? 'bg-red-600' : Number(variant.pos_stock_quantity) <= 5 ? 'bg-amber-500' : 'bg-emerald-600'}`}>{variant.pos_stock_quantity} {variant.pos_stock_unit || ''}</span>}
+                    <span className="font-bold text-blue-600">{formatCurrency(variant.price || 0)}</span>
+                  </span>
                 </button>
               ))}
             </div>

@@ -18,7 +18,7 @@ async function period(db, start, end) {
 
 export async function GET(request) {
   try {
-    const auth = await requireAuth(request, { roles: ['admin'] });
+    const auth = await requireAuth(request, { roles: ['admin', 'cashier'], permission: 'savings.manage' });
     if (auth.error) return auth.error;
     const db = Database.getInstance();
     await ensureSavingsSchema(db);
@@ -52,7 +52,7 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    const auth = await requireAuth(request, { roles: ['admin'] });
+    const auth = await requireAuth(request, { roles: ['admin', 'cashier'], permission: 'savings.manage' });
     if (auth.error) return auth.error;
     const db = Database.getInstance();
     const deposit = await createSavingsDeposit(db, await request.json(), auth.user?.id);

@@ -10,6 +10,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import AdminLayout from '@/components/admin/admin-layout';
 import {
   ArchiveRestore, Archive, ChefHat, Copy, ExternalLink, Pencil, Plus,
@@ -43,6 +44,12 @@ const STATUS_META = {
 };
 
 export default function InventoryPage() {
+  const pathname = usePathname();
+  const cashierPanel = pathname?.startsWith('/cashier');
+  const inventoryBase = cashierPanel ? '/cashier/inventory' : '/admin/inventory';
+  const suppliersPath = cashierPanel ? '/cashier/suppliers' : '/admin/suppliers';
+  const recipesPath = cashierPanel ? '/cashier/recipes' : '/admin/recipes';
+  const purchasesPath = cashierPanel ? '/cashier/purchases' : '/admin/purchases';
   const { addToast } = useToast();
   const [items, setItems] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
@@ -197,7 +204,7 @@ export default function InventoryPage() {
         label: 'Item name',
         className: 'text-gray-900 font-medium',
         render: (row) => (
-          <Link href={`/admin/inventory/${row.id}`} className="inline-flex items-center gap-1.5 hover:underline">
+          <Link href={`${inventoryBase}/${row.id}`} className="inline-flex items-center gap-1.5 hover:underline">
             {row.item_name}
             <ExternalLink className="h-3 w-3 text-gray-300" />
           </Link>
@@ -298,7 +305,7 @@ export default function InventoryPage() {
         render: (row) => (row.updated_at ? formatNepalDate(row.updated_at) : '—'),
       },
     ],
-    [patchItem]
+    [patchItem, inventoryBase]
   );
 
   return (
@@ -312,16 +319,16 @@ export default function InventoryPage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <Link href="/admin/suppliers" className={BTN_SECONDARY}>
+            <Link href={suppliersPath} className={BTN_SECONDARY}>
               <Users className="h-4 w-4" /> Suppliers
             </Link>
-            <Link href="/admin/recipes" className={BTN_SECONDARY}>
+            <Link href={recipesPath} className={BTN_SECONDARY}>
               <ChefHat className="h-4 w-4" /> Recipes
             </Link>
-            <Link href="/admin/stock/import" className={BTN_SECONDARY}>
+            {!cashierPanel && <Link href="/admin/stock/import" className={BTN_SECONDARY}>
               <Upload className="h-4 w-4" /> Import
-            </Link>
-            <Link href="/admin/purchases" className={BTN_SECONDARY}>
+            </Link>}
+            <Link href={purchasesPath} className={BTN_SECONDARY}>
               <Truck className="h-4 w-4" /> Receive delivery
             </Link>
             <button type="button" onClick={() => setFormItem({})} className={BTN_PRIMARY}>

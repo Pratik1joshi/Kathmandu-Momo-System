@@ -23,14 +23,25 @@ export default function FinancialReportsPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let active = true;
     setLoading(true);
+    setData(null);
     const q = new URLSearchParams({ report: tab });
     if ((tab === 'pnl' || tab === 'cash-flow') && range.from) q.set('from', range.from);
     if (range.to) q.set('to', range.to);
     apiJson(`/api/admin/financial-reports?${q}`)
-      .then((d) => setData(d.report))
-      .catch((e) => addToast(friendlyFromError(e, 'load_failed')))
-      .finally(() => setLoading(false));
+      .then((d) => {
+        if (active) setData(d.report || null);
+      })
+      .catch((e) => {
+        if (active) addToast(friendlyFromError(e, 'load_failed'));
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    // A slower response for the previous tab must never overwrite the current
+    // report shape (for example P&L data while Trial Balance is selected).
+    return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, range]);
 
@@ -128,6 +139,7 @@ function BalanceSheet({ data }) {
 
 function TrialBalance({ data }) {
   if (!data) return null;
+  const lines = Array.isArray(data.lines) ? data.lines : [];
   return (
     <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
       <div className="overflow-x-auto">
@@ -136,7 +148,7 @@ function TrialBalance({ data }) {
             <tr><th className="px-5 py-3 font-semibold">Code</th><th className="px-5 py-3 font-semibold">Account</th><th className="px-5 py-3 text-right font-semibold">Debit</th><th className="px-5 py-3 text-right font-semibold">Credit</th></tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {data.lines.map((l) => (
+            {lines.map((l) => (
               <tr key={l.code}>
                 <td className="px-5 py-2 text-gray-500">{l.code}</td>
                 <td className="px-5 py-2 text-gray-900">{l.name}</td>
@@ -144,6 +156,7 @@ function TrialBalance({ data }) {
                 <td className="px-5 py-2 text-right tabular-nums">{l.credit ? money(l.credit) : ''}</td>
               </tr>
             ))}
+            {lines.length === 0 && <tr><td colSpan={4} className="px-5 py-8 text-center text-gray-400">No trial-balance entries in this period.</td></tr>}
           </tbody>
           <tfoot className={`border-t-2 font-semibold ${data.balanced ? 'border-gray-300 text-gray-900' : 'border-rose-300 text-rose-700'}`}>
             <tr><td className="px-5 py-3" colSpan={2}>Totals {data.balanced ? '(balanced)' : '(OUT OF BALANCE)'}</td><td className="px-5 py-3 text-right tabular-nums">{money(data.totalDebit)}</td><td className="px-5 py-3 text-right tabular-nums">{money(data.totalCredit)}</td></tr>
