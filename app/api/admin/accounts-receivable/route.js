@@ -7,6 +7,7 @@ import {
   customerReceivables,
   receivableAgeing,
   customerArStatement,
+  customerLedgerHistory,
   collectCustomerCredit,
   writeOffCustomerCredit,
   arAccountBalance,
@@ -25,6 +26,13 @@ export async function GET(request) {
     const db = Database.getInstance();
     await ensureAccountingSchema(db);
     const q = new URL(request.url).searchParams;
+
+    if (q.get('view') === 'history') {
+      const history = await customerLedgerHistory(db, {
+        from: q.get('from'), to: q.get('to'), status: q.get('status') || 'all', search: q.get('search'),
+      });
+      return NextResponse.json({ history });
+    }
 
     const customerId = q.get('customer_id');
     if (customerId) {

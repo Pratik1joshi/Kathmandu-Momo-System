@@ -48,6 +48,15 @@ export default function AccountsReceivablePage() {
   const [to, setTo] = useState('');
   const [query, setQuery] = useState('');
 
+  const [tab, setTab] = useState('outstanding'); // 'outstanding' | 'history'
+  const [historyPeriod, setHistoryPeriod] = useState('today');
+  const [historyFrom, setHistoryFrom] = useState('');
+  const [historyTo, setHistoryTo] = useState('');
+  const [historyStatus, setHistoryStatus] = useState('all'); // all | charged | paid
+  const [historyQuery, setHistoryQuery] = useState('');
+  const [history, setHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
   // Customer popup
   const [selected, setSelected] = useState(null); // { id, name, phone, is_vip }
   const [detail, setDetail] = useState({ bills: [], statement: [] });
@@ -87,6 +96,33 @@ export default function AccountsReceivablePage() {
   };
   const editFrom = (v) => { setFrom(v); setPeriod('custom'); };
   const editTo = (v) => { setTo(v); setPeriod('custom'); };
+
+  const chooseHistoryPeriod = (id) => {
+    setHistoryPeriod(id);
+    if (id === 'all') { setHistoryFrom(''); setHistoryTo(''); return; }
+    const range = resolvePeriodRange(id);
+    setHistoryFrom(range.start); setHistoryTo(range.end);
+  };
+  const editHistoryFrom = (v) => { setHistoryFrom(v); setHistoryPeriod('custom'); };
+  const editHistoryTo = (v) => { setHistoryTo(v); setHistoryPeriod('custom'); };
+
+  useEffect(() => {
+    if (tab !== 'history') return;
+    if (!historyFrom && !historyTo && historyPeriod !== 'all') { chooseHistoryPeriod(historyPeriod); return; }
+    (async () => {
+      setHistoryLoading(true);
+      try {
+        const params = new URLSearchParams({ view: 'history', status: historyStatus });
+        if (historyFrom) params.set('from', historyFrom);
+        if (historyTo) params.set('to', historyTo);
+        if (historyQuery.trim()) params.set('search', historyQuery.trim());
+        const d = await apiJson(`/api/admin/accounts-receivable?${params}`);
+        setHistory(d.history || []);
+      } catch (error) { addToast(friendlyFromError(error, 'load_failed')); }
+      finally { setHistoryLoading(false); }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, historyFrom, historyTo, historyStatus, historyQuery]);
 
   const openCustomer = (c) => { setSelected(c); setSelectedBill(null); setOrderDetail(null); };
   const closeCustomer = () => { setSelected(null); setDetail({ bills: [], statement: [] }); setSelectedBill(null); setOrderDetail(null); };
@@ -210,6 +246,105 @@ export default function AccountsReceivablePage() {
           </div>
         </div>
 
+        <div className="flex gap-2 border-b border-gray-200">
+          <button
+            type="button"
+            onClick={() => setTab('outstanding')}
+            className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px ${tab === 'outstanding' ? 'border-gray-900 text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          >
+            Outstanding
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab('history')}
+            className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px ${tab === 'history' ? 'border-gray-900 text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          >
+            History
+          </button>
+        </div>
+
+        {tab === 'history' ? (
+          <div className="space-y-4">
+            <div className="space-y-4 rounded-2xl border border-gray-200 bg-white p-5">
+              <div className="flex flex-wrap gap-2">
+                {PERIODS.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => chooseHistoryPeriod(p.id)}
+                    className={`rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors ${
+                      historyPeriod === p.id ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex flex-wrap items-end gap-3">
+                <label className="block">
+                  <span className="mb-1 block text-xs font-medium text-gray-600">From</span>
+                  <DateInput value={historyFrom} onChange={editHistoryFrom} className={INPUT} />
+                </label>
+                <span className="pb-2 text-gray-400">—</span>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-medium text-gray-600">To</span>
+                  <DateInput value={historyTo} onChange={editHistoryTo} className={INPUT} />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-medium text-gray-600">Status</span>
+                  <select value={historyStatus} onChange={(e) => setHistoryStatus(e.target.value)} className={INPUT}>
+                    <option value="all">All</option>
+                    <option value="charged">Charged</option>
+                    <option value="paid">Paid / Cleared</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <input
+                  value={historyQuery}
+                  onChange={(e) => setHistoryQuery(e.target.value)}
+                  placeholder="Search by customer name..."
+                  className={`${INPUT} pl-9`}
+                />
+              </div>
+            </div>
+
+            <Panel title={`Ledger history (${history.length})`}>
+              <div className="divide-y divide-gray-100">
+                {historyLoading ? (
+                  <p className="px-5 py-8 text-center text-sm text-gray-500">Loading…</p>
+                ) : history.length === 0 ? (
+                  <p className="px-5 py-8 text-center text-sm text-gray-500">No ledger activity in this range.</p>
+                ) : (
+                  history.map((h) => (
+                    <div key={h.id} className="flex flex-wrap items-center gap-3 px-5 py-3">
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-medium text-gray-900">{h.customer_name}</span>
+                        <span className="block text-xs text-gray-400">
+                          {formatNepalDisplay(String(h.date || '').slice(0, 10))}
+                          {h.bill_number ? ` · ${h.bill_number}` : ''}
+                          {h.note ? ` — ${h.note}` : ''}
+                        </span>
+                      </span>
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                        h.status === 'charged' ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'
+                      }`}>
+                        {h.status}
+                      </span>
+                      <span className="text-sm font-semibold tabular-nums text-gray-900">
+                        {money(h.debit > 0 ? h.debit : h.credit)}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </Panel>
+          </div>
+        ) : (
+        <>
         <div className="space-y-4 rounded-2xl border border-gray-200 bg-white p-5">
           <div className="flex flex-wrap gap-2">
             {PERIODS.map((p) => (
@@ -299,6 +434,8 @@ export default function AccountsReceivablePage() {
               ))}
             </div>
           </Panel>
+        )}
+        </>
         )}
       </div>
 

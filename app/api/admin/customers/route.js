@@ -36,7 +36,7 @@ function friendlyDbError(error, fallback) {
 
 export async function GET(request) {
   try {
-    const auth = await requireAuth(request, { roles: ['admin', 'cashier', 'waiter'] });
+    const auth = await requireAuth(request, { roles: ['admin', 'cashier', 'waiter'], permission: 'customers.access' });
     if (auth.error) return auth.error;
 
     const db = Database.getInstance();
@@ -84,7 +84,7 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    const auth = await requireAuth(request, { roles: ['admin', 'cashier'] });
+    const auth = await requireAuth(request, { roles: ['admin', 'cashier'], permission: 'customers.access' });
     if (auth.error) return auth.error;
 
     const data = await request.json();
@@ -157,7 +157,7 @@ export async function POST(request) {
 
 export async function PUT(request) {
   try {
-    const auth = await requireAuth(request, { roles: ['admin', 'cashier'] });
+    const auth = await requireAuth(request, { roles: ['admin', 'cashier'], permission: 'customers.access' });
     if (auth.error) return auth.error;
 
     const data = await request.json();

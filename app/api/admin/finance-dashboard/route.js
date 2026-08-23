@@ -6,7 +6,7 @@ import { financeDashboard } from '@/lib/accounting-dashboard.js';
 
 export async function GET(request) {
   try {
-    const auth = await requireAuth(request, { roles: ['admin'] });
+    const auth = await requireAuth(request, { roles: ['admin', 'cashier'], permission: 'finance_dashboard.access' });
     if (auth.error) return auth.error;
     const db = Database.getInstance();
     await ensureAccountingSchema(db);

@@ -8,7 +8,7 @@ import {
   Building2, ChevronDown, Ruler, Layers, TrendingUp, Activity,
   BookOpen, ScrollText, Coins, Landmark, CreditCard, ArrowRightLeft, Undo2, Receipt, Gauge, ClipboardCheck,
   BarChart3, Globe, ReceiptText, CalendarClock, BellRing, Calendar,
-  PiggyBank, ShieldCheck, WalletCards, Bike
+  PiggyBank, ShieldCheck, WalletCards, Bike, Contact, CalendarHeart, CalendarCheck2
 } from 'lucide-react';
 import LogoutButton from '@/components/ui/logout-button';
 import { isNavHidden } from '@/lib/deployment';
@@ -418,12 +418,16 @@ export default function AdminLayout({ children }) {
       ],
     },
     {
-      label: 'People',
+      label: 'HRM',
       tint: 'pink',
       items: [
-        { icon: Users, label: 'Employees', href: '/admin/employees', color: 'text-green-600' },
-        { icon: WalletCards, label: 'Salary & Advances', href: '/admin/payroll', color: 'text-emerald-700' },
-        { icon: TrendingUp, label: 'Employee Performance', href: '/admin/employee-performance', color: 'text-lime-600' },
+        { icon: Building2, label: 'Departments', href: '/admin/hrm/departments', color: 'text-pink-600' },
+        { icon: Contact, label: 'Designations', href: '/admin/hrm/designations', color: 'text-pink-600' },
+        { icon: Users, label: 'Staff', href: '/admin/employees', color: 'text-green-600' },
+        { icon: CalendarCheck2, label: 'Attendance', href: '/admin/hrm/attendance', color: 'text-sky-600' },
+        { icon: WalletCards, label: 'Payroll', href: '/admin/payroll', color: 'text-emerald-700' },
+        { icon: CalendarHeart, label: 'Holidays', href: '/admin/hrm/holidays', color: 'text-rose-600' },
+        { icon: TrendingUp, label: 'Staff Performance', href: '/admin/employee-performance', color: 'text-lime-600' },
       ],
     },
     { icon: Globe, label: 'Website CMS', href: '/admin/cms', color: 'text-sky-600' },
@@ -432,8 +436,8 @@ export default function AdminLayout({ children }) {
   ];
 
   const cashierNavGroups = [
-    { icon: Receipt, label: 'POS', href: '/cashier/pos', color: 'text-emerald-700' },
-    { icon: LayoutDashboard, label: 'Order Desk', href: '/cashier', color: 'text-gray-700' },
+    { icon: Receipt, label: 'POS', href: '/cashier/pos', color: 'text-emerald-700', requiredPermission: 'pos.access' },
+    { icon: LayoutDashboard, label: 'Order Desk', href: '/cashier', color: 'text-gray-700', requiredPermission: 'order_desk.access' },
     { icon: Gauge, label: 'Dashboard', href: '/cashier/dashboard', color: 'text-indigo-700', requiredPermission: 'dashboard.view' },
     { icon: FileText, label: 'Reports', href: '/cashier/reports', color: 'text-purple-600', requiredPermission: 'reports.view' },
     {
@@ -449,20 +453,20 @@ export default function AdminLayout({ children }) {
       label: 'Ledgers',
       tint: 'indigo',
       items: [
-        { icon: Receipt, label: 'Customer Ledger', href: '/cashier/accounts-receivable', color: 'text-teal-700' },
-        { icon: Receipt, label: 'Supplier Ledger', href: '/cashier/accounts-payable', color: 'text-orange-700' },
+        { icon: Receipt, label: 'Customer Ledger', href: '/cashier/accounts-receivable', color: 'text-teal-700', requiredPermission: 'customer_ledger.access' },
+        { icon: Receipt, label: 'Supplier Ledger', href: '/cashier/accounts-payable', color: 'text-orange-700', requiredPermission: 'supplier_ledger.access' },
       ],
     },
     {
       label: 'Operations',
       tint: 'sky',
       items: [
-        { icon: BellRing, label: 'Waiter Calls', href: '/cashier/waiter-requests', color: 'text-amber-700', badge: waiterCallsBadge },
-        { icon: Inbox, label: 'Online Orders', href: '/cashier/online-orders', color: 'text-amber-600', badge: ordersBadge },
-        { icon: Calendar, label: 'Reservations', href: '/cashier/reservations', color: 'text-violet-600' },
-        { icon: ReceiptText, label: 'Bills', href: '/cashier/bills', color: 'text-emerald-600' },
-        { icon: ChefHat, label: 'KOT History', href: '/cashier/kots', color: 'text-orange-600' },
-        { icon: CreditCard, label: 'Payments', href: '/cashier/payment-history', color: 'text-blue-600' },
+        { icon: BellRing, label: 'Waiter Calls', href: '/cashier/waiter-requests', color: 'text-amber-700', badge: waiterCallsBadge, requiredPermission: 'waiter_calls.access' },
+        { icon: Inbox, label: 'Online Orders', href: '/cashier/online-orders', color: 'text-amber-600', badge: ordersBadge, requiredPermission: 'online_orders.access' },
+        { icon: Calendar, label: 'Reservations', href: '/cashier/reservations', color: 'text-violet-600', requiredPermission: 'reservations.access' },
+        { icon: ReceiptText, label: 'Bills', href: '/cashier/bills', color: 'text-emerald-600', requiredPermission: 'bills.access' },
+        { icon: ChefHat, label: 'KOT History', href: '/cashier/kots', color: 'text-orange-600', requiredPermission: 'kot_history.access' },
+        { icon: CreditCard, label: 'Payments', href: '/cashier/payment-history', color: 'text-blue-600', requiredPermission: 'payments.access' },
         { icon: Bike, label: 'Delivery Executives', href: '/cashier/delivery', color: 'text-lime-600', requiredPermission: 'delivery.manage' },
       ],
     },
@@ -470,7 +474,7 @@ export default function AdminLayout({ children }) {
       label: 'Records',
       tint: 'violet',
       items: [
-        { icon: Users, label: 'Customers', href: '/cashier/customers', color: 'text-pink-600' },
+        { icon: Users, label: 'Customers', href: '/cashier/customers', color: 'text-pink-600', requiredPermission: 'customers.access' },
         { icon: Gauge, label: 'Inventory Dashboard', href: '/cashier/inventory/dashboard', color: 'text-indigo-700', requiredPermission: 'inventory.dashboard.view' },
         { icon: Warehouse, label: 'All Inventory', href: '/cashier/inventory', color: 'text-indigo-600', requiredPermission: 'inventory.manage' },
         { icon: FolderOpen, label: 'Inventory Categories', href: '/cashier/inventory-categories', color: 'text-violet-600', requiredPermission: 'inventory.setup.manage' },
@@ -493,11 +497,29 @@ export default function AdminLayout({ children }) {
       ],
     },
     {
+      label: 'HRM',
+      tint: 'pink',
+      items: [
+        { icon: Building2, label: 'Departments', href: '/cashier/hrm/departments', color: 'text-pink-600', requiredPermission: 'hrm.departments.manage' },
+        { icon: Contact, label: 'Designations', href: '/cashier/hrm/designations', color: 'text-pink-600', requiredPermission: 'hrm.designations.manage' },
+        { icon: CalendarCheck2, label: 'Attendance', href: '/cashier/hrm/attendance', color: 'text-sky-600', requiredPermission: 'hrm.attendance.manage' },
+        { icon: CalendarHeart, label: 'Holidays', href: '/cashier/hrm/holidays', color: 'text-rose-600', requiredPermission: 'hrm.holidays.manage' },
+      ],
+    },
+    {
       label: 'Accounting',
       tint: 'indigo',
       items: [
-        { icon: Undo2, label: 'Corrections', href: '/cashier/corrections', color: 'text-amber-700', requiredPermission: 'corrections.manage' },
+        { icon: Gauge, label: 'Finance Dashboard', href: '/cashier/finance-dashboard', color: 'text-gray-900', requiredPermission: 'finance_dashboard.access' },
+        { icon: BookOpen, label: 'Chart of Accounts', href: '/cashier/chart-of-accounts', color: 'text-indigo-600', requiredPermission: 'chart_of_accounts.access' },
         { icon: ScrollText, label: 'General Ledger', href: '/cashier/general-ledger', color: 'text-slate-600', requiredPermission: 'general_ledger.view' },
+        { icon: Coins, label: 'Cash Book', href: '/cashier/cash-book', color: 'text-yellow-600', requiredPermission: 'general_ledger.view' },
+        { icon: Landmark, label: 'Bank Book', href: '/cashier/bank-book', color: 'text-blue-600', requiredPermission: 'general_ledger.view' },
+        { icon: ClipboardCheck, label: 'Bank Reconciliation', href: '/cashier/bank-reconciliation', color: 'text-cyan-700', requiredPermission: 'bank_reconciliation.access' },
+        { icon: Landmark, label: 'Bank', href: '/cashier/bank', color: 'text-blue-700', requiredPermission: 'bank.access' },
+        { icon: CreditCard, label: 'Settlements', href: '/cashier/settlements', color: 'text-rose-600', requiredPermission: 'settlements.access' },
+        { icon: FileText, label: 'Financial Reports', href: '/cashier/financial-reports', color: 'text-indigo-700', requiredPermission: 'financial_reports.access' },
+        { icon: Undo2, label: 'Corrections', href: '/cashier/corrections', color: 'text-amber-700', requiredPermission: 'corrections.manage' },
       ],
     },
   ];

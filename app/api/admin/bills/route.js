@@ -6,7 +6,7 @@ import { listBills } from '@/lib/bills-admin.js';
 /** GET /api/admin/bills — central bill list with tabs, search and filters. */
 export async function GET(request) {
   try {
-    const auth = await requireAuth(request, { roles: ['admin', 'waiter', 'cashier'] });
+    const auth = await requireAuth(request, { roles: ['admin', 'waiter', 'cashier'], permission: 'bills.access' });
     if (auth.error) return auth.error;
 
     const { searchParams } = new URL(request.url);

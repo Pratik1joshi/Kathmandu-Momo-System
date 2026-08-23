@@ -34,7 +34,7 @@ function kotTabFilter(tab) {
  */
 export async function GET(request) {
   try {
-    const auth = await requireAuth(request, { roles: ['admin', 'waiter', 'cashier', 'kitchen'] });
+    const auth = await requireAuth(request, { roles: ['admin', 'waiter', 'cashier', 'kitchen'], permission: 'kot_history.access' });
     if (auth.error) return auth.error;
 
     const { searchParams } = new URL(request.url);

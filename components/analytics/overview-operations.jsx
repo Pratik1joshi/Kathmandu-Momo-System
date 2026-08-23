@@ -1,19 +1,266 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   AlertTriangle, Award, ArrowRight, CheckCircle2, ChefHat, CircleDollarSign,
-  Clock3, Download, Info, LayoutGrid, PackageSearch, ReceiptText, ShieldAlert, Users,
+  Clock3, Download, Info, LayoutGrid, PackageSearch, ReceiptText, Search, ShieldAlert, Users, X,
 } from 'lucide-react';
 import { ChartCard, RankBars } from '@/components/admin/report-kit';
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import PaginationControls from '@/components/ui/pagination-controls';
+import { apiJson } from '@/lib/authed-fetch';
+import { resolvePeriodRange, formatNepalDisplay } from '@/lib/report-dates';
+import DateInput from '@/components/ui/date-input.jsx';
 import {
   DashboardSection, Metric, NepalTime, SectionHeading, StatCell, StatusPill, TableWrap,
   money, percent,
 } from './analytics-ui';
 import { compactBillNumber, compactOrderNumber } from '@/lib/document-display';
 import { orderTypeLabel } from '@/lib/order-types.js';
+
+const CREDIT_PERIODS = [
+  { id: 'today', label: 'Today' },
+  { id: 'yesterday', label: 'Yesterday' },
+  { id: 'last7', label: 'Last 7 Days' },
+  { id: 'last30', label: 'Last 30 Days' },
+  { id: 'this_month', label: 'This Month' },
+  { id: 'all', label: 'All Time' },
+  { id: 'custom', label: 'Custom Range' },
+];
+
+const TODAY_RANGE = resolvePeriodRange('today');
+
+function CustomerCreditLedger() {
+  const [period, setPeriod] = useState('today');
+  const [from, setFrom] = useState(TODAY_RANGE.start);
+  const [to, setTo] = useState(TODAY_RANGE.end);
+  const [statusFilter, setStatusFilter] = useState('all'); // all | charged | paid
+  const [query, setQuery] = useState('');
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [active, setActive] = useState(null); // selected row for the detail popup
+
+  const choosePeriod = (id) => {
+    setPeriod(id);
+    if (id === 'custom') return;
+    if (id === 'all') { setFrom(''); setTo(''); return; }
+    const range = resolvePeriodRange(id);
+    setFrom(range.start); setTo(range.end);
+  };
+
+  // Fetch the whole period unfiltered by status — the two totals need both
+  // buckets at once, and the status pills below just filter this in memory.
+  useEffect(() => {
+    setLoading(true);
+    const params = new URLSearchParams({ view: 'history' });
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    if (query.trim()) params.set('search', query.trim());
+    apiJson(`/api/admin/accounts-receivable?${params}`)
+      .then((d) => setRows(d.history || []))
+      .catch(() => setRows([]))
+      .finally(() => setLoading(false));
+  }, [from, to, query]);
+
+  const charged = rows.filter((r) => r.status === 'charged');
+  const paid = rows.filter((r) => r.status !== 'charged');
+  const chargedTotal = charged.reduce((s, r) => s + Number(r.debit || 0), 0);
+  const paidTotal = paid.reduce((s, r) => s + Number(r.credit || 0), 0);
+  const visible = statusFilter === 'charged' ? charged : statusFilter === 'paid' ? paid : rows;
+
+  return (
+    <div className="mt-5 rounded-2xl border border-gray-200 bg-white p-5">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-950">Customer credit ledger</h3>
+          <p className="text-xs text-gray-500">Every charge and payment, filterable by date, status and customer.</p>
+        </div>
+        <Link href="/admin/accounts-receivable" className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-800">
+          Full Customer Ledger <ArrowRight className="h-3.5 w-3.5" />
+        </Link>
+      </div>
+
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-2">
+          {CREDIT_PERIODS.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => choosePeriod(p.id)}
+              className={`rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+                period === p.id ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <div className="relative w-full sm:w-64">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search by customer name..."
+            className="w-full rounded-lg border border-gray-300 py-1.5 pl-8 pr-3 text-xs"
+          />
+        </div>
+      </div>
+
+      {period === 'custom' && (
+        <div className="mb-4 flex flex-wrap items-end gap-3">
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-gray-600">From</span>
+            <DateInput value={from} onChange={setFrom} className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs" />
+          </label>
+          <span className="pb-2 text-gray-400">—</span>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-gray-600">To</span>
+            <DateInput value={to} onChange={setTo} className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs" />
+          </label>
+        </div>
+      )}
+
+      <div className="mb-4 grid gap-3 sm:grid-cols-3">
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === 'charged' ? 'all' : 'charged')}
+          className={`rounded-xl border p-4 text-left transition-colors ${
+            statusFilter === 'charged' ? 'border-rose-400 bg-rose-50 ring-1 ring-rose-300' : 'border-gray-200 bg-gray-50 hover:border-rose-200 hover:bg-rose-50/40'
+          }`}
+        >
+          <p className="text-xs font-medium uppercase tracking-wide text-rose-700">Credited {period !== 'all' ? `· ${CREDIT_PERIODS.find((p) => p.id === period)?.label}` : ''}</p>
+          <p className="mt-1 text-2xl font-bold tabular-nums text-rose-800">{money(chargedTotal)}</p>
+          <p className="mt-0.5 text-xs text-rose-600">{charged.length} {charged.length === 1 ? 'entry' : 'entries'}</p>
+        </button>
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === 'paid' ? 'all' : 'paid')}
+          className={`rounded-xl border p-4 text-left transition-colors ${
+            statusFilter === 'paid' ? 'border-emerald-400 bg-emerald-50 ring-1 ring-emerald-300' : 'border-gray-200 bg-gray-50 hover:border-emerald-200 hover:bg-emerald-50/40'
+          }`}
+        >
+          <p className="text-xs font-medium uppercase tracking-wide text-emerald-700">Paid {period !== 'all' ? `· ${CREDIT_PERIODS.find((p) => p.id === period)?.label}` : ''}</p>
+          <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-800">{money(paidTotal)}</p>
+          <p className="mt-0.5 text-xs text-emerald-600">{paid.length} {paid.length === 1 ? 'entry' : 'entries'}</p>
+        </button>
+        <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+          <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Net movement</p>
+          <p className={`mt-1 text-2xl font-bold tabular-nums ${chargedTotal - paidTotal >= 0 ? 'text-gray-900' : 'text-emerald-800'}`}>{money(chargedTotal - paidTotal)}</p>
+          <p className="mt-0.5 text-xs text-gray-500">Credited minus paid, this period</p>
+        </div>
+      </div>
+
+      {statusFilter !== 'all' && (
+        <button type="button" onClick={() => setStatusFilter('all')} className="mb-2 text-xs font-medium text-gray-500 hover:text-gray-800">
+          &times; Clear filter ({statusFilter === 'charged' ? 'Credited' : 'Paid'} only)
+        </button>
+      )}
+
+      <div className="divide-y divide-gray-100 overflow-hidden rounded-xl border border-gray-200">
+        {loading ? (
+          <p className="py-8 text-center text-sm text-gray-400">Loading…</p>
+        ) : visible.length === 0 ? (
+          <p className="py-8 text-center text-sm text-gray-400">No ledger activity in this range.</p>
+        ) : (
+          visible.map((h) => (
+            <button
+              key={h.id}
+              type="button"
+              onClick={() => setActive(h)}
+              className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm transition-colors hover:bg-gray-50"
+            >
+              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                h.status === 'charged' ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'
+              }`}>
+                {h.customer_name?.[0]?.toUpperCase() || '?'}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-medium text-gray-900">{h.customer_name}</span>
+                <span className="block text-xs text-gray-400">
+                  {formatNepalDisplay(String(h.date || '').slice(0, 10))}{h.bill_number ? ` · ${h.bill_number}` : ''}
+                </span>
+              </span>
+              <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                h.status === 'charged' ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'
+              }`}>
+                {h.status}
+              </span>
+              <span className="w-24 shrink-0 text-right tabular-nums font-semibold text-gray-900">{money(h.debit > 0 ? h.debit : h.credit)}</span>
+            </button>
+          ))
+        )}
+      </div>
+
+      {active && <CreditEntryModal entry={active} onClose={() => setActive(null)} />}
+    </div>
+  );
+}
+
+function CreditEntryModal({ entry, onClose }) {
+  const amount = entry.debit > 0 ? entry.debit : entry.credit;
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
+              entry.status === 'charged' ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'
+            }`}>
+              {entry.customer_name?.[0]?.toUpperCase() || '?'}
+            </span>
+            <div>
+              <p className="text-base font-bold text-gray-900">{entry.customer_name}</p>
+              {entry.customer_phone && <p className="text-xs text-gray-500">{entry.customer_phone}</p>}
+            </div>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="mb-4 rounded-xl bg-gray-50 p-4">
+          <div className="flex items-center justify-between">
+            <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold uppercase ${
+              entry.status === 'charged' ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'
+            }`}>
+              {entry.status}
+            </span>
+            <span className="text-xl font-bold tabular-nums text-gray-900">{money(amount)}</span>
+          </div>
+          <p className="mt-2 text-xs text-gray-500">{formatNepalDisplay(String(entry.date || '').slice(0, 10))} · {new Date(entry.date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</p>
+          {entry.bill_number && <p className="mt-1 text-xs text-gray-500">Bill {entry.bill_number}</p>}
+          {entry.note && <p className="mt-2 text-sm text-gray-700">{entry.note}</p>}
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {entry.order_id && (
+            <Link
+              href={`/admin/orders/${entry.order_id}`}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-800"
+            >
+              View order <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          )}
+          {entry.customer_id && (
+            <Link
+              href={`/admin/customers/${entry.customer_id}`}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              View profile <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          )}
+          <Link
+            href="/admin/accounts-receivable"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Open ledger
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function LiveStatus({ data }) {
   const live = data.live;
@@ -210,7 +457,8 @@ export function PeoplePerformance({ data }) {
   return (
     <DashboardSection>
       <SectionHeading icon={Users} tone="violet" eyebrow="People" title="Customers and staff" description="Anonymous walk-ins are excluded from repeat-customer metrics. Staff sales are attributed only through saved waiter/cashier IDs." />
-      <div className="grid gap-5 xl:grid-cols-2">
+      <CustomerCreditLedger />
+      <div className="mt-5 grid gap-5 xl:grid-cols-2">
         <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
             <Metric label="Identified Customers" value={customers.identified} />
