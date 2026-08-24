@@ -3,6 +3,7 @@ import Database from '@/lib/db/index';
 import bcrypt from 'bcryptjs';
 import { getPrimaryAdminId } from '@/lib/employees.js';
 import { ensurePayrollSchema } from '@/lib/payroll.js';
+import { ensureHrmSchema } from '@/lib/hrm.js';
 import { requireAuth } from '@/lib/api-guard.js';
 
 export async function GET(request) {
@@ -12,13 +13,17 @@ export async function GET(request) {
 
     const db = Database.getInstance();
     await ensurePayrollSchema(db);
+    await ensureHrmSchema(db);
     const primaryId = await getPrimaryAdminId(db);
 
     const employees = await db.all(`
-      SELECT id, username, full_name, role, email, phone, is_active, created_at,
-             salary, hire_date, position
-      FROM users
-      ORDER BY id ASC
+      SELECT u.id, u.username, u.full_name, u.role, u.email, u.phone, u.is_active, u.created_at,
+             u.salary, u.hire_date, u.position, u.department_id, u.designation_id,
+             dep.name AS department_name, des.name AS designation_name
+      FROM users u
+      LEFT JOIN departments dep ON dep.id = u.department_id
+      LEFT JOIN designations des ON des.id = u.designation_id
+      ORDER BY u.id ASC
     `);
 
     return NextResponse.json({
@@ -46,6 +51,7 @@ export async function POST(request) {
     const data = await request.json();
     const db = Database.getInstance();
     await ensurePayrollSchema(db);
+    await ensureHrmSchema(db);
 
     // Check if username already exists
     const existing = await db.get('SELECT id FROM users WHERE username = ?', [data.username]);
@@ -62,8 +68,8 @@ export async function POST(request) {
     const result = await db.run(`
       INSERT INTO users (
         username, full_name, role, password_hash, email, phone, is_active,
-        salary, hire_date, position
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        salary, hire_date, position, department_id, designation_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       data.username,
       data.full_name,
@@ -74,12 +80,14 @@ export async function POST(request) {
       data.is_active ? 1 : 0,
       data.salary === '' || data.salary == null ? null : Number(data.salary),
       data.hire_date || null,
-      data.position || null
+      data.position || null,
+      data.department_id ? Number(data.department_id) : null,
+      data.designation_id ? Number(data.designation_id) : null,
     ]);
 
     const employee = await db.get(`
       SELECT id, username, full_name, role, email, phone, is_active, created_at,
-             salary, hire_date, position
+             salary, hire_date, position, department_id, designation_id
       FROM users WHERE id = ?
     `, [result.lastInsertRowid]);
 
@@ -104,6 +112,7 @@ export async function PUT(request) {
     const data = await request.json();
     const db = Database.getInstance();
     await ensurePayrollSchema(db);
+    await ensureHrmSchema(db);
 
     // Check if username is taken by another user
     const existing = await db.get('SELECT id FROM users WHERE username = ? AND id != ?', [data.username, data.id]);

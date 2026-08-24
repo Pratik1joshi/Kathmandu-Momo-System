@@ -55,6 +55,9 @@ const NAV_TINTS = {
   emerald: { bg: 'bg-emerald-50/70', header: 'text-emerald-700', activeBg: 'bg-emerald-100', activeBorder: 'border-emerald-600', hover: 'hover:bg-emerald-100/70' },
   indigo: { bg: 'bg-indigo-50/70', header: 'text-indigo-700', activeBg: 'bg-indigo-100', activeBorder: 'border-indigo-600', hover: 'hover:bg-indigo-100/70' },
   pink: { bg: 'bg-pink-50/70', header: 'text-pink-700', activeBg: 'bg-pink-100', activeBorder: 'border-pink-600', hover: 'hover:bg-pink-100/70' },
+  amber: { bg: 'bg-amber-50/70', header: 'text-amber-700', activeBg: 'bg-amber-100', activeBorder: 'border-amber-600', hover: 'hover:bg-amber-100/70' },
+  purple: { bg: 'bg-purple-50/70', header: 'text-purple-700', activeBg: 'bg-purple-100', activeBorder: 'border-purple-600', hover: 'hover:bg-purple-100/70' },
+  rose: { bg: 'bg-rose-50/70', header: 'text-rose-700', activeBg: 'bg-rose-100', activeBorder: 'border-rose-600', hover: 'hover:bg-rose-100/70' },
 };
 
 export default function AdminLayout({ children }) {
@@ -350,7 +353,7 @@ export default function AdminLayout({ children }) {
     { icon: FileText, label: 'Reports', href: '/admin/reports', color: 'text-purple-600' },
     {
       label: 'Menu',
-      tint: 'blue',
+      tint: 'amber',
       items: [
         { icon: Package, label: 'Menu', href: '/admin/products', color: 'text-blue-600' },
         { icon: FolderOpen, label: 'Categories', href: '/admin/categories', color: 'text-purple-600' },
@@ -378,7 +381,7 @@ export default function AdminLayout({ children }) {
     { icon: Receipt, label: 'Supplier Ledger', href: '/admin/accounts-payable', color: 'text-orange-700' },
     {
       label: 'Inventory',
-      tint: 'violet',
+      tint: 'purple',
       items: [
         { icon: Gauge, label: 'Inventory Report', href: '/admin/inventory/dashboard', color: 'text-indigo-700' },
         { icon: Warehouse, label: 'Inventory', href: '/admin/inventory', color: 'text-indigo-600' },
@@ -401,7 +404,7 @@ export default function AdminLayout({ children }) {
     },
     {
       label: 'Accounting',
-      tint: 'indigo',
+      tint: 'rose',
       items: [
         { icon: CalendarClock, label: 'Opening & Closing', href: '/admin/business-days', color: 'text-emerald-700' },
         { icon: Gauge, label: 'Finance Dashboard', href: '/admin/finance-dashboard', color: 'text-gray-900' },
@@ -419,7 +422,7 @@ export default function AdminLayout({ children }) {
     },
     {
       label: 'HRM',
-      tint: 'pink',
+      tint: 'blue',
       items: [
         { icon: Building2, label: 'Departments', href: '/admin/hrm/departments', color: 'text-pink-600' },
         { icon: Contact, label: 'Designations', href: '/admin/hrm/designations', color: 'text-pink-600' },
@@ -442,7 +445,7 @@ export default function AdminLayout({ children }) {
     { icon: FileText, label: 'Reports', href: '/cashier/reports', color: 'text-purple-600', requiredPermission: 'reports.view' },
     {
       label: 'Menu',
-      tint: 'blue',
+      tint: 'amber',
       items: [
         { icon: Package, label: 'Menu Items', href: '/cashier/menu-items', color: 'text-blue-600', requiredPermission: 'menu.manage' },
         { icon: FolderOpen, label: 'Categories', href: '/cashier/categories', color: 'text-purple-600', requiredPermission: 'menu.manage' },
@@ -472,7 +475,7 @@ export default function AdminLayout({ children }) {
     },
     {
       label: 'Records',
-      tint: 'violet',
+      tint: 'purple',
       items: [
         { icon: Users, label: 'Customers', href: '/cashier/customers', color: 'text-pink-600', requiredPermission: 'customers.access' },
         { icon: Gauge, label: 'Inventory Dashboard', href: '/cashier/inventory/dashboard', color: 'text-indigo-700', requiredPermission: 'inventory.dashboard.view' },
@@ -498,7 +501,7 @@ export default function AdminLayout({ children }) {
     },
     {
       label: 'HRM',
-      tint: 'pink',
+      tint: 'blue',
       items: [
         { icon: Building2, label: 'Departments', href: '/cashier/hrm/departments', color: 'text-pink-600', requiredPermission: 'hrm.departments.manage' },
         { icon: Contact, label: 'Designations', href: '/cashier/hrm/designations', color: 'text-pink-600', requiredPermission: 'hrm.designations.manage' },
@@ -508,7 +511,7 @@ export default function AdminLayout({ children }) {
     },
     {
       label: 'Accounting',
-      tint: 'indigo',
+      tint: 'rose',
       items: [
         { icon: Gauge, label: 'Finance Dashboard', href: '/cashier/finance-dashboard', color: 'text-gray-900', requiredPermission: 'finance_dashboard.access' },
         { icon: BookOpen, label: 'Chart of Accounts', href: '/cashier/chart-of-accounts', color: 'text-indigo-600', requiredPermission: 'chart_of_accounts.access' },

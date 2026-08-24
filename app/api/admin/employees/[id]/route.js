@@ -3,11 +3,17 @@ import Database from '@/lib/db/index';
 import bcrypt from 'bcryptjs';
 import { getPrimaryAdminId, isPrimaryAdmin } from '@/lib/employees.js';
 import { requireAuth, handleRouteError } from '@/lib/api-guard.js';
+import { ensureHrmSchema } from '@/lib/hrm.js';
 
 function employeeSelect(id) {
   return [
-    `SELECT id, username, full_name, role, email, phone, is_active, created_at
-     FROM users WHERE id = ?`,
+    `SELECT u.id, u.username, u.full_name, u.role, u.email, u.phone, u.is_active, u.created_at,
+            u.salary, u.hire_date, u.position, u.department_id, u.designation_id,
+            dep.name AS department_name, des.name AS designation_name
+     FROM users u
+     LEFT JOIN departments dep ON dep.id = u.department_id
+     LEFT JOIN designations des ON des.id = u.designation_id
+     WHERE u.id = ?`,
     [id],
   ];
 }
@@ -20,6 +26,7 @@ export async function PUT(request, { params }) {
     const { id } = await params;
     const data = await request.json();
     const db = Database.getInstance();
+    await ensureHrmSchema(db);
 
     const existingUser = await db.get('SELECT * FROM users WHERE id = ?', [id]);
     if (!existingUser) {
@@ -62,12 +69,19 @@ export async function PUT(request, { params }) {
       ? existingUser.is_active
       : (data.is_active ? 1 : 0);
 
+    const salary = data.salary === undefined ? existingUser.salary : (data.salary === '' || data.salary == null ? null : Number(data.salary));
+    const hireDate = data.hire_date === undefined ? existingUser.hire_date : (data.hire_date || null);
+    const position = data.position === undefined ? existingUser.position : (data.position || null);
+    const departmentId = data.department_id === undefined ? existingUser.department_id : (data.department_id ? Number(data.department_id) : null);
+    const designationId = data.designation_id === undefined ? existingUser.designation_id : (data.designation_id ? Number(data.designation_id) : null);
+
     if (data.pin) {
       const hashedPassword = bcrypt.hashSync(String(data.pin), 10);
       await db.run(
         `UPDATE users
          SET username = ?, full_name = ?, role = ?, password_hash = ?,
-             email = ?, phone = ?, is_active = ?
+             email = ?, phone = ?, is_active = ?,
+             salary = ?, hire_date = ?, position = ?, department_id = ?, designation_id = ?
          WHERE id = ?`,
         [
           username,
@@ -77,6 +91,7 @@ export async function PUT(request, { params }) {
           data.email || null,
           data.phone || null,
           isActive,
+          salary, hireDate, position, departmentId, designationId,
           id,
         ]
       );
@@ -84,7 +99,8 @@ export async function PUT(request, { params }) {
       await db.run(
         `UPDATE users
          SET username = ?, full_name = ?, role = ?,
-             email = ?, phone = ?, is_active = ?
+             email = ?, phone = ?, is_active = ?,
+             salary = ?, hire_date = ?, position = ?, department_id = ?, designation_id = ?
          WHERE id = ?`,
         [
           username,
@@ -93,6 +109,7 @@ export async function PUT(request, { params }) {
           data.email || null,
           data.phone || null,
           isActive,
+          salary, hireDate, position, departmentId, designationId,
           id,
         ]
       );
@@ -122,6 +139,7 @@ export async function PATCH(request, { params }) {
     const { id } = await params;
     const data = await request.json();
     const db = Database.getInstance();
+    await ensureHrmSchema(db);
 
     const existingUser = await db.get('SELECT * FROM users WHERE id = ?', [id]);
     if (!existingUser) {
@@ -175,6 +193,7 @@ export async function DELETE(request, { params }) {
     const { id } = await params;
     const userId = Number(id);
     const db = Database.getInstance();
+    await ensureHrmSchema(db);
 
     const existingUser = await db.get('SELECT * FROM users WHERE id = ?', [userId]);
     if (!existingUser) {
@@ -232,6 +251,7 @@ export async function GET(request, { params }) {
 
     const { id } = await params;
     const db = Database.getInstance();
+    await ensureHrmSchema(db);
     const [sql, args] = employeeSelect(id);
     const employee = await db.get(sql, args);
     if (!employee) {

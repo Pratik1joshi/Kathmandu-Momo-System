@@ -124,8 +124,8 @@ export default function InventoryDashboardPage() {
             <SummaryCards s={data.summary} />
             <CategoryCards categories={data.categories} />
             <div className="grid items-start gap-4 lg:grid-cols-2">
-              <LowStockPanel items={data.panels.lowStockAlerts} />
-              <OutOfStockPanel items={data.panels.outOfStock} />
+              <LowStockPanel items={data.panels.lowStockAlerts} inventoryBase={inventoryBase} />
+              <OutOfStockPanel items={data.panels.outOfStock} inventoryBase={inventoryBase} />
               <MoversPanel title="Top-Moving Items" icon={TrendingUp} items={data.panels.topMoving} kind="top" />
               <MoversPanel title="Slow-Moving Items" icon={TrendingDown} items={data.panels.slowMoving} kind="slow" />
               <ReceiptsPanel items={data.panels.recentReceipts} />
@@ -214,7 +214,7 @@ function Empty({ text }) {
   return <p className="py-4 text-center text-sm text-gray-400">{text}</p>;
 }
 
-function LowStockPanel({ items }) {
+function LowStockPanel({ items, inventoryBase }) {
   return (
     <Panel title="Low-Stock Alerts" icon={AlertTriangle} count={items.length} accent="text-amber-500">
       {!items.length ? <Empty text="No items below their reorder threshold." /> : (
@@ -243,7 +243,7 @@ function LowStockPanel({ items }) {
   );
 }
 
-function OutOfStockPanel({ items }) {
+function OutOfStockPanel({ items, inventoryBase }) {
   return (
     <Panel title="Out-of-Stock Alerts" icon={XCircle} count={items.length} accent="text-red-500">
       {!items.length ? <Empty text="Nothing is fully out of stock." /> : (

@@ -75,6 +75,7 @@ export function PrimaryKpis({ rows }) {
     value: row.value,
     format: row.format,
     tone: row.tone,
+    highlight: row.highlight,
     change: row.comparison?.percent ?? null,
     sub: row.note || (row.comparison
       ? `${row.comparison.absolute >= 0 ? '+' : ''}${formatValue(row.comparison.absolute, row.format)} vs last period`

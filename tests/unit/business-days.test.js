@@ -16,11 +16,13 @@ import { PosDatabase } from '../../lib/db/index.js';
 import { getNepaliDateString } from '../../lib/time-utils.js';
 import { postJournal } from '../../lib/accounting.js';
 import { AuthService } from '../../lib/auth/auth.js';
+import { closingReconciliation } from '../../lib/summary-report.js';
 import {
   openBusinessDay,
   closeBusinessDay,
   businessDayContext,
   businessDaySummary,
+  businessDayDetail,
   currentBusinessDayId,
   isStaleBusinessDay,
   isStaleAcknowledged,
@@ -271,7 +273,8 @@ test('force close preserves unresolved activity and marks both rows force_closed
     [order3Id, day1Id]
   );
 
-  const result = await closeBusinessDay(db, { counted_cash: 5800, force_close_reason: 'Guest dispute, unresolved at close' }, admin, { force: true });
+  const cashDenominations = { 1000: 5, 500: 1, 100: 3 };
+  const result = await closeBusinessDay(db, { counted_cash: 5800, cash_denominations: cashDenominations, force_close_reason: 'Guest dispute, unresolved at close' }, admin, { force: true });
   assert.equal(result.business_day.force_closed, 1);
   assert.equal(result.store_session.status, 'closed');
 
@@ -281,6 +284,17 @@ test('force close preserves unresolved activity and marks both rows force_closed
 
   const rows = await db.all('SELECT action FROM business_day_audit WHERE business_day_id=? ORDER BY id DESC LIMIT 1', [day1Id]);
   assert.equal(rows[0].action, 'store_session_force_closed');
+
+  const detail = await businessDayDetail(db, day1Id);
+  assert.deepEqual(detail.summary.reconciliation.cash_denominations, cashDenominations);
+});
+
+test('summary report includes the latest saved note count before the business day is finalized', async () => {
+  const closing = await closingReconciliation(db, today, today);
+  assert.equal(closing.days_closed, 1);
+  assert.equal(closing.days_recorded, 1);
+  assert.equal(closing.counted_cash, 5800);
+  assert.deepEqual(closing.cash_denominations, { 100: 3, 500: 1, 1000: 5 });
 });
 
 /* ------------------------------------------------------------ stale-day handling */
@@ -352,6 +366,10 @@ test('starting the next business day is independent of staleness acknowledgement
 
   const finalizedDay1 = await db.get('SELECT status FROM business_days WHERE id=?', [day1Id]);
   assert.equal(finalizedDay1.status, 'closed');
+  const finalizedSnapshot = JSON.parse((await db.get('SELECT closing_snapshot FROM business_days WHERE id=?', [day1Id])).closing_snapshot);
+  assert.deepEqual(finalizedSnapshot.reconciliation.cash_denominations, { 100: 3, 500: 1, 1000: 5 });
+  const finalizedDetail = await businessDayDetail(db, day1Id);
+  assert.deepEqual(finalizedDetail.summary.reconciliation.cash_denominations, { 100: 3, 500: 1, 1000: 5 });
 
   const order = await db.get('SELECT business_day_id, carried_from_business_day_id FROM orders WHERE id=?', [order3Id]);
   assert.equal(order.business_day_id, day2Id);

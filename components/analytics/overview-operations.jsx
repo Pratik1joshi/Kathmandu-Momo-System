@@ -10,8 +10,7 @@ import { ChartCard, RankBars } from '@/components/admin/report-kit';
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import PaginationControls from '@/components/ui/pagination-controls';
 import { apiJson } from '@/lib/authed-fetch';
-import { resolvePeriodRange, formatNepalDisplay } from '@/lib/report-dates';
-import DateInput from '@/components/ui/date-input.jsx';
+import { formatNepalDisplay } from '@/lib/report-dates';
 import {
   DashboardSection, Metric, NepalTime, SectionHeading, StatCell, StatusPill, TableWrap,
   money, percent,
@@ -19,35 +18,19 @@ import {
 import { compactBillNumber, compactOrderNumber } from '@/lib/document-display';
 import { orderTypeLabel } from '@/lib/order-types.js';
 
-const CREDIT_PERIODS = [
-  { id: 'today', label: 'Today' },
-  { id: 'yesterday', label: 'Yesterday' },
-  { id: 'last7', label: 'Last 7 Days' },
-  { id: 'last30', label: 'Last 30 Days' },
-  { id: 'this_month', label: 'This Month' },
-  { id: 'all', label: 'All Time' },
-  { id: 'custom', label: 'Custom Range' },
-];
-
-const TODAY_RANGE = resolvePeriodRange('today');
-
-function CustomerCreditLedger() {
-  const [period, setPeriod] = useState('today');
-  const [from, setFrom] = useState(TODAY_RANGE.start);
-  const [to, setTo] = useState(TODAY_RANGE.end);
+// Driven by the Analytics page's own period filter (data.range) — no second
+// picker here. Two independent date pickers on one page (one above, one
+// inside this card) looked like a duplicate and made this section look
+// "not dynamic" when only one of them was wired to what you were toggling.
+function CustomerCreditLedger({ range }) {
   const [statusFilter, setStatusFilter] = useState('all'); // all | charged | paid
   const [query, setQuery] = useState('');
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [active, setActive] = useState(null); // selected row for the detail popup
 
-  const choosePeriod = (id) => {
-    setPeriod(id);
-    if (id === 'custom') return;
-    if (id === 'all') { setFrom(''); setTo(''); return; }
-    const range = resolvePeriodRange(id);
-    setFrom(range.start); setTo(range.end);
-  };
+  const from = range?.start || '';
+  const to = range?.end || '';
 
   // Fetch the whole period unfiltered by status — the two totals need both
   // buckets at once, and the status pills below just filter this in memory.
@@ -74,52 +57,22 @@ function CustomerCreditLedger() {
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="text-sm font-semibold text-gray-950">Customer credit ledger</h3>
-          <p className="text-xs text-gray-500">Every charge and payment, filterable by date, status and customer.</p>
+          <p className="text-xs text-gray-500">Every charge and payment for {range?.label || 'the selected period'} — uses the date range above.</p>
         </div>
         <Link href="/admin/accounts-receivable" className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-800">
           Full Customer Ledger <ArrowRight className="h-3.5 w-3.5" />
         </Link>
       </div>
 
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-2">
-          {CREDIT_PERIODS.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => choosePeriod(p.id)}
-              className={`rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-colors ${
-                period === p.id ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
-              }`}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-        <div className="relative w-full sm:w-64">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search by customer name..."
-            className="w-full rounded-lg border border-gray-300 py-1.5 pl-8 pr-3 text-xs"
-          />
-        </div>
+      <div className="relative mb-4 w-full sm:w-64">
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search by customer name..."
+          className="w-full rounded-lg border border-gray-300 py-1.5 pl-8 pr-3 text-xs"
+        />
       </div>
-
-      {period === 'custom' && (
-        <div className="mb-4 flex flex-wrap items-end gap-3">
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-gray-600">From</span>
-            <DateInput value={from} onChange={setFrom} className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs" />
-          </label>
-          <span className="pb-2 text-gray-400">—</span>
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-gray-600">To</span>
-            <DateInput value={to} onChange={setTo} className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs" />
-          </label>
-        </div>
-      )}
 
       <div className="mb-4 grid gap-3 sm:grid-cols-3">
         <button
@@ -129,7 +82,7 @@ function CustomerCreditLedger() {
             statusFilter === 'charged' ? 'border-rose-400 bg-rose-50 ring-1 ring-rose-300' : 'border-gray-200 bg-gray-50 hover:border-rose-200 hover:bg-rose-50/40'
           }`}
         >
-          <p className="text-xs font-medium uppercase tracking-wide text-rose-700">Credited {period !== 'all' ? `· ${CREDIT_PERIODS.find((p) => p.id === period)?.label}` : ''}</p>
+          <p className="text-xs font-medium uppercase tracking-wide text-rose-700">Credited{range?.label ? ` · ${range.label}` : ''}</p>
           <p className="mt-1 text-2xl font-bold tabular-nums text-rose-800">{money(chargedTotal)}</p>
           <p className="mt-0.5 text-xs text-rose-600">{charged.length} {charged.length === 1 ? 'entry' : 'entries'}</p>
         </button>
@@ -140,7 +93,7 @@ function CustomerCreditLedger() {
             statusFilter === 'paid' ? 'border-emerald-400 bg-emerald-50 ring-1 ring-emerald-300' : 'border-gray-200 bg-gray-50 hover:border-emerald-200 hover:bg-emerald-50/40'
           }`}
         >
-          <p className="text-xs font-medium uppercase tracking-wide text-emerald-700">Paid {period !== 'all' ? `· ${CREDIT_PERIODS.find((p) => p.id === period)?.label}` : ''}</p>
+          <p className="text-xs font-medium uppercase tracking-wide text-emerald-700">Paid{range?.label ? ` · ${range.label}` : ''}</p>
           <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-800">{money(paidTotal)}</p>
           <p className="mt-0.5 text-xs text-emerald-600">{paid.length} {paid.length === 1 ? 'entry' : 'entries'}</p>
         </button>
@@ -457,7 +410,7 @@ export function PeoplePerformance({ data }) {
   return (
     <DashboardSection>
       <SectionHeading icon={Users} tone="violet" eyebrow="People" title="Customers and staff" description="Anonymous walk-ins are excluded from repeat-customer metrics. Staff sales are attributed only through saved waiter/cashier IDs." />
-      <CustomerCreditLedger />
+      <CustomerCreditLedger range={data.range} />
       <div className="mt-5 grid gap-5 xl:grid-cols-2">
         <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">

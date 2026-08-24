@@ -45,15 +45,18 @@ export function AnalyticsKeyMetrics({ data }) {
   return (
     <section aria-label="Key financial figures" className="mb-5 overflow-hidden rounded-lg border border-gray-200 bg-gray-200 shadow-sm">
       <div className="grid grid-cols-2 gap-px sm:grid-cols-3 lg:grid-cols-5">
-        {metrics.map(([label, value, format, detail]) => (
-          <div key={label} className="min-w-0 bg-white px-4 py-4 sm:px-5">
-            <p className="truncate text-xs font-medium text-gray-500">{label}</p>
-            <p className={`mt-1.5 truncate text-xl font-semibold tabular-nums ${format === 'currency' ? financialToneClass({ label, value }) : 'text-gray-950'}`} title={String(value ?? 0)}>
-              {format === 'percent' ? percent(value) : money(value)}
-            </p>
-            <p className="mt-1 truncate text-xs text-gray-400">{detail}</p>
-          </div>
-        ))}
+        {metrics.map(([label, value, format, detail]) => {
+          const isHeadline = label === 'Net Profit';
+          return (
+            <div key={label} className={`min-w-0 px-4 py-4 sm:px-5 ${isHeadline ? 'bg-emerald-50/60' : 'bg-white'}`}>
+              <p className="truncate text-xs font-medium text-gray-500">{label}</p>
+              <p className={`mt-1.5 truncate text-xl font-semibold tabular-nums ${format === 'currency' ? financialToneClass({ label, value }) : 'text-gray-950'}`} title={String(value ?? 0)}>
+                {format === 'percent' ? percent(value) : money(value)}
+              </p>
+              <p className="mt-1 truncate text-xs text-gray-400">{detail}</p>
+            </div>
+          );
+        })}
       </div>
     </section>
   );

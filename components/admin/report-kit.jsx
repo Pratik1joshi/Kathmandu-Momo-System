@@ -138,14 +138,21 @@ export function QuickChips({ chips }) {
   );
 }
 
-/** 2. Large KPI cards. */
+/** 2. Large KPI cards. `kpi.highlight` marks the one headline number in the
+ * row (Profit, Revenue, etc.) with a light accent — not every card, just the
+ * one worth an owner's eye landing on first. */
 export function KpiCards({ kpis }) {
   if (!kpis?.length) return null;
   const cols = kpis.length >= 5 ? 'xl:grid-cols-5' : 'lg:grid-cols-4';
   return (
     <div className={`grid grid-cols-2 gap-3 sm:gap-5 ${cols} animate-in fade-in duration-300`}>
       {kpis.map((kpi) => (
-        <div key={kpi.key} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
+        <div
+          key={kpi.key}
+          className={`rounded-2xl border p-4 shadow-sm sm:p-6 ${
+            kpi.highlight ? 'border-emerald-200 bg-emerald-50/50 ring-1 ring-emerald-100' : 'border-gray-200 bg-white'
+          }`}
+        >
           <p className="text-xs font-medium text-gray-500 sm:text-sm">{kpi.label}</p>
           <h3 className={`mt-2 truncate text-xl font-bold tabular-nums sm:text-2xl ${kpi.format === 'currency' ? financialToneClass(kpi) : 'text-gray-900'}`} title={String(kpi.value ?? '')}>
             {formatValue(kpi.value, kpi.format)}

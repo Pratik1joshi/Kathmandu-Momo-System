@@ -7,12 +7,12 @@ export function Dialog({ open, onOpenChange, children }) {
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 sm:px-6">
-      <div 
+    <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center p-0 sm:p-4 sm:px-6">
+      <div
         className="fixed inset-0 bg-black/50 backdrop-blur-sm"
         onClick={() => onOpenChange(false)}
       />
-      <div className="relative z-50 w-full sm:w-auto max-h-[94dvh] sm:max-h-[92dvh] overflow-y-auto overscroll-contain">
+      <div className="relative z-[80] w-full sm:w-auto max-h-[94dvh] sm:max-h-[92dvh] overflow-y-auto overscroll-contain">
         {children}
       </div>
     </div>

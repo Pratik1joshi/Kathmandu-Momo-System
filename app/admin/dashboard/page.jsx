@@ -116,6 +116,7 @@ export default function AdminDashboard() {
   const [menuTable, setMenuTable] = useState(null); // occupied table action menu
   // Clear-table confirmation: { table, party|null } — party null means the whole table.
   const [clearTarget, setClearTarget] = useState(null);
+  const [clearReason, setClearReason] = useState('');
   const [clearing, setClearing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -251,6 +252,11 @@ export default function AdminDashboard() {
   const orderVolume = toSeries(stats?.orderVolume);
   const storeNeedsOpening = !businessContextLoading && !businessContext?.activeSession;
   const storeActionLabel = businessContext?.storeClosed ? 'Reopen Store' : 'Open Store';
+  // Whether the store is ACTUALLY open right now — an active session, not a
+  // 7am-11pm clock guess. `isOpen` above is only a time-of-day heuristic used
+  // for the greeting; using it for status badges is what caused the header
+  // to say "Live · Open" while the store-needs-opening banner was showing.
+  const storeIsOpen = !businessContextLoading && !storeNeedsOpening;
 
   const handleTableClick = (table) => {
     if (isReservedTable(table)) {
@@ -269,6 +275,8 @@ export default function AdminDashboard() {
   // Void one or more orders on a table when guests leave without paying.
   const confirmClear = useCallback(async () => {
     if (!clearTarget || clearing) return;
+    const reason = clearReason.trim();
+    if (!reason) return;
     const { table, party } = clearTarget;
     const orderIds = party
       ? [party.order_id]
@@ -292,7 +300,7 @@ export default function AdminDashboard() {
         const res = await fetch(`/api/admin/orders/${oid}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ action: 'cancel', reason: 'Table cleared — guests left without paying', restock: true }),
+          body: JSON.stringify({ action: 'cancel', reason, restock: true }),
         });
         if (res.ok) ok += 1;
       } catch {
@@ -301,6 +309,7 @@ export default function AdminDashboard() {
     }
     setClearing(false);
     setClearTarget(null);
+    setClearReason('');
     setMenuTable(null);
     if (ok > 0) {
       addToast({ variant: 'success', title: 'Table cleared', description: `${ok} part${ok === 1 ? 'y' : 'ies'} cleared. Table is now free.` });
@@ -308,7 +317,7 @@ export default function AdminDashboard() {
       addToast({ variant: 'error', title: 'Could not clear', description: 'The table could not be cleared. Please try again.' });
     }
     fetchTables();
-  }, [clearTarget, clearing, addToast, fetchTables]);
+  }, [clearTarget, clearReason, clearing, addToast, fetchTables]);
 
   return (
     <AdminLayout>
@@ -348,9 +357,9 @@ export default function AdminDashboard() {
               <RotateCcw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
               {updatedAgo ? `Updated ${updatedAgo}` : 'Refresh'}
             </button>
-            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full font-medium ${isOpen ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-600'}`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${isOpen ? 'bg-emerald-500 animate-pulse' : 'bg-gray-400'}`} />
-              Live · {isOpen ? 'Open' : 'Closed'}
+            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full font-medium ${storeIsOpen ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-600'}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${storeIsOpen ? 'bg-emerald-500 animate-pulse' : 'bg-gray-400'}`} />
+              Live · {storeIsOpen ? 'Open' : 'Closed'}
             </span>
             <div className="text-right">
               <p className="font-semibold text-gray-800 tabular-nums">{timeLabel}</p>
@@ -408,10 +417,10 @@ export default function AdminDashboard() {
                 <button
                   type="button"
                   onClick={() => { fetchStats({ soft: true }); fetchTables(); fetchOnlineOrders(); fetchBusinessContext(); }}
-                  className="inline-flex items-center gap-1 text-xs font-semibold text-cyan-700 hover:underline"
+                  className={`inline-flex items-center gap-1 text-xs font-semibold hover:underline ${storeIsOpen ? 'text-cyan-700' : 'text-gray-500'}`}
                 >
-                  <span className={`inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 ${refreshing ? 'animate-ping' : 'animate-pulse'}`} />
-                  Live{updatedAgo ? ` · ${updatedAgo}` : ''}
+                  <span className={`inline-block h-1.5 w-1.5 rounded-full ${storeIsOpen ? `bg-emerald-500 ${refreshing ? 'animate-ping' : 'animate-pulse'}` : 'bg-gray-400'}`} />
+                  {storeIsOpen ? 'Live' : 'Store closed'}{updatedAgo ? ` · ${updatedAgo}` : ''}
                 </button>
               </div>
               {tables.length === 0 ? (
@@ -511,7 +520,7 @@ export default function AdminDashboard() {
                         <button
                           type="button"
                           title="Clear this party (left without paying)"
-                          onClick={() => setClearTarget({ table: menuTable, party: p })}
+                          onClick={() => { setClearReason(''); setClearTarget({ table: menuTable, party: p }); }}
                           className="flex items-center justify-center rounded-r-xl border-l border-sky-200 px-3 text-rose-500 hover:bg-rose-50 hover:text-rose-700"
                         >
                           <Trash2 className="h-4 w-4" />
@@ -558,7 +567,7 @@ export default function AdminDashboard() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setClearTarget({ table: menuTable, party: null })}
+                      onClick={() => { setClearReason(''); setClearTarget({ table: menuTable, party: null }); }}
                       className="flex w-full items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-left font-semibold text-rose-700 hover:border-rose-400"
                     >
                       <Trash2 className="h-4 w-4" />
@@ -579,7 +588,7 @@ export default function AdminDashboard() {
             {/* Clear-table confirmation */}
             {clearTarget && (
               <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4">
-                <button type="button" className="absolute inset-0" aria-label="Close" onClick={() => !clearing && setClearTarget(null)} />
+                <button type="button" className="absolute inset-0" aria-label="Close" onClick={() => { if (!clearing) { setClearTarget(null); setClearReason(''); } }} />
                 <div className="relative z-10 w-full max-w-sm rounded-t-2xl sm:rounded-2xl bg-white p-5 shadow-2xl">
                   <div className="mb-3 flex items-center gap-3">
                     <div className="rounded-xl bg-rose-100 p-2.5 text-rose-600">
@@ -589,15 +598,23 @@ export default function AdminDashboard() {
                       Clear {clearTarget.party ? (clearTarget.party.party_label || 'this party') : `Table ${clearTarget.table.table_number}`}?
                     </h3>
                   </div>
-                  <p className="mb-5 text-sm text-gray-600">
+                  <p className="mb-3 text-sm text-gray-600">
                     {clearTarget.party
                       ? 'This voids this party\u2019s order without payment (they left without paying). This cannot be undone.'
                       : `This voids ${(clearTarget.table.party_count || 1) > 1 ? 'all open parties' : 'the open order'} on this table without payment (guests left without paying). This cannot be undone.`}
                   </p>
+                  <textarea
+                    autoFocus
+                    value={clearReason}
+                    onChange={(e) => setClearReason(e.target.value)}
+                    rows={2}
+                    placeholder="Reason (required) \u2014 e.g. guest left without paying"
+                    className="mb-4 w-full rounded-xl border border-gray-300 p-2.5 text-sm focus:border-rose-500 focus:outline-none"
+                  />
                   <div className="flex flex-col-reverse gap-2 sm:flex-row">
                     <button
                       type="button"
-                      onClick={() => setClearTarget(null)}
+                      onClick={() => { setClearTarget(null); setClearReason(''); }}
                       disabled={clearing}
                       className="flex-1 rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50"
                     >
@@ -606,7 +623,7 @@ export default function AdminDashboard() {
                     <button
                       type="button"
                       onClick={confirmClear}
-                      disabled={clearing}
+                      disabled={clearing || !clearReason.trim()}
                       className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
                     >
                       {clearing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}

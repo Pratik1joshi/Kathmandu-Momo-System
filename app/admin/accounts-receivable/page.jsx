@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import AdminLayout from '@/components/admin/admin-layout';
-import { Search, X, User, ExternalLink, Wallet, ShieldAlert, Tag, ChevronRight, Printer } from 'lucide-react';
+import { Search, X, User, ExternalLink, Wallet, ShieldAlert, ChevronRight, Printer } from 'lucide-react';
 import { printCreditStatement } from '@/lib/pos-print';
 import { useToast } from '@/components/ui/toast';
 import { friendlyMessage, friendlyFromError } from '@/lib/friendly-message';
@@ -469,9 +469,6 @@ export default function AccountsReceivablePage() {
                 <button type="button" disabled={outstandingTotal <= 0} onClick={() => openAction('customer', 'pay')} className="inline-flex items-center gap-1.5 rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-800 disabled:opacity-40">
                   Receive payment
                 </button>
-                <button type="button" disabled={outstandingTotal <= 0} onClick={() => openAction('customer', 'writeoff')} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-40">
-                  <Tag className="h-4 w-4" /> Give discount
-                </button>
                 <button type="button" onClick={() => printStatement(selected, detail.statement, outstandingTotal)} className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
                   <Printer className="h-4 w-4" /> Print statement
                 </button>
@@ -561,14 +558,6 @@ export default function AccountsReceivablePage() {
                 >
                   Pay this bill
                 </button>
-                <button
-                  type="button"
-                  disabled={Number(selectedBill.outstanding_amount || 0) <= 0}
-                  onClick={() => openAction('bill', 'writeoff', selectedBill)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-40"
-                >
-                  <Tag className="h-4 w-4" /> Discount this bill
-                </button>
                 {selectedBill.order_id && (
                   <button
                     type="button"
@@ -595,6 +584,26 @@ export default function AccountsReceivablePage() {
             <p className="mb-4 text-sm text-gray-500">
               Outstanding {money(actionFor.scope === 'bill' ? actionFor.target.outstanding_amount : outstandingTotal)}
             </p>
+            <div className="mb-4 grid grid-cols-2 gap-2 rounded-lg bg-gray-100 p-1">
+              <button
+                type="button"
+                onClick={() => {
+                  const defaultAmount = actionFor.scope === 'bill' ? Number(actionFor.target.outstanding_amount || 0) : outstandingTotal;
+                  setActionFor((f) => ({ ...f, mode: 'pay' }));
+                  setForm((f) => ({ ...f, amount: String(defaultAmount) }));
+                }}
+                className={`rounded-md py-1.5 text-sm font-semibold transition-colors ${actionFor.mode === 'pay' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-800'}`}
+              >
+                Payment
+              </button>
+              <button
+                type="button"
+                onClick={() => setActionFor((f) => ({ ...f, mode: 'writeoff' }))}
+                className={`rounded-md py-1.5 text-sm font-semibold transition-colors ${actionFor.mode === 'writeoff' ? 'bg-white text-amber-800 shadow-sm' : 'text-gray-500 hover:text-gray-800'}`}
+              >
+                Discount
+              </button>
+            </div>
             <div className="space-y-3">
               <Field label={actionFor.mode === 'writeoff' ? 'Discount amount' : 'Amount'}>
                 <input type="number" min="0" step="any" value={form.amount} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))} className={INPUT} />

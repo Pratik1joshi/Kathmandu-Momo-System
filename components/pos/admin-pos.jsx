@@ -940,17 +940,17 @@ export default function AdminPos() {
     finally { setBusy(false); }
   }, [orderId, notify, loadTables]);
 
-  const confirmCancelSent = useCallback(async (reason, prepared) => {
+  const confirmCancelSent = useCallback(async (reason, prepared, quantity) => {
     if (!cancelTarget || !orderId) return;
     setBusy(true);
     try {
       const data = await api(`/api/admin/pos/orders/${orderId}/cancel-item`, {
         method: 'POST',
-        body: JSON.stringify({ order_item_id: cancelTarget.order_item_id, reason, prepared }),
+        body: JSON.stringify({ order_item_id: cancelTarget.order_item_id, reason, prepared, quantity }),
       });
       setWorkspace(data.workspace);
       if (data.cancellation_kot) printKot(data.cancellation_kot, { size: paperSize });
-      notify('Item cancelled.', 'success');
+      notify(quantity < cancelTarget.quantity ? `${quantity} cancelled.` : 'Item cancelled.', 'success');
       setCancelTarget(null);
     } catch (e) { notify(e.message, 'error'); }
     finally { setBusy(false); }
@@ -1391,7 +1391,7 @@ export default function AdminPos() {
                           ) : fullySent && canEdit ? (
                             <button
                               type="button"
-                              onClick={() => setCancelTarget(line)}
+                              onClick={() => setCancelTarget({ ...line, cancelQty: line.quantity })}
                               className="text-red-500 p-1.5 rounded-lg active:bg-red-100 flex-shrink-0"
                               aria-label={`Cancel ${line.item_name}`}
                             >
@@ -1405,7 +1405,7 @@ export default function AdminPos() {
                               <button
                                 type="button"
                                 onClick={() => {
-                                  if (fullySent) setCancelTarget(line);
+                                  if (fullySent) setCancelTarget({ ...line, cancelQty: 1 });
                                   else changeQty(line, -1);
                                 }}
                                 disabled={busy}
@@ -2225,6 +2225,8 @@ function ActiveBillCard({ bill, busy, onSelect }) {
 function CancelReasonModal({ item, busy, onClose, onConfirm }) {
   const [reason, setReason] = useState('');
   const [prepared, setPrepared] = useState(false);
+  const maxQty = Number(item.quantity) || 1;
+  const [qty, setQty] = useState(Math.min(maxQty, Math.max(1, Number(item.cancelQty) || maxQty)));
   return (
     <Overlay onClose={onClose}>
       <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl">
@@ -2233,6 +2235,17 @@ function CancelReasonModal({ item, busy, onClose, onConfirm }) {
           <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
         </div>
         <p className="mb-3 text-sm text-slate-600">{item.quantity}× <b>{item.item_name}</b> was sent to the kitchen.</p>
+        {maxQty > 1 && (
+          <div className="mb-3">
+            <p className="mb-1.5 text-sm font-medium text-slate-700">How many to cancel?</p>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={() => setQty((q) => Math.max(1, q - 1))} className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600"><Minus className="w-3.5 h-3.5" /></button>
+              <span className="w-10 text-center font-bold text-slate-900">{qty}</span>
+              <button type="button" onClick={() => setQty((q) => Math.min(maxQty, q + 1))} className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600"><Plus className="w-3.5 h-3.5" /></button>
+              <span className="text-xs text-slate-500">of {maxQty}</span>
+            </div>
+          </div>
+        )}
         <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} placeholder="Reason (required)" className="mb-3 w-full rounded-lg border-2 border-blue-200 p-2 text-sm focus:border-blue-500 focus:outline-none" />
         <label className="mb-4 flex items-center gap-2 text-sm">
           <input type="checkbox" checked={prepared} onChange={(e) => setPrepared(e.target.checked)} className="h-4 w-4" />
@@ -2240,7 +2253,7 @@ function CancelReasonModal({ item, busy, onClose, onConfirm }) {
         </label>
         <div className="flex justify-end gap-2">
           <Button variant="outline" onClick={onClose} disabled={busy}>Keep</Button>
-          <Button variant="destructive" disabled={busy || !reason.trim()} onClick={() => onConfirm(reason.trim(), prepared)}>Cancel item</Button>
+          <Button variant="destructive" disabled={busy || !reason.trim()} onClick={() => onConfirm(reason.trim(), prepared, qty)}>{qty < maxQty ? `Cancel ${qty}` : 'Cancel item'}</Button>
         </div>
       </div>
     </Overlay>

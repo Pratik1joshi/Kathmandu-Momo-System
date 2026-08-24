@@ -8,6 +8,7 @@ import {
 import PayrollDrawer from '@/components/employees/payroll-drawer';
 import { useToast } from '@/components/ui/toast';
 import { friendlyMessage, friendlyFromError } from '@/lib/friendly-message';
+import { apiJson } from '@/lib/authed-fetch';
 import FieldError, { inputErrorClass } from '@/components/ui/field-error';
 import {
   digitsOnly,
@@ -21,6 +22,8 @@ import {
 export default function EmployeesPage() {
   const { addToast } = useToast();
   const [employees, setEmployees] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [designations, setDesignations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [showPinModal, setShowPinModal] = useState(false);
@@ -42,6 +45,8 @@ export default function EmployeesPage() {
     salary: '',
     position: '',
     hire_date: '',
+    department_id: '',
+    designation_id: '',
   });
   const [payrollFor, setPayrollFor] = useState(null);
 
@@ -53,6 +58,8 @@ export default function EmployeesPage() {
 
   useEffect(() => {
     fetchEmployees();
+    apiJson('/api/admin/hrm/departments').then((d) => setDepartments(d.departments || [])).catch(() => {});
+    apiJson('/api/admin/hrm/designations').then((d) => setDesignations(d.designations || [])).catch(() => {});
   }, []);
 
   const fetchEmployees = async () => {
@@ -127,6 +134,8 @@ export default function EmployeesPage() {
           salary: '',
           position: '',
           hire_date: '',
+          department_id: '',
+          designation_id: '',
         });
         addToast(friendlyMessage('save_success', {
           description: editingEmployee ? 'Employee details were updated.' : 'New employee was added.',
@@ -198,6 +207,8 @@ export default function EmployeesPage() {
       salary: employee.salary ?? '',
       position: employee.position || '',
       hire_date: employee.hire_date ? String(employee.hire_date).slice(0, 10) : '',
+      department_id: employee.department_id ?? '',
+      designation_id: employee.designation_id ?? '',
     });
     setShowForm(true);
   };
@@ -392,6 +403,11 @@ export default function EmployeesPage() {
                   email: '',
                   phone: '',
                   is_active: true,
+                  salary: '',
+                  position: '',
+                  hire_date: '',
+                  department_id: '',
+                  designation_id: '',
                 });
               }}
               className="flex items-center space-x-2 px-6 py-3 bg-gray-900 text-white rounded-lg hover:bg-gray-800"
@@ -543,6 +559,28 @@ export default function EmployeesPage() {
                           onChange={(e) => setFormData({ ...formData, hire_date: e.target.value })}
                           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-400 text-gray-900"
                         />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-900 mb-2">Department</label>
+                        <select
+                          value={formData.department_id}
+                          onChange={(e) => setFormData({ ...formData, department_id: e.target.value })}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-400 text-gray-900"
+                        >
+                          <option value="">— None —</option>
+                          {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-900 mb-2">Designation</label>
+                        <select
+                          value={formData.designation_id}
+                          onChange={(e) => setFormData({ ...formData, designation_id: e.target.value })}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-400 text-gray-900"
+                        >
+                          <option value="">— None —</option>
+                          {designations.map((d) => <option key={d.id} value={d.id}>{d.name}{d.department_name ? ` (${d.department_name})` : ''}</option>)}
+                        </select>
                       </div>
                     </div>
                   </div>
@@ -805,6 +843,11 @@ export default function EmployeesPage() {
                         <span className={`px-3 py-1 rounded-full text-xs font-medium ${roleColors[employee.role]}`}>
                           {employee.role.charAt(0).toUpperCase() + employee.role.slice(1)}
                         </span>
+                        {(employee.designation_name || employee.department_name) && (
+                          <p className="mt-1 text-xs text-gray-500">
+                            {[employee.designation_name, employee.department_name].filter(Boolean).join(' · ')}
+                          </p>
+                        )}
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-700">
                         {employee.email && <div>{employee.email}</div>}
