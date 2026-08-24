@@ -1,8 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
-import { useEffect } from 'react';
 import {
   X, Phone, Users, Clock, MapPin, Star, History,
 } from 'lucide-react';
@@ -12,6 +11,9 @@ import {
   specialRequestLabels,
   buildSuggestions,
 } from '@/lib/waiter-reservations';
+
+/** Client-ness never changes after hydration, so there is nothing to subscribe to. */
+const subscribeNoop = () => () => {};
 
 export default function ReservationDetailSheet({
   open,
@@ -31,22 +33,34 @@ export default function ReservationDetailSheet({
   onOpenOrder,
   onLoadHistory,
 }) {
-  const [mounted, setMounted] = useState(false);
+  // createPortal needs `document`; useSyncExternalStore answers "am I on the
+  // client yet" without a setState-in-effect round trip.
+  const mounted = useSyncExternalStore(subscribeNoop, () => true, () => false);
+
   const [editOpen, setEditOpen] = useState(false);
-  const [partySize, setPartySize] = useState(2);
-  const [notes, setNotes] = useState('');
-  const [message, setMessage] = useState('');
+  // `null` means "not edited yet", so the value shown falls back to the booking.
+  // Copying props into state in an effect meant the form rendered once with the
+  // *previous* booking's values before the effect corrected it — visible as a
+  // flash of the last-opened reservation when switching between two.
+  const [draft, setDraft] = useState(null);
 
-  useEffect(() => setMounted(true), []);
+  // Reset the draft when the sheet opens for a different booking. Adjusting
+  // state during render is React's documented pattern for this.
+  const openFor = r ? String(r.id ?? '') : null;
+  const [lastOpenFor, setLastOpenFor] = useState(openFor);
+  if (openFor !== lastOpenFor) {
+    setLastOpenFor(openFor);
+    setDraft(null);
+    setEditOpen(false);
+  }
 
-  useEffect(() => {
-    if (r) {
-      setPartySize(r.party_size || 2);
-      setNotes(r.admin_notes || '');
-      setMessage(r.message || '');
-      setEditOpen(false);
-    }
-  }, [r]);
+  const partySize = draft?.partySize ?? (r?.party_size || 2);
+  const notes = draft?.notes ?? (r?.admin_notes || '');
+  const message = draft?.message ?? (r?.message || '');
+  const patchDraft = (patch) => setDraft((d) => ({ partySize, notes, message, ...d, ...patch }));
+  const setPartySize = (v) => patchDraft({ partySize: typeof v === 'function' ? v(partySize) : v });
+  const setNotes = (v) => patchDraft({ notes: typeof v === 'function' ? v(notes) : v });
+  const setMessage = (v) => patchDraft({ message: typeof v === 'function' ? v(message) : v });
 
   if (!open || !mounted || !r) return null;
 

@@ -24,7 +24,11 @@ export default function ReservationCard({
   reservation: r,
   tables = [],
   graceMinutes = 20,
-  now = Date.now(),
+  // No `Date.now()` default: reading the clock during render makes the render
+  // impure (two renders with identical props produce different output, and SSR
+  // cannot match hydration). Both call sites already pass a ticking `now` from
+  // parent state, so the default was dead weight hiding a real hazard.
+  now,
   onOpen,
   onAssign,
   onSeat,

@@ -3,13 +3,14 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Search, Printer, Receipt, ChevronRight } from 'lucide-react'
+import { ArrowLeft, Search, Printer, Receipt, ChevronRight, QrCode } from 'lucide-react'
 import { useToast } from '@/components/ui/toast'
 import { friendlyFromError } from '@/lib/friendly-message'
 import { formatNepalDateTime } from '@/lib/report-dates.js'
 import { printFinalBill } from '@/lib/pos-print.js'
 import { receiptFromBillDetail } from '@/lib/bill-receipt.js'
 import OperationalDateFilter from '@/components/ui/operational-date-filter'
+import PayQrModal from '@/components/waiter/pay-qr-modal'
 import { operationalDateRange } from '@/lib/operational-date-range'
 
 const TABS = [
@@ -43,6 +44,8 @@ export default function WaiterBillsPage() {
   const [busyId, setBusyId] = useState(null)
   const [settings, setSettings] = useState({})
   const [datePreset, setDatePreset] = useState('today')
+  // Bill whose QR is on screen. Read-only: showing it records no payment.
+  const [qrBill, setQrBill] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -187,6 +190,15 @@ export default function WaiterBillsPage() {
               </button>
               <button
                 type="button"
+                onClick={() => setQrBill(bill)}
+                className="h-10 w-10 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0"
+                title="Show payment QR"
+                aria-label="Show payment QR"
+              >
+                <QrCode className="w-4 h-4 text-emerald-700" />
+              </button>
+              <button
+                type="button"
                 disabled={busyId === bill.id}
                 onClick={() => printBill(bill)}
                 className="h-10 w-10 rounded-xl bg-slate-100 flex items-center justify-center shrink-0 disabled:opacity-50"
@@ -198,6 +210,19 @@ export default function WaiterBillsPage() {
           ))
         )}
       </div>
+
+      {/* Here the outstanding balance IS known, so the amount shows large above
+          the code — the one thing a printed placard at the counter cannot do. */}
+      <PayQrModal
+        open={Boolean(qrBill)}
+        onClose={() => setQrBill(null)}
+        codes={[
+          settings.esewa_qr_image && { key: 'esewa', label: 'eSewa / Fonepay', image: settings.esewa_qr_image },
+          settings.bank_qr_image && { key: 'bank', label: 'Bank', image: settings.bank_qr_image },
+        ].filter(Boolean)}
+        restaurantName={settings.restaurant_name || ''}
+        amountDue={qrBill ? Number(qrBill.balance ?? qrBill.total ?? 0) : null}
+      />
     </div>
   )
 }

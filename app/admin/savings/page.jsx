@@ -9,8 +9,25 @@ import { useToast } from '@/components/ui/toast';
 
 const money=n=>`Rs ${Number(n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 const dateLabel=s=>new Date(`${s}T12:00:00+05:45`).toLocaleDateString('en-US',{month:'short',day:'numeric'});
-const pad=n=>String(n).padStart(2,'0'); const localDate=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
-function dates(range){const now=new Date();if(range==='today')return{from:localDate(now),to:localDate(now)};if(range==='last7'){const d=new Date(now);d.setDate(d.getDate()-6);return{from:localDate(d),to:localDate(now)}}if(range==='all')return{from:'2000-01-01',to:'2999-12-31'};return{from:`${localDate(now).slice(0,7)}-01`,to:localDate(now)}}
+/*
+ * Nepal calendar, not the browser's. `localDate(new Date())` read the viewer's
+ * clock, so on a UTC host anything after 18:15 UTC is already tomorrow in
+ * Nepal and "Today" quietly queried the wrong day — while the deposits these
+ * numbers roll up to are dated in Nepal. Same rule the reports engine uses.
+ */
+const nepalToday = () => nepalDateString();
+const shiftNepalDate = (dateStr, days) => {
+  const cursor = new Date(`${dateStr}T12:00:00+05:45`);
+  cursor.setDate(cursor.getDate() + days);
+  return nepalDateString(cursor);
+};
+function dates(range){
+  const today = nepalToday();
+  if (range === 'today') return { from: today, to: today };
+  if (range === 'last7') return { from: shiftNepalDate(today, -6), to: today };
+  if (range === 'all') return { from: '2000-01-01', to: '2999-12-31' };
+  return { from: `${today.slice(0, 7)}-01`, to: today };
+}
 
 export default function SavingsPage(){
  const {addToast}=useToast(); const [data,setData]=useState(null);const [busy,setBusy]=useState(false);const [modal,setModal]=useState(false);

@@ -14,7 +14,8 @@ import CustomerModePicker, {
 } from '@/components/billing/customer-mode-picker';
 import BillConfirmModal from '@/components/billing/bill-confirm-modal';
 import QrEnlargeModal from '@/components/billing/qr-enlarge-modal';
-import { calculateBillTotals, parseSettingsRates } from '@/lib/billing-totals';
+import { calculateBillTotals, parseSettingsRates, resolveServiceCharge } from '@/lib/billing-totals';
+import ServiceChargeField, { emptyServiceCharge, serviceChargePayload } from '@/components/billing/service-charge-field';
 import { useConfirm } from '@/components/ui/confirm';
 import { useAuth } from '@/lib/auth-context';
 import { printFinalBill, printProforma } from '@/lib/pos-print.js';
@@ -41,6 +42,7 @@ export default function BillDetailsPage({ params }) {
   const [discountMode, setDiscountMode] = useState('percent'); // percent | amount
   const [discountReason, setDiscountReason] = useState('');
   const [deliveryFee, setDeliveryFee] = useState(0);
+  const [serviceCharge, setServiceCharge] = useState(emptyServiceCharge);
   const [customerSelection, setCustomerSelection] = useState(emptyCustomerSelection);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingBill, setPendingBill] = useState(null);
@@ -146,13 +148,16 @@ export default function BillDetailsPage({ params }) {
   const subtotal = activeItems.reduce((s, i) => s + Number(i.subtotal ?? i.price * i.quantity), 0);
 
   const calculateBill = () => {
-    const { vatPercent, servicePercent } = parseSettingsRates(settings);
+    const rates = parseSettingsRates(settings);
+    // Per-bill service / extra charge; unticked keeps the house rate.
+    const service = resolveServiceCharge(serviceCharge, rates.servicePercent);
     const totals = calculateBillTotals(subtotal, {
       ...(discountMode === 'amount'
         ? { discountAmount: Math.max(0, discount) }
         : { discountPercent: Math.max(0, discount) }),
-      vatPercent,
-      servicePercent,
+      vatPercent: rates.vatPercent,
+      servicePercent: service.servicePercent,
+      serviceAmount: service.serviceAmount,
       deliveryFee: order?.order_type === 'delivery' ? Math.max(0, deliveryFee) : 0,
     });
 
@@ -291,6 +296,8 @@ export default function BillDetailsPage({ params }) {
           customer_name: pendingBill.customer_name,
           customer_phone: pendingBill.customer_phone,
           customer_address: pendingBill.customer_address || '',
+          // Mode + value, never a computed amount: the pay route re-prices.
+          ...serviceChargePayload(serviceCharge),
         }),
       });
 
@@ -640,7 +647,16 @@ export default function BillDetailsPage({ params }) {
               {/* QR Payment Options */}
               {paymentMethod === 'qr' && (
                 <div className="mb-6 p-4 bg-blue-50 rounded-lg border-2 border-blue-200">
-                  <h3 className="font-semibold text-gray-900 mb-4 text-center">Scan to Pay</h3>
+                  <h3 className="font-semibold text-gray-900 mb-1 text-center">Scan to Pay</h3>
+                  {/* A static merchant QR carries no amount — the guest types it
+                      in — so the figure to enter is the biggest thing here,
+                      directly above the codes. */}
+                  <p className="mb-1 text-center text-[11px] font-semibold uppercase tracking-wide text-blue-700">
+                    Amount to enter
+                  </p>
+                  <p className="mb-4 text-center text-4xl font-extrabold tabular-nums text-gray-900">
+                    {formatCurrency(billTotals.finalAmount)}
+                  </p>
                   <div className="grid grid-cols-2 gap-4">
                     {settings.esewa_qr_image && (
                       <div className="text-center cursor-pointer" onClick={() => {
@@ -737,6 +753,9 @@ export default function BillDetailsPage({ params }) {
                     />
                   </div>
                 </div>
+                {/* Per-bill service / extra charge, beside the other money
+                    decisions made at this checkout. */}
+                <ServiceChargeField value={serviceCharge} onChange={setServiceCharge} />
                 {discount > 0 && (
                   <div>
                     <label className="block text-sm font-semibold text-gray-900 mb-2">

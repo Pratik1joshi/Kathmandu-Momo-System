@@ -2,9 +2,10 @@
 
 import { useState } from 'react';
 import {
-  Activity, BarChart3, ChefHat, ClipboardCheck, PackageSearch, ShoppingBasket, Users,
+  Activity, BarChart3, ChefHat, ClipboardCheck, History, PackageSearch, ShoppingBasket, Users,
 } from 'lucide-react';
 import AnalyticsHome, { AnalyticsKeyMetrics } from './analytics-home';
+import { AllChanges } from './order-operations-analytics';
 import OrderOperationsAnalytics from './order-operations-analytics';
 
 import { MenuPerformance, PaymentFinance } from './overview-commercial';
@@ -34,11 +35,16 @@ export default function OverviewDashboard({
     ['kitchen', 'Orders & Billing', ChefHat],
     ['people', 'Customers & Team', Users],
     ['control', 'Controls & Activity', ClipboardCheck],
+    // Its own top-level view, not a sub-tab of Orders & Billing: an owner asking
+    // "what was cancelled, voided, refunded, re-billed or discounted today?" is
+    // asking about the whole shift, not about one document type.
+    ['changes', 'Cancellations & Changes', History],
   ];
 
   return (
     <div>
       <AnalyticsKeyMetrics data={data} />
+
       <div className="mb-5 overflow-x-auto border-b border-gray-200" role="tablist" aria-label="Analytics views">
         <div className="flex min-w-max gap-1">
           {tabs.map(([id, label, Icon]) => (
@@ -55,6 +61,7 @@ export default function OverviewDashboard({
       {view === 'menu' && <div className="space-y-5"><MenuPerformance data={data} /><FloorAndReservations data={data} /></div>}
       {view === 'kitchen' && <div className="space-y-5"><LiveStatus data={data} /><OrderOperationsAnalytics data={data.orderOperations} live={data.live} /></div>}
       {view === 'people' && <div className="space-y-5"><PeoplePerformance data={data} /></div>}
+      {view === 'changes' && <AllChanges report={data.orderOperations || {}} />}
       {view === 'control' && <div className="space-y-5">
         <AttentionCenter rows={data.attention} />
         <Controls data={data} />

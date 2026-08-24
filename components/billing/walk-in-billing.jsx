@@ -15,7 +15,8 @@ import CustomerModePicker, {
 import BillConfirmModal from '@/components/billing/bill-confirm-modal';
 import DateInput from '@/components/ui/date-input.jsx';
 import QrEnlargeModal from '@/components/billing/qr-enlarge-modal';
-import { calculateBillTotals, parseSettingsRates } from '@/lib/billing-totals';
+import { calculateBillTotals, parseSettingsRates, resolveServiceCharge } from '@/lib/billing-totals';
+import ServiceChargeField, { emptyServiceCharge, serviceChargePayload } from '@/components/billing/service-charge-field';
 import { compactBillNumber, compactOrderNumber } from '@/lib/document-display.js';
 import SplitPaymentFields, { emptySplitPayment } from '@/components/billing/split-payment-fields';
 
@@ -31,6 +32,8 @@ export default function WalkInBilling({ variant = 'admin' }) {
   const [amountPaid, setAmountPaid] = useState('');
   const [splitPayment, setSplitPayment] = useState(emptySplitPayment);
   const [discount, setDiscount] = useState(0);
+  // Per-bill service / extra charge; unticked means the house rate applies.
+  const [serviceCharge, setServiceCharge] = useState(emptyServiceCharge);
   const [discountMode, setDiscountMode] = useState('percent');
   const [customerSelection, setCustomerSelection] = useState(emptyCustomerSelection);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -178,13 +181,15 @@ export default function WalkInBilling({ variant = 'admin' }) {
   };
 
   const getTotals = () => {
-    const { vatPercent, servicePercent } = parseSettingsRates(settings);
+    const rates = parseSettingsRates(settings);
+    const service = resolveServiceCharge(serviceCharge, rates.servicePercent);
     return calculateBillTotals(calculateSubtotal(), {
       ...(discountMode === 'amount'
         ? { discountAmount: discount }
         : { discountPercent: discount }),
-      vatPercent,
-      servicePercent,
+      vatPercent: rates.vatPercent,
+      servicePercent: service.servicePercent,
+      serviceAmount: service.serviceAmount,
     });
   };
 
@@ -263,6 +268,8 @@ export default function WalkInBilling({ variant = 'admin' }) {
       tax_percent: totals.taxPercent,
       service_charge: totals.serviceCharge,
       service_percent: totals.servicePercent,
+      // Mode + value, never a computed amount: the route re-prices.
+      ...serviceChargePayload(serviceCharge),
       total: totals.total,
       payment_method: paymentMethod,
       amount_paid: paid,
@@ -344,6 +351,7 @@ export default function WalkInBilling({ variant = 'admin' }) {
         setCart([]);
         setAmountPaid('');
         setDiscount(0);
+        setServiceCharge(emptyServiceCharge);
         setPaymentMethod('cash');
         setSplitPayment(emptySplitPayment);
         setCustomerSelection(emptyCustomerSelection);
@@ -961,6 +969,8 @@ export default function WalkInBilling({ variant = 'admin' }) {
                 </div>
               </div>
 
+              <ServiceChargeField value={serviceCharge} onChange={setServiceCharge} className="mb-2.5" />
+
               <div className="space-y-1 text-sm bg-white rounded-xl p-2.5 border border-blue-100">
                 <p className="text-[10px] uppercase tracking-wide text-slate-400 font-semibold mb-1">
                   Rates from Settings · Tax {Number(settings.vat_percentage)}% · Service {Number(settings.service_charge_percentage)}%
@@ -975,9 +985,11 @@ export default function WalkInBilling({ variant = 'admin' }) {
                     <span className="font-bold">- {formatCurrency(calculateDiscount())}</span>
                   </div>
                 )}
-                {Number(settings.service_charge_percentage) > 0 && (
+                {Number(getTotals().serviceCharge || 0) > 0 && (
                   <div className="flex justify-between">
-                    <span className="text-slate-700">Service ({Number(settings.service_charge_percentage)}%)</span>
+                    <span className="text-slate-700">
+                      Service{Number(getTotals().servicePercent || 0) > 0 ? ` (${Number(getTotals().servicePercent)}%)` : ''}
+                    </span>
                     <span className="font-bold text-slate-900">{formatCurrency(calculateService())}</span>
                   </div>
                 )}

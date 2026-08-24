@@ -9,6 +9,7 @@ import {
 import AdminLayout from '@/components/admin/admin-layout';
 import OverviewDashboard from '@/components/analytics/overview-dashboard';
 import { formatNepalDateTime } from '@/lib/report-dates';
+import { formatNepalDate } from '@/lib/time-utils.js';
 import { orderTypeLabel } from '@/lib/order-types.js';
 import DateInput from '@/components/ui/date-input.jsx';
 
@@ -148,7 +149,10 @@ function number(value) {
 
 function dateLabel(value) {
   if (!value) return '';
-  return new Date(value).toLocaleDateString('en-US', { timeZone: 'Asia/Kathmandu', month: 'short', day: 'numeric', year: 'numeric' });
+  // formatNepalDate, not `new Date(value)`: a bare SQLite timestamp parses as
+  // browser-local, so the exported date differed from the screen — and differed
+  // per viewer. Same rule the on-screen table uses.
+  return formatNepalDate(value);
 }
 
 function downloadTransactionWorkbook(range, rows) {
@@ -164,9 +168,9 @@ function downloadTransactionWorkbook(range, rows) {
     other: sum.other + number(row.other_amount),
     final: sum.final + number(row.final_total),
   }), { subtotal: 0, discount: 0, cash: 0, qr: 0, credit: 0, food: 0, beverage: 0, tobacco: 0, other: 0, final: 0 });
-  const headers = ['Date', 'Bill', 'Order', 'Table / Channel', 'Customer', 'Cashier', 'Payment', 'Subtotal', 'Discount', 'Cash', 'QR', 'Credit', 'QR Type', 'Food', 'Beverage', 'Tobacco', 'Other', 'Final Total'];
+  const headers = ['Date', 'Bill', 'Order', 'Table / Channel', 'Customer', 'Cashier', 'Payment', 'Subtotal', 'Discount', 'Cash', 'Digital', 'Credit', 'Digital Via', 'Food', 'Beverage', 'Tobacco', 'Other', 'Final Total'];
   const bodyRows = rows.map((row) => [
-    dateLabel(row.paid_at || row.created_at), row.bill_number, row.order_number, row.table_number ? `Table ${row.table_number}` : orderTypeLabel(row), row.customer_name || 'Walk-in',
+    dateLabel(row.created_at), row.bill_number, row.order_number, row.table_number ? `Table ${row.table_number}` : orderTypeLabel(row), row.customer_name || 'Walk-in',
     row.cashier, row.payment, row.subtotal, row.discount_amount, row.cash_amount, row.qr_amount, row.credit_amount, row.qr_type,
     row.food_amount, row.beverage_amount, row.tobacco_amount, row.other_amount, row.final_total,
   ]);
@@ -179,7 +183,7 @@ function downloadTransactionWorkbook(range, rows) {
   ];
   const paymentRows = [
     ['Cash', totals.cash],
-    ['Online / QR', totals.qr],
+    ['Digital (QR / card / wallet)', totals.qr],
     ['Credit', totals.credit],
     ['Total Received / Due', totals.cash + totals.qr + totals.credit],
   ];

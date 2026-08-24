@@ -13,7 +13,8 @@ import { useConfirm } from '@/components/ui/confirm';
 import MenuItemImage from '@/components/menu-item-image';
 import { formatCurrency } from '@/lib/currency';
 import { printKot, printFinalBill, printProforma } from '@/lib/pos-print.js';
-import { calculateBillTotals, parseSettingsRates } from '@/lib/billing-totals';
+import { calculateBillTotals, parseSettingsRates, resolveServiceCharge } from '@/lib/billing-totals';
+import { emptyServiceCharge, serviceChargePayload } from '@/components/billing/service-charge-field';
 import {
   emptyCustomerSelection,
   validateCustomerSelection,
@@ -127,6 +128,9 @@ export default function AdminPos() {
   const [customerSelection, setCustomerSelection] = useState(emptyCustomerSelection);
   const [deliveryAtCheckout, setDeliveryAtCheckout] = useState(false);
   const [deliveryFee, setDeliveryFee] = useState('');
+  // Per-bill service / extra charge. `enabled: false` means "use the house rate
+  // from Settings"; enabling it makes THIS bill's charge explicit, in % or Rs.
+  const [serviceCharge, setServiceCharge] = useState(emptyServiceCharge);
   const [deliveryExecutiveId, setDeliveryExecutiveId] = useState(null);
   const [deliveryExecutives, setDeliveryExecutives] = useState([]);
 
@@ -152,6 +156,8 @@ export default function AdminPos() {
     setDeliveryAtCheckout(false);
     setDeliveryFee('');
     setDeliveryExecutiveId(null);
+    // A charge chosen for one bill must never carry into the next sale.
+    setServiceCharge(emptyServiceCharge);
     payKeyRef.current = null;
   }, []);
 
@@ -402,7 +408,7 @@ export default function AdminPos() {
     // A bill may already be awaiting payment when the cashier decides this
     // pickup is actually being delivered. Recalculate locally in that case so
     // the payment allocation includes the newly-entered delivery charge.
-    if (serverTotals && orderStatus === 'awaiting_payment' && !deliveryAtCheckout) {
+    if (serverTotals && orderStatus === 'awaiting_payment' && !deliveryAtCheckout && !serviceCharge.enabled) {
       return {
         subtotal: Number(serverTotals.subtotal ?? calculateSubtotal()),
         discount: Number(serverTotals.discount ?? 0),
@@ -414,16 +420,18 @@ export default function AdminPos() {
         servicePercent: Number(serverTotals.servicePercent ?? settings.service_charge_percentage),
       };
     }
-    const { vatPercent, servicePercent } = parseSettingsRates(settings);
+    const rates = parseSettingsRates(settings);
+    const service = resolveServiceCharge(serviceCharge, rates.servicePercent);
     return calculateBillTotals(calculateSubtotal(), {
       ...(discountMode === 'amount'
         ? { discountAmount: discount }
         : { discountPercent: discount }),
-      vatPercent,
-      servicePercent,
+      vatPercent: rates.vatPercent,
+      servicePercent: service.servicePercent,
+      serviceAmount: service.serviceAmount,
       deliveryFee: deliveryAtCheckout ? Math.max(0, Number(deliveryFee) || 0) : 0,
     });
-  }, [calculateSubtotal, deliveryAtCheckout, deliveryFee, discount, discountMode, orderStatus, settings, workspace?.totals]);
+  }, [calculateSubtotal, deliveryAtCheckout, deliveryFee, discount, discountMode, orderStatus, serviceCharge, settings, workspace?.totals]);
 
   const cartCount = allLines.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
   const totals = getTotals();
@@ -821,6 +829,8 @@ export default function AdminPos() {
           customer_name: customerCheck.name,
           customer_phone: customerCheck.phone,
           customer_address: customerCheck.address || customerSelection.address || '',
+          // Mode + value, never a computed amount: the server re-prices.
+          ...serviceChargePayload(serviceCharge),
           delivery: deliveryAtCheckout,
           delivery_fee: deliveryAtCheckout ? billTotals.deliveryFee : 0,
           delivery_executive_id: deliveryAtCheckout ? deliveryExecutiveId : null,
@@ -1682,6 +1692,8 @@ export default function AdminPos() {
         onAmountPaidChange={setAmountPaid}
         splitPayment={splitPayment}
         onSplitPaymentChange={setSplitPayment}
+        serviceCharge={serviceCharge}
+        onServiceChargeChange={setServiceCharge}
         canSetDelivery={!workspace?.order?.table_id}
         deliveryEnabled={deliveryAtCheckout}
         onDeliveryEnabledChange={(enabled) => {

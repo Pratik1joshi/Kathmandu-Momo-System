@@ -1,12 +1,15 @@
 'use client';
 
 import { createPortal } from 'react-dom';
-import { useEffect, useState } from 'react';
+import { useSyncExternalStore } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
 
 /**
  * Full-screen confirmation dialog (portaled to body so sidebar transforms don't clip it).
  */
+/** Client-ness never changes after hydration, so there is nothing to subscribe to. */
+const subscribeNoop = () => () => {};
+
 export default function ConfirmDialog({
   open,
   title,
@@ -19,11 +22,9 @@ export default function ConfirmDialog({
   onConfirm,
   onCancel,
 }) {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  // createPortal needs `document`, absent while server-rendering.
+  // useSyncExternalStore reports client-ness without a setState-in-effect pass.
+  const mounted = useSyncExternalStore(subscribeNoop, () => true, () => false);
 
   if (!open || !mounted) return null;
 

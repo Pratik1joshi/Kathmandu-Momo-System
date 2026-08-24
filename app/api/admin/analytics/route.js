@@ -27,11 +27,13 @@ export async function GET(request) {
       searchParams.get('endDate')
     );
 
-    const filters = {
-      categoryId: Number(searchParams.get('categoryId')) || null,
-      paymentMethod: searchParams.get('paymentMethod') || null,
-      orderType: searchParams.get('orderType') || null,
-    };
+    /*
+     * No dimension filters here on purpose. This route used to parse
+     * categoryId / paymentMethod / orderType and hand them to composeAnalytics,
+     * which ignores them (`_filters`) — so a caller passing one silently got
+     * unfiltered numbers. The Analytics page filters by period only; use
+     * /api/admin/reports for the filterable surface.
+     */
 
     const db = Database.getInstance();
     const activeDay = range.period === 'today' ? await currentBusinessDay(db) : null;
@@ -46,7 +48,7 @@ export async function GET(request) {
       const transactions = await transactionReport(db, range, { exportAll: true, businessDayId });
       return NextResponse.json({ range, businessDay: activeDay, transactions });
     }
-    const data = await composeAnalytics(db, range, filters, {
+    const data = await composeAnalytics(db, range, {}, {
       transactions: {
         page: Number(searchParams.get('transactionPage')) || 1,
         pageSize: Number(searchParams.get('transactionPageSize')) || 25,

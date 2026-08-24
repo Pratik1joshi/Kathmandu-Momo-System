@@ -21,6 +21,7 @@ import { apiJson, apiJsonRaw } from '@/lib/authed-fetch';
 import DataGrid, { StatusBadge } from '@/components/admin/data-grid';
 import useServerList from '@/lib/use-server-list';
 import { KpiCards, ChartCard, ChartGrid, TrendChart, RankBars } from '@/components/admin/report-kit';
+import { nepalDateString } from '@/lib/report-dates.js';
 import LogExpenseModal, { EXPENSE_CATEGORIES } from '@/components/expenses/log-expense-modal';
 import DateInput from '@/components/ui/date-input.jsx';
 
@@ -46,26 +47,45 @@ function categoryLabel(value, categories = EXPENSE_CATEGORIES) {
 }
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
-const pad = (n) => String(n).padStart(2, '0');
-const fmt = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+/*
+ * Date presets resolve in the *Nepal* calendar, not the browser's.
+ *
+ * These used to be built from `new Date()` and getFullYear/getMonth/getDate,
+ * which read the viewer's local clock. On a UTC host any time after 18:15 UTC
+ * is already the next day in Nepal, so "Today" silently queried yesterday —
+ * and an owner checking from abroad got a different day again. Month and
+ * quarter boundaries drifted the same way.
+ *
+ * `shiftNepalDate` walks whole days from a Nepal date string, so no local
+ * clock is ever consulted.
+ */
+const shiftNepalDate = (dateStr, days) => {
+  const cursor = new Date(`${dateStr}T12:00:00+05:45`);
+  cursor.setDate(cursor.getDate() + days);
+  return nepalDateString(cursor);
+};
 
 function rangeFor(preset) {
-  const now = new Date();
-  if (preset === 'today') return { from: fmt(now), to: fmt(now) };
-  if (preset === 'last7') {
-    const start = new Date(now);
-    start.setDate(start.getDate() - 6);
-    return { from: fmt(start), to: fmt(now) };
-  }
-  if (preset === 'this_month') return { from: fmt(new Date(now.getFullYear(), now.getMonth(), 1)), to: fmt(now) };
-  if (preset === 'last_month')
+  const today = nepalDateString();
+  const [year, month] = today.split('-').map(Number);
+  const monthStart = (y, m) => `${y}-${String(m).padStart(2, '0')}-01`;
+
+  if (preset === 'today') return { from: today, to: today };
+  if (preset === 'last7') return { from: shiftNepalDate(today, -6), to: today };
+  if (preset === 'this_month') return { from: monthStart(year, month), to: today };
+  if (preset === 'last_month') {
+    const prevYear = month === 1 ? year - 1 : year;
+    const prevMonth = month === 1 ? 12 : month - 1;
     return {
-      from: fmt(new Date(now.getFullYear(), now.getMonth() - 1, 1)),
-      to: fmt(new Date(now.getFullYear(), now.getMonth(), 0)),
+      from: monthStart(prevYear, prevMonth),
+      // Last day of the previous month = the day before this month started.
+      to: shiftNepalDate(monthStart(year, month), -1),
     };
+  }
   if (preset === 'quarter') {
-    const qStart = Math.floor(now.getMonth() / 3) * 3;
-    return { from: fmt(new Date(now.getFullYear(), qStart, 1)), to: fmt(now) };
+    const quarterStartMonth = Math.floor((month - 1) / 3) * 3 + 1;
+    return { from: monthStart(year, quarterStartMonth), to: today };
   }
   return { from: '', to: '' };
 }

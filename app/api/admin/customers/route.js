@@ -233,7 +233,7 @@ export async function PUT(request) {
 
 export async function DELETE(request) {
   try {
-    const auth = await requireAuth(request, { roles: ['admin'] });
+    const auth = await requireAuth(request, { roles: ['admin', 'cashier'], permission: 'customers.delete' });
     if (auth.error) return auth.error;
 
     const { searchParams } = new URL(request.url);

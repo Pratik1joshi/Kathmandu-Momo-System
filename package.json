@@ -17,6 +17,11 @@
     "health": "node scripts/healthcheck.mjs",
     "test:e2e": "playwright test",
     "test:unit": "node --import ./tests/unit/loader-register.mjs --test tests/unit/*.test.js",
+    "probe:reports": "node --import ./tests/unit/loader-register.mjs scripts/probe-reports.mjs",
+    "docs:renumber": "node --import ./tests/unit/loader-register.mjs scripts/renumber-documents.mjs",
+    "journals:backfill": "node --import ./tests/unit/loader-register.mjs scripts/backfill-bill-journals.mjs",
+    "bank:audit": "node --import ./tests/unit/loader-register.mjs scripts/bank-audit.mjs",
+    "probe:reports:fresh": "node --import ./tests/unit/loader-register.mjs scripts/probe-reports.mjs --fresh",
     "import:menu": "node scripts/import-menu.mjs",
     "db:seed-images": "node scripts/seed-menu-images.mjs",
     "map:menu-images": "node scripts/map-menu-images.mjs"

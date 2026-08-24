@@ -13,6 +13,7 @@ import CustomerModePicker, {
   validateCustomerSelection,
 } from '@/components/billing/customer-mode-picker';
 import SplitPaymentFields, { emptySplitPayment } from '@/components/billing/split-payment-fields';
+import ServiceChargeField from '@/components/billing/service-charge-field';
 import DateInput from '@/components/ui/date-input.jsx';
 import QrEnlargeModal from '@/components/billing/qr-enlarge-modal';
 
@@ -74,6 +75,8 @@ export default function BillPaymentPanel({
   splitPayment,
   onSplitPaymentChange,
   canSetDelivery = false,
+  serviceCharge = { enabled: false, mode: 'percent', value: '' },
+  onServiceChargeChange,
   deliveryEnabled = false,
   onDeliveryEnabledChange,
   deliveryFee = '',
@@ -236,6 +239,10 @@ export default function BillPaymentPanel({
             </div>
           </div>
 
+          {/* Optional per-bill service / extra / custom charge. The same control
+              the walk-in and cashier screens use, so all three price alike. */}
+          <ServiceChargeField value={serviceCharge} onChange={onServiceChargeChange} />
+
           {canSetDelivery && (
             <div className="rounded-xl border border-sky-200 bg-sky-50/70 p-3">
               <label className="flex cursor-pointer items-start gap-3">
@@ -333,10 +340,12 @@ export default function BillPaymentPanel({
                 <span className="font-bold">- {formatCurrency(totals?.discount || 0)}</span>
               </div>
             )}
-            {Number(settings.service_charge_percentage) > 0 && (
+            {Number(totals?.serviceCharge || 0) > 0 && (
               <div className="flex justify-between">
-                <span className="text-slate-700">Service ({Number(settings.service_charge_percentage)}%)</span>
-                <span className="font-bold text-slate-900">{formatCurrency(totals?.serviceCharge || 0)}</span>
+                <span className="text-slate-700">
+                  Service{Number(totals?.servicePercent || 0) > 0 ? ` (${Number(totals.servicePercent)}%)` : ''}
+                </span>
+                <span className="font-bold text-slate-900">{formatCurrency(totals.serviceCharge)}</span>
               </div>
             )}
             {Number(settings.vat_percentage) > 0 && (

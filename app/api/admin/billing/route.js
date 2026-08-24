@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import Database from '@/lib/db/index';
-import { deductStockForItems, autoLinkBeverageStock } from '@/lib/stock.js';
+import { deductStockForItems, ensureStockSchema } from '@/lib/stock.js';
 import { resolveCustomerForSale } from '@/lib/customers.js';
-import { calculateBillTotals, parseSettingsRates } from '@/lib/billing-totals.js';
+import { calculateBillTotals, parseSettingsRates, resolveServiceCharge } from '@/lib/billing-totals.js';
 import { requireAuth } from '@/lib/api-guard.js';
 import { ensureAccountingSchema } from '@/lib/accounting.js';
 import { ensureSplitPaymentSchema, recordInitialSplitSettlement, validateAllocations } from '@/lib/split-payments.js';
@@ -80,7 +80,7 @@ export async function POST(request) {
 
     const db = Database.getInstance();
     await ensureOrderColumns(db);
-    await autoLinkBeverageStock(db);
+    await ensureStockSchema(db);
     await ensureAccountingSchema(db);
     await ensureSplitPaymentSchema(db);
 
@@ -97,11 +97,24 @@ export async function POST(request) {
     const items = await resolveSaleItems(db, data.items);
     const { vatPercent, servicePercent } = await loadSettingsRates(db);
     const subtotal = items.reduce((sum, item) => sum + item.subtotal, 0);
+    /*
+     * The optional per-bill service / extra charge. The client sends the mode
+     * and the value it was keyed in as, never a computed amount — the bill is
+     * re-priced here, so a tampered or stale client total can never become the
+     * charge. With no mode sent, the house rate from Settings still applies.
+     */
+    const service = resolveServiceCharge(
+      data.service_charge_mode
+        ? { enabled: true, mode: data.service_charge_mode, value: data.service_charge_value }
+        : null,
+      servicePercent
+    );
     const totals = calculateBillTotals(subtotal, {
       discountAmount: Number(data.discount || 0) > 0 ? Number(data.discount) : undefined,
       discountPercent: Number(data.discount || 0) > 0 ? undefined : Number(data.discount_percent || 0),
       vatPercent,
-      servicePercent,
+      servicePercent: service.servicePercent,
+      serviceAmount: service.serviceAmount,
     });
 
     const result = await db.transaction(async (tx) => {
@@ -125,8 +138,11 @@ export async function POST(request) {
         allowCredit: true,
         actorRole: auth.user?.role,
       });
-      const orderNumber = await nextDocumentNumber(tx, { type: 'order', prefix: 'ORD' });
-      const billNumber = await nextDocumentNumber(tx, { type: 'bill', prefix: 'BILL' });
+      // This route always creates a table-less counter sale, so both numbers
+      // classify off the same payload the order row is about to be written with.
+      const saleChannel = { order_type: data.order_type || 'takeaway', table_id: null, table_number: null };
+      const orderNumber = await nextDocumentNumber(tx, { type: 'order', prefix: 'ORD', order: saleChannel });
+      const billNumber = await nextDocumentNumber(tx, { type: 'bill', prefix: 'BILL', order: saleChannel });
       const orderResult = await tx.run(
         `INSERT INTO orders (order_number, table_id, table_number, order_type, status, payment_status,
            waiter_id, customer_id, customer_name, customer_phone, notes, stock_consumed, business_day_id, created_at, updated_at)
@@ -144,10 +160,14 @@ export async function POST(request) {
       }
       const billResult = await tx.run(
         `INSERT INTO bills (bill_number, order_id, customer_id, subtotal, tax, vat_amount, service_charge,
+           service_charge_percent, tax_percent,
            discount_amount, grand_total, status, payment_status, outstanding_amount, idempotency_key, business_day_id, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', 'unpaid', ?, ?, ?, CURRENT_TIMESTAMP)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', 'unpaid', ?, ?, ?, CURRENT_TIMESTAMP)`,
         [billNumber, orderId, customerInfo.customer_id, totals.subtotal, totals.tax, totals.tax,
-          totals.serviceCharge, totals.discount, totals.total, totals.total, idempotencyKey, businessDayId]
+          // The percent the charge came from — 0 for a flat rupee amount, so a
+          // receipt never prints "Service Charge (150%)" for a Rs 150 charge.
+          totals.serviceCharge, totals.servicePercent, totals.taxPercent,
+          totals.discount, totals.total, totals.total, idempotencyKey, businessDayId]
       );
       const billId = billResult.lastInsertRowid;
       const payment = await recordInitialSplitSettlement(tx, {

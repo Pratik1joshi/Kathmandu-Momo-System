@@ -2,14 +2,17 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import AdminLayout from '@/components/admin/admin-layout';
-import { Calendar, Download, RotateCcw, Search } from 'lucide-react';
+import { AlertTriangle, Calendar, Download, RotateCcw, Search, X } from 'lucide-react';
 import {
   QuickChips, KpiCards, ChartCard, ChartGrid, BarChart, TrendChart, RankBars,
-  ScatterChart, BusinessInsights, DataTable, DataNotes, formatValue,
+  ScatterChart, BusinessInsights, DataTable, formatValue,
 } from '@/components/admin/report-kit';
 import DonutChart from '@/components/admin/donut-chart';
 import { orderTypeLabel } from '@/lib/order-types.js';
 import DateInput from '@/components/ui/date-input.jsx';
+import { formatNepalDateTime } from '@/lib/report-dates.js';
+import { CashFlowCard, ChannelMix, CountedCash, DigitalReceipts, MoneyPosition } from '@/components/admin/summary-kit.jsx';
+import { AllChanges } from '@/components/analytics/order-operations-analytics';
 
 const DONUT_COLORS = ['#0f172a', '#2563eb', '#059669', '#d97706', '#db2777', '#7c3aed', '#0891b2', '#ea580c'];
 
@@ -55,36 +58,88 @@ function DonutBlock({ rows, centerLabel = 'Total', format = 'currency' }) {
  * Suppliers tab groups by that text instead).
  */
 
+/*
+ * Each report carries the question it answers, in the owner's words, and the
+ * kind of report it is. `kind` drives the grouping in the tab bar and the
+ * accent colour, so an admin can tell at a glance whether they are looking at
+ * money, floor operations or an analytical cut — without having opened it.
+ */
+const KINDS = {
+  financial: { label: 'Financial', dot: 'bg-emerald-500', chip: 'bg-emerald-50 text-emerald-700 ring-emerald-200' },
+  operational: { label: 'Operational', dot: 'bg-blue-500', chip: 'bg-blue-50 text-blue-700 ring-blue-200' },
+  analytical: { label: 'Analytical', dot: 'bg-violet-500', chip: 'bg-violet-50 text-violet-700 ring-violet-200' },
+};
+
 const TABS = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'sales', label: 'Sales' },
-  { id: 'finance', label: 'Finance' },
-  { id: 'orders', label: 'Orders' },
-  { id: 'menu', label: 'Menu' },
-  { id: 'inventory', label: 'Inventory' },
-  { id: 'customers', label: 'Customers' },
-  { id: 'employees', label: 'Employees' },
-  { id: 'tables', label: 'Tables' },
-  { id: 'reservations', label: 'Reservations' },
-  { id: 'suppliers', label: 'Suppliers' },
+  { id: 'overview', label: 'Overview', kind: 'financial', blurb: 'How did the business trade this period — money in, profit, and anything that needs attention?' },
+  { id: 'sales', label: 'Sales', kind: 'financial', blurb: 'What did we sell, what was it worth, and how was it paid for?' },
+  { id: 'finance', label: 'Finance', kind: 'financial', blurb: 'What came in, what went out, and what was left over?' },
+  { id: 'suppliers', label: 'Suppliers', kind: 'financial', blurb: 'Who did we buy from, and how much went to each of them?' },
+  { id: 'orders', label: 'Orders', kind: 'operational', blurb: 'How did orders flow from the floor to the kitchen to the bill?' },
+  { id: 'changes', label: 'Cancellations & Changes', kind: 'operational', blurb: 'What was cancelled, voided, refunded, re-billed or discounted — and by whom?' },
+  { id: 'inventory', label: 'Inventory', kind: 'operational', blurb: 'What stock is on hand, what moved, and what needs reordering?' },
+  { id: 'employees', label: 'Employees', kind: 'operational', blurb: 'Who served and settled what, and how fast did the kitchen turn tickets around?' },
+  { id: 'tables', label: 'Tables', kind: 'operational', blurb: 'Which tables earn, which sit idle, and how long is a sitting?' },
+  { id: 'reservations', label: 'Reservations', kind: 'operational', blurb: 'How is the booking book looking, and how many people never showed?' },
+  { id: 'menu', label: 'Menu', kind: 'analytical', blurb: 'Which dishes earn their place on the menu, and which do not?' },
+  { id: 'customers', label: 'Customers', kind: 'analytical', blurb: 'Who is coming back, and what are they worth?' },
 ];
 
+/**
+ * Groups for the tab bar. `allowed` comes from the server (a cashier gets a
+ * subset); the server refuses anything outside it regardless, this just avoids
+ * showing a tab that would 403.
+ */
+function tabGroupsFor(allowed) {
+  const visible = allowed?.length ? TABS.filter((t) => allowed.includes(t.id)) : TABS;
+  return ['financial', 'operational', 'analytical']
+    .map((kind) => ({ kind, label: KINDS[kind].label, tabs: visible.filter((t) => t.kind === kind) }))
+    .filter((group) => group.tabs.length);
+}
+
+/*
+ * resolvePeriodRange already understood yesterday, last 30 days, last month and
+ * year-to-date; the UI only ever offered three of its presets, so an owner
+ * wanting last month had to work out and type the dates by hand.
+ */
 const PERIODS = [
   { id: 'today', label: 'Today' },
+  { id: 'yesterday', label: 'Yesterday' },
   { id: 'week', label: 'Last 7 days' },
+  { id: 'last30', label: 'Last 30 days' },
   { id: 'month', label: 'This month' },
+  { id: 'last_month', label: 'Last month' },
+  { id: 'year', label: 'This year' },
   { id: 'custom', label: 'Custom' },
 ];
 
+const FILTER_LABELS = {
+  businessDayId: 'Business day',
+  employeeId: 'Employee',
+  categoryId: 'Category',
+  foodGroup: 'Master category',
+  paymentMethod: 'Payment method',
+  orderType: 'Order type',
+  search: 'Search',
+};
+
 const allZero = (series) => !series?.length || series.every((d) => !d.value);
 
-function selectClass() {
-  return 'h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700';
+function selectClass(enabled = true) {
+  const base = 'h-10 rounded-lg border px-3 text-sm';
+  return enabled
+    ? `${base} border-gray-300 bg-white text-gray-700`
+    // Visibly inert, with the reason on hover — an owner should never change a
+    // control and watch nothing happen.
+    : `${base} cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400`;
 }
 
 export default function ReportsPage() {
   const [tab, setTab] = useState('overview');
-  const [period, setPeriod] = useState('week');
+  // Opens on TODAY, not the last 7 days: the report an owner opens mid-service
+  // is today's. The API resolves 'today' to the open business day, so this
+  // lands on the same period Analytics shows.
+  const [period, setPeriod] = useState('today');
   const [custom, setCustom] = useState({ start: '', end: '' });
   const [filters, setFilters] = useState({ businessDayId: '', employeeId: '', categoryId: '', foodGroup: '', paymentMethod: '', orderType: '', search: '' });
   const [searchDraft, setSearchDraft] = useState('');
@@ -132,6 +187,30 @@ export default function ReportsPage() {
     setSearchDraft('');
   };
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
+  const tabGroups = useMemo(() => tabGroupsFor(data?.allowedTabs), [data?.allowedTabs]);
+  /*
+   * The server says which filters this tab actually binds. Until the first
+   * response lands, assume all are live so the bar does not flicker disabled.
+   */
+  const supported = data?.supportedFilters || null;
+  const filterEnabled = useCallback((key) => !supported || supported.includes(key), [supported]);
+  const filterDisabledReason = data?.filterUnavailableReason
+    || 'This report has nothing for that filter to match on.';
+  const activeTab = TABS.find((t) => t.id === tab) || TABS[0];
+  const activeKind = KINDS[activeTab.kind];
+
+  /*
+   * "Everything is zero" and "we could not load this" look identical to an
+   * owner unless the page says which it is. A report is empty when no headline
+   * figure has a value and no detail row came back.
+   */
+  const isEmptyReport = useMemo(() => {
+    if (!data) return false;
+    const tables = data.tables || (data.table ? [data.table] : []);
+    const anyRows = tables.some((t) => (t.rows?.length || 0) > 0);
+    const anyKpi = (data.kpis || []).some((k) => (typeof k.value === 'number' ? k.value !== 0 : Boolean(k.value)));
+    return !anyRows && !anyKpi;
+  }, [data]);
 
   /** Re-fetch this tab with the detail caps lifted. */
   const fetchFullTab = useCallback(async () => {
@@ -183,10 +262,17 @@ export default function ReportsPage() {
     <AdminLayout>
       <header className="border-b border-gray-200 bg-white px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Reports</h1>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">{activeTab.label} Report</h1>
+              <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${activeKind.chip}`}>
+                <span className={`h-1.5 w-1.5 rounded-full ${activeKind.dot}`} />
+                {activeKind.label}
+              </span>
+            </div>
+            <p className="mt-1.5 max-w-2xl text-sm text-gray-600">{activeTab.blurb}</p>
             <p className="mt-1 flex items-center gap-2 text-sm text-gray-500">
-              <Calendar className="h-4 w-4" />
+              <Calendar className="h-4 w-4 shrink-0" />
               {data?.range?.label || 'Choose a date range to begin'}
             </p>
           </div>
@@ -196,7 +282,7 @@ export default function ReportsPage() {
             disabled={!data}
             className="inline-flex items-center justify-center gap-2 rounded-xl bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-gray-800 disabled:opacity-50"
           >
-            <Download className="h-4 w-4" /> Export {TABS.find((t) => t.id === tab)?.label}
+            <Download className="h-4 w-4" /> Export {activeTab.label}
           </button>
         </div>
       </header>
@@ -227,35 +313,35 @@ export default function ReportsPage() {
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-4">
-            <select value={filters.businessDayId} onChange={(e) => setFilters({ ...filters, businessDayId: e.target.value })} className={selectClass()}>
+            <select value={filters.businessDayId} onChange={(e) => setFilters({ ...filters, businessDayId: e.target.value })} disabled={!filterEnabled('businessDayId')} title={filterEnabled('businessDayId') ? undefined : filterDisabledReason} className={selectClass(filterEnabled('businessDayId'))}>
               <option value="">Calendar date range</option>
               {(options?.businessDays || []).map((day) => <option key={day.id} value={day.id}>Business Day {String(day.business_date).slice(0, 10)} · {day.status}</option>)}
             </select>
-            <select value={filters.employeeId} onChange={(e) => setFilters({ ...filters, employeeId: e.target.value })} className={selectClass()}>
+            <select value={filters.employeeId} onChange={(e) => setFilters({ ...filters, employeeId: e.target.value })} disabled={!filterEnabled('employeeId')} title={filterEnabled('employeeId') ? undefined : filterDisabledReason} className={selectClass(filterEnabled('employeeId'))}>
               <option value="">All employees</option>
               {(options?.employees || []).map((e) => (
                 <option key={e.id} value={e.id}>{e.name} · {e.role}</option>
               ))}
             </select>
-            <select value={filters.foodGroup} onChange={(e) => setFilters({ ...filters, foodGroup: e.target.value })} className={selectClass()}>
+            <select value={filters.foodGroup} onChange={(e) => setFilters({ ...filters, foodGroup: e.target.value })} disabled={!filterEnabled('foodGroup')} title={filterEnabled('foodGroup') ? undefined : filterDisabledReason} className={selectClass(filterEnabled('foodGroup'))}>
               <option value="">All master categories</option>
               {(options?.foodGroups || []).map((g) => (
                 <option key={g.id} value={g.id}>{g.label}</option>
               ))}
             </select>
-            <select value={filters.categoryId} onChange={(e) => setFilters({ ...filters, categoryId: e.target.value })} className={selectClass()}>
+            <select value={filters.categoryId} onChange={(e) => setFilters({ ...filters, categoryId: e.target.value })} disabled={!filterEnabled('categoryId')} title={filterEnabled('categoryId') ? undefined : filterDisabledReason} className={selectClass(filterEnabled('categoryId'))}>
               <option value="">All categories</option>
               {(options?.categories || []).map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
-            <select value={filters.paymentMethod} onChange={(e) => setFilters({ ...filters, paymentMethod: e.target.value })} className={selectClass()}>
+            <select value={filters.paymentMethod} onChange={(e) => setFilters({ ...filters, paymentMethod: e.target.value })} disabled={!filterEnabled('paymentMethod')} title={filterEnabled('paymentMethod') ? undefined : filterDisabledReason} className={selectClass(filterEnabled('paymentMethod'))}>
               <option value="">All payment methods</option>
               {(options?.paymentMethods || []).map((m) => (
                 <option key={m} value={m} className="capitalize">{m}</option>
               ))}
             </select>
-            <select value={filters.orderType} onChange={(e) => setFilters({ ...filters, orderType: e.target.value })} className={selectClass()}>
+            <select value={filters.orderType} onChange={(e) => setFilters({ ...filters, orderType: e.target.value })} disabled={!filterEnabled('orderType')} title={filterEnabled('orderType') ? undefined : filterDisabledReason} className={selectClass(filterEnabled('orderType'))}>
               <option value="">All order types</option>
               {(options?.orderTypes || []).map((t) => (
                 <option key={t} value={t}>{orderTypeLabel(t)}</option>
@@ -271,8 +357,10 @@ export default function ReportsPage() {
                 value={searchDraft}
                 onChange={(e) => setSearchDraft(e.target.value)}
                 onBlur={() => setFilters((f) => ({ ...f, search: searchDraft.trim() }))}
-                placeholder="Search bills, orders, tables…"
-                className="h-10 w-full rounded-lg border border-gray-300 pl-9 pr-3 text-sm text-gray-900"
+                disabled={!filterEnabled('search')}
+                title={filterEnabled('search') ? undefined : filterDisabledReason}
+                placeholder={filterEnabled('search') ? 'Search bills, orders, tables…' : 'Search not available on this report'}
+                className={`h-10 w-full rounded-lg border pl-9 pr-3 text-sm ${filterEnabled('search') ? 'border-gray-300 text-gray-900' : 'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400'}`}
               />
             </form>
             {activeFilterCount > 0 && (
@@ -283,20 +371,29 @@ export default function ReportsPage() {
           </div>
         </div>
 
-        {/* Tab bar — horizontally scrollable on mobile */}
+        {/* Tab bar — grouped by report kind, horizontally scrollable on mobile */}
         <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
-          <div className="flex w-max gap-1 rounded-xl border border-gray-200 bg-white p-1 shadow-sm sm:w-auto">
-            {TABS.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => setTab(t.id)}
-                className={`whitespace-nowrap rounded-lg px-3.5 py-2 text-sm font-medium transition-colors ${
-                  tab === t.id ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100'
-                }`}
-              >
-                {t.label}
-              </button>
+          <div className="flex w-max items-stretch gap-1 rounded-xl border border-gray-200 bg-white p-1 shadow-sm sm:w-auto">
+            {tabGroups.map((group, groupIndex) => (
+              <div key={group.kind} className={`flex items-center gap-1 ${groupIndex ? 'ml-1 border-l border-gray-200 pl-2' : ''}`}>
+                <span className="hidden select-none pr-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400 lg:inline">
+                  {group.label}
+                </span>
+                {group.tabs.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setTab(t.id)}
+                    title={t.blurb}
+                    className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3.5 py-2 text-sm font-medium transition-colors ${
+                      tab === t.id ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    <span className={`h-1.5 w-1.5 rounded-full ${KINDS[t.kind].dot} ${tab === t.id ? '' : 'opacity-60'}`} />
+                    {t.label}
+                  </button>
+                ))}
+              </div>
             ))}
           </div>
         </div>
@@ -313,15 +410,67 @@ export default function ReportsPage() {
           </div>
         )}
 
-        {loading && !data && <p className="py-24 text-center text-sm text-gray-500">Building your report…</p>}
+        {loading && !data && <ReportSkeleton />}
 
         {data && (
-          <div className={`space-y-6 ${loading ? 'opacity-60' : ''}`}>
-            <QuickChips chips={data.chips} />
-            <KpiCards kpis={data.kpis} />
-            <ReportContents data={data} />
+          <div className={`space-y-6 transition-opacity ${loading ? 'opacity-60' : ''}`}>
+            <AppliedScope
+              data={data}
+              filters={filters}
+              options={options}
+              onClearFilter={(key) => {
+                if (key === 'search') setSearchDraft('');
+                setFilters((f) => ({ ...f, [key]: '' }));
+              }}
+            />
+            {isEmptyReport ? (
+              <NothingHappened
+                tabLabel={activeTab.label}
+                range={data.range}
+                hasFilters={activeFilterCount > 0}
+                onClearFilters={resetFilters}
+              />
+            ) : (
+              <QuickChips chips={data.chips} />
+            )}
+            <KpiCards kpis={data.kpis} groups={data.kpiGroups} />
             <TabCharts tab={tab} data={data} />
             <BusinessInsights insights={data.insights} />
+            {/* The same exception-log component the Analytics screen renders,
+                from the same builder, so the two can never disagree. */}
+            {data.orderOperations && (
+              <div className="mt-6">
+                <AllChanges report={data.orderOperations} />
+              </div>
+            )}
+            {data.channelMix && (
+              <div className="mt-6">
+                <ChannelMix data={data.channelMix} className="overflow-hidden rounded-xl" />
+              </div>
+            )}
+            {/* Finance tab only — the drawer count is a cash-position figure,
+                not something the Menu or Reservations tabs ask about. Same card
+                the Summary Report prints. Rendered unconditionally within that
+                tab: a period with no counted close says so in the card rather
+                than dropping out of the report. */}
+            {/* Rendered off the DATA, not off the tab name: an admin gets these
+                on Finance, a cashier gets the same cards on Sales because that
+                is the tab their role can open. One condition, no role logic in
+                the client. */}
+            {data.moneyPosition && (
+              <>
+                <div className="mt-6 grid gap-6 xl:grid-cols-2">
+                  <MoneyPosition data={data.moneyPosition || {}} className="overflow-hidden rounded-xl" />
+                  <CashFlowCard data={data.cashFlow || {}} className="overflow-hidden rounded-xl" />
+                </div>
+                <div className="mt-6">
+                  <CountedCash data={data.cashReconciliation || {}} className="overflow-hidden rounded-xl" />
+                </div>
+                <div className="mt-6">
+                  <DigitalReceipts data={data.digitalReceipts || {}} className="overflow-hidden rounded-xl" />
+                </div>
+              </>
+            )}
             {(data.tables || (data.table ? [{ id: 'detail', ...data.table }] : [])).map((t) => (
               <DataTable
                 key={t.id}
@@ -335,7 +484,6 @@ export default function ReportsPage() {
                 csvName={`${tab}-${t.id}`}
               />
             ))}
-            <DataNotes notes={data.notes} />
           </div>
         )}
       </div>
@@ -355,7 +503,12 @@ function humanKey(value) {
 }
 
 function formatExportCell(value, type) {
-  if (type === 'datetime' && value) return new Date(value).toLocaleString('en-US', { timeZone: 'Asia/Kathmandu' });
+  // Must match the screen exactly. `new Date('2026-08-24 19:30:00')` reads a
+  // bare SQLite timestamp as *browser-local* time, so the workbook used to show
+  // times offset from the table it was exported from (and offset differently
+  // for each viewer). formatNepalDateTime applies the same UTC-then-Kathmandu
+  // rule the DataTable and CSV export use.
+  if (type === 'datetime' && value) return formatNepalDateTime(value);
   return value ?? '';
 }
 
@@ -386,7 +539,7 @@ function buildReportWorkbook({ tabLabel, period, filters, data }) {
   sections.push(`<tr><td style="font-weight:bold">Report</td><td>${escapeHtml(tabLabel)}</td></tr>`);
   sections.push(`<tr><td style="font-weight:bold">Period</td><td>${escapeHtml(range.label || period)}</td></tr>`);
   sections.push(`<tr><td style="font-weight:bold">Date Range</td><td>${escapeHtml(range.start || '')}</td><td>${escapeHtml(range.end || '')}</td></tr>`);
-  sections.push(`<tr><td style="font-weight:bold">Exported At</td><td>${escapeHtml(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kathmandu' }))}</td></tr>`);
+  sections.push(`<tr><td style="font-weight:bold">Exported At</td><td>${escapeHtml(new Date().toLocaleString('en-GB', { timeZone: 'Asia/Kathmandu' }))} (Asia/Kathmandu)</td></tr>`);
 
   if (activeFilters.length) {
     sections.push(tableHtml({ title: 'Active Filters', headers: ['Filter', 'Value'], rows: activeFilters.map(([key, value]) => [humanKey(key), value]) }));
@@ -421,34 +574,123 @@ function buildReportWorkbook({ tabLabel, period, filters, data }) {
       rows: (table.rows || []).map((row) => columns.map((column) => formatExportCell(row[column.key], column.type))),
     }));
   });
-  if (data.notes?.length) {
-    sections.push(tableHtml({ title: 'Data Notes', headers: ['Note'], rows: data.notes.map((note) => [note]) }));
-  }
-
   return `<!doctype html><html><head><meta charset="utf-8" /></head><body><table>${sections.join('')}</table></body></html>`;
 }
 
-function ReportContents({ data }) {
+/**
+ * What this report is currently showing, in words: the exact dates, every
+ * filter that is narrowing it, and a warning when a detail table was capped.
+ * This replaced a strip of KPI/chart/table counts — a number an owner has no
+ * use for, in the slot directly under the headline figures.
+ */
+function AppliedScope({ data, filters, options, onClearFilter }) {
   const tables = data.tables || (data.table ? [data.table] : []);
-  const chartCount = Object.keys(data.charts || {}).length;
-  const rowCount = tables.reduce((sum, table) => sum + (table.rows?.length || 0), 0);
-  const capped = tables.filter((table) => table.truncated).length;
-  const items = [
-    ['KPIs', data.kpis?.length || 0],
-    ['Charts', chartCount],
-    ['Tables', tables.length],
-    ['Rows shown', rowCount],
-    ['Capped tables', capped],
-  ];
+  const capped = tables.filter((table) => table.truncated);
+
+  const describe = (key, value) => {
+    if (key === 'businessDayId') {
+      const day = (options?.businessDays || []).find((d) => String(d.id) === String(value));
+      return day ? `${String(day.business_date).slice(0, 10)} (${day.status})` : `#${value}`;
+    }
+    if (key === 'employeeId') {
+      return (options?.employees || []).find((e) => String(e.id) === String(value))?.name || `#${value}`;
+    }
+    if (key === 'categoryId') {
+      return (options?.categories || []).find((c) => String(c.id) === String(value))?.name || `#${value}`;
+    }
+    if (key === 'foodGroup') {
+      return (options?.foodGroups || []).find((g) => g.id === value)?.label || value;
+    }
+    return String(value);
+  };
+
+  const active = Object.entries(filters || {}).filter(([, value]) => value);
 
   return (
-    <div className="grid gap-px overflow-hidden rounded-2xl border border-gray-200 bg-gray-200 shadow-sm sm:grid-cols-5">
-      {items.map(([label, value]) => (
-        <div key={label} className="bg-white px-4 py-3">
-          <p className="text-xs text-gray-500">{label}</p>
-          <p className="mt-0.5 text-lg font-semibold tabular-nums text-gray-900">{value}</p>
-        </div>
-      ))}
+    <div className="rounded-2xl border border-gray-200 bg-white px-4 py-3.5 shadow-sm sm:px-5">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
+        <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">Showing</span>
+        <span className="font-medium text-gray-900">
+          {data.range?.start === data.range?.end
+            ? data.range?.start
+            : `${data.range?.start} to ${data.range?.end}`}
+        </span>
+        {active.length === 0 ? (
+          <span className="text-gray-500">· no filters applied</span>
+        ) : (
+          <>
+            <span className="text-gray-400">·</span>
+            {active.map(([key, value]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => onClearFilter(key)}
+                title={`Remove the ${FILTER_LABELS[key] || key} filter`}
+                className="inline-flex items-center gap-1.5 rounded-full bg-gray-100 py-1 pl-2.5 pr-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-200"
+              >
+                <span className="text-gray-500">{FILTER_LABELS[key] || key}:</span>
+                {describe(key, value)}
+                <X className="h-3 w-3 text-gray-400" />
+              </button>
+            ))}
+          </>
+        )}
+      </div>
+      {capped.length > 0 && (
+        <p className="mt-2.5 flex items-start gap-1.5 border-t border-gray-100 pt-2.5 text-xs text-amber-700">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>
+            {capped.map((t) => t.title).join(', ')} {capped.length === 1 ? 'is' : 'are'} showing the most
+            recent rows only. Totals and charts above cover the whole period; use Export or the table&rsquo;s
+            CSV button for every row.
+          </span>
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Nothing traded in this window — say so, rather than showing a wall of Rs 0. */
+function NothingHappened({ tabLabel, range, hasFilters, onClearFilters }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-14 text-center">
+      <Calendar className="mx-auto h-8 w-8 text-gray-300" />
+      <h2 className="mt-3 text-base font-semibold text-gray-900">
+        No {tabLabel.toLowerCase()} activity in this period
+      </h2>
+      <p className="mx-auto mt-1.5 max-w-md text-sm text-gray-500">
+        Nothing was recorded between {range?.start} and {range?.end}
+        {hasFilters ? ' that matches the filters you have applied' : ''}. The zeros below are real, not a
+        loading error &mdash; try a wider date range
+        {hasFilters ? ' or clear the filters' : ''}.
+      </p>
+      {hasFilters && (
+        <button
+          type="button"
+          onClick={onClearFilters}
+          className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+        >
+          <RotateCcw className="h-3.5 w-3.5" /> Clear filters
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Shape of the report, not a bare spinner — the page does not jump on load. */
+function ReportSkeleton() {
+  return (
+    <div className="space-y-6" aria-busy="true" aria-label="Building your report">
+      <div className="grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-4">
+        {Array.from({ length: 4 }, (_, i) => (
+          <div key={i} className="h-28 animate-pulse rounded-2xl border border-gray-200 bg-white p-6">
+            <div className="h-3 w-20 rounded bg-gray-200" />
+            <div className="mt-3 h-6 w-28 rounded bg-gray-200" />
+          </div>
+        ))}
+      </div>
+      <div className="h-64 animate-pulse rounded-2xl border border-gray-200 bg-white" />
+      <div className="h-80 animate-pulse rounded-2xl border border-gray-200 bg-white" />
     </div>
   );
 }
@@ -724,3 +966,4 @@ function TabCharts({ tab, data }) {
 
   return null;
 }
+

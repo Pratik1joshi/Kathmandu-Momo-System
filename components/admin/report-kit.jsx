@@ -141,11 +141,46 @@ export function QuickChips({ chips }) {
 /** 2. Large KPI cards. `kpi.highlight` marks the one headline number in the
  * row (Profit, Revenue, etc.) with a light accent — not every card, just the
  * one worth an owner's eye landing on first. */
-export function KpiCards({ kpis }) {
+export function KpiCards({ kpis, groups }) {
   if (!kpis?.length) return null;
+
+  /*
+   * Beyond about six figures a flat grid stops being scannable and starts
+   * inviting nonsense arithmetic across unrelated cards. When the report
+   * supplies groups, band them under the question each answers.
+   */
+  if (groups?.length) {
+    const byKey = new Map(kpis.map((k) => [k.key, k]));
+    const grouped = groups
+      .map((g) => ({ ...g, items: g.keys.map((k) => byKey.get(k)).filter(Boolean) }))
+      .filter((g) => g.items.length);
+    const claimed = new Set(grouped.flatMap((g) => g.items.map((k) => k.key)));
+    const leftovers = kpis.filter((k) => !claimed.has(k.key));
+    const bands = leftovers.length
+      ? [...grouped, { id: 'other', title: 'Other', caption: null, items: leftovers }]
+      : grouped;
+    return (
+      <div className="space-y-5 animate-in fade-in duration-300">
+        {bands.map((band) => (
+          <section key={band.id}>
+            <div className="mb-2.5">
+              <h2 className="text-sm font-semibold text-gray-900">{band.title}</h2>
+              {band.caption && <p className="mt-0.5 text-xs text-gray-500">{band.caption}</p>}
+            </div>
+            <KpiGrid kpis={band.items} />
+          </section>
+        ))}
+      </div>
+    );
+  }
+
+  return <KpiGrid kpis={kpis} />;
+}
+
+function KpiGrid({ kpis }) {
   const cols = kpis.length >= 5 ? 'xl:grid-cols-5' : 'lg:grid-cols-4';
   return (
-    <div className={`grid grid-cols-2 gap-3 sm:gap-5 ${cols} animate-in fade-in duration-300`}>
+    <div className={`grid grid-cols-2 gap-3 sm:gap-5 ${cols}`}>
       {kpis.map((kpi) => (
         <div
           key={kpi.key}
@@ -153,7 +188,18 @@ export function KpiCards({ kpis }) {
             kpi.highlight ? 'border-emerald-200 bg-emerald-50/50 ring-1 ring-emerald-100' : 'border-gray-200 bg-white'
           }`}
         >
-          <p className="text-xs font-medium text-gray-500 sm:text-sm">{kpi.label}</p>
+          <p className="text-xs font-medium text-gray-500 sm:text-sm">
+            {kpi.hint ? (
+              // A metric an owner cannot define is a metric they cannot trust.
+              // The dotted underline is the affordance; the definition is one
+              // hover away rather than crowding thirteen cards with prose.
+              <span className="cursor-help decoration-dotted underline-offset-2 [text-decoration-line:underline]" title={kpi.hint}>
+                {kpi.label}
+              </span>
+            ) : (
+              kpi.label
+            )}
+          </p>
           <h3 className={`mt-2 truncate text-xl font-bold tabular-nums sm:text-2xl ${kpi.format === 'currency' ? financialToneClass(kpi) : 'text-gray-900'}`} title={String(kpi.value ?? '')}>
             {formatValue(kpi.value, kpi.format)}
           </h3>
@@ -544,24 +590,6 @@ export function DataTable({ title, columns, rows, empty, csvName, truncated, lim
           </table>
         </div>
       )}
-    </div>
-  );
-}
-
-/** Honest footnotes about metrics this schema cannot support. */
-export function DataNotes({ notes }) {
-  if (!notes?.length) return null;
-  return (
-    <div className="rounded-2xl border border-gray-200 bg-gray-50 p-5 text-sm text-gray-500">
-      <p className="mb-2 font-medium text-gray-600">About this data</p>
-      <ul className="space-y-1.5">
-        {notes.map((note, i) => (
-          <li key={i} className="flex gap-2 leading-relaxed">
-            <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-gray-300" />
-            {note}
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }

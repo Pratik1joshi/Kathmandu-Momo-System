@@ -10,6 +10,7 @@ import {
 import WastageModal from '@/components/inventory/wastage-modal'
 import WastageHistoryModal from '@/components/inventory/wastage-history-modal'
 import QrEnlargeModal from '@/components/billing/qr-enlarge-modal'
+import PayQrModal from '@/components/waiter/pay-qr-modal'
 import {
   formatElapsed,
   normalizeOrderStatus,
@@ -92,28 +93,46 @@ function WaiterDashboardInner() {
   const [actionBusy, setActionBusy] = useState(false)
   const [partyPickerTable, setPartyPickerTable] = useState(null)
   const [startingParty, setStartingParty] = useState(false)
-  const [paymentQr, setPaymentQr] = useState({ esewa_qr_image: '', bank_qr_image: '' })
-  const [showQrPicker, setShowQrPicker] = useState(false)
+  const [paymentQr, setPaymentQr] = useState({ esewa_qr_image: '', bank_qr_image: '', restaurant_name: '' })
+  const [qrState, setQrState] = useState({ loading: true, error: '' })
+  const [payQrOpen, setPayQrOpen] = useState(false)
   const [qrModal, setQrModal] = useState({ open: false, title: '', image: '' })
 
   useEffect(() => {
     setSeenIds(loadSeenIds())
   }, [])
 
-  useEffect(() => {
-    apiCall('/api/admin/settings')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (data?.settings) {
-          setPaymentQr({
-            esewa_qr_image: data.settings.esewa_qr_image || '',
-            bank_qr_image: data.settings.bank_qr_image || '',
-          })
-        }
+  /*
+   * GET /api/admin/settings already permits the waiter role, so no permission
+   * change was needed. It answers `{ settings: {...} }` — reading the keys off
+   * the top level finds nothing and the Pay QR screen wrongly reports "no QR
+   * uploaded", so go through data.settings.
+   */
+  const loadPaymentQr = useCallback(async () => {
+    setQrState({ loading: true, error: '' })
+    try {
+      const res = await apiCall('/api/admin/settings')
+      if (!res.ok) throw new Error('Could not load the payment QR.')
+      const data = await res.json()
+      const settings = data?.settings || {}
+      setPaymentQr({
+        esewa_qr_image: settings.esewa_qr_image || '',
+        bank_qr_image: settings.bank_qr_image || '',
+        restaurant_name: settings.restaurant_name || '',
       })
-      .catch(() => {})
+      setQrState({ loading: false, error: '' })
+    } catch {
+      setQrState({ loading: false, error: 'Could not load the payment QR.' })
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => { loadPaymentQr() }, [loadPaymentQr])
+
+  const payQrCodes = useMemo(() => [
+    paymentQr.esewa_qr_image && { key: 'esewa', label: 'eSewa / Fonepay', image: paymentQr.esewa_qr_image },
+    paymentQr.bank_qr_image && { key: 'bank', label: 'Bank', image: paymentQr.bank_qr_image },
+  ].filter(Boolean), [paymentQr])
 
   useEffect(() => {
     if (searchParams.get('tab') === 'reservations') setTab('reservations')
@@ -565,26 +584,18 @@ function WaiterDashboardInner() {
             <Trash2 className="w-4 h-4" />
             <span className="text-[9px] font-semibold leading-none">Log</span>
           </button>
-          {(paymentQr.esewa_qr_image || paymentQr.bank_qr_image) && (
-            <button
-              type="button"
-              onClick={() => {
-                const hasBoth = paymentQr.esewa_qr_image && paymentQr.bank_qr_image
-                if (hasBoth) { setShowQrPicker(true); return }
-                setQrModal({
-                  open: true,
-                  title: paymentQr.esewa_qr_image ? 'eSewa / Fonepay QR' : 'Bank QR',
-                  image: paymentQr.esewa_qr_image || paymentQr.bank_qr_image,
-                })
-              }}
-              className="h-11 px-2.5 rounded-xl flex flex-col items-center justify-center gap-0.5 min-w-[3.25rem] bg-emerald-50 text-emerald-700"
-              aria-label="Show payment QR"
-              title="Show payment QR"
-            >
-              <QrCode className="w-4 h-4" />
-              <span className="text-[9px] font-semibold leading-none">QR</span>
-            </button>
-          )}
+          {/* Always shown: with no QR uploaded the modal explains where to add
+              one, which is more use than a button that silently is not there. */}
+          <button
+            type="button"
+            onClick={() => setPayQrOpen(true)}
+            className="h-11 px-2.5 rounded-xl flex flex-col items-center justify-center gap-0.5 min-w-[3.25rem] bg-emerald-50 text-emerald-700"
+            aria-label="Show payment QR"
+            title="Show payment QR"
+          >
+            <QrCode className="w-4 h-4" />
+            <span className="text-[9px] font-semibold leading-none">Pay QR</span>
+          </button>
           <LogoutButton onLogout={logout} iconOnly />
         </div>
 
@@ -983,34 +994,17 @@ function WaiterDashboardInner() {
       {showWastageLog && <WastageModal request={apiCall} onClose={() => setShowWastageLog(false)} />}
       {showWastageHistory && <WastageHistoryModal request={apiCall} onClose={() => setShowWastageHistory(false)} />}
 
-      {showQrPicker && (
-        <div className="fixed inset-0 z-[85] bg-black/50 flex items-center justify-center p-4" onClick={() => setShowQrPicker(false)}>
-          <div className="bg-white rounded-2xl p-5 w-full max-w-xs" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-base font-bold text-slate-900 mb-3">Show which QR?</h3>
-            <div className="space-y-2">
-              {paymentQr.esewa_qr_image && (
-                <button
-                  type="button"
-                  onClick={() => { setShowQrPicker(false); setQrModal({ open: true, title: 'eSewa / Fonepay QR', image: paymentQr.esewa_qr_image }) }}
-                  className="w-full rounded-xl border border-slate-200 py-3 text-sm font-semibold text-slate-800 hover:bg-slate-50"
-                >
-                  eSewa / Fonepay QR
-                </button>
-              )}
-              {paymentQr.bank_qr_image && (
-                <button
-                  type="button"
-                  onClick={() => { setShowQrPicker(false); setQrModal({ open: true, title: 'Bank QR', image: paymentQr.bank_qr_image }) }}
-                  className="w-full rounded-xl border border-slate-200 py-3 text-sm font-semibold text-slate-800 hover:bg-slate-50"
-                >
-                  Bank QR
-                </button>
-              )}
-            </div>
-            <button type="button" onClick={() => setShowQrPicker(false)} className="mt-3 w-full py-2.5 text-sm font-medium text-slate-500">Cancel</button>
-          </div>
-        </div>
-      )}
+      {/* Tabs live inside the modal now, so the waiter picks the code on the
+          same screen instead of answering a question first. */}
+      <PayQrModal
+        open={payQrOpen}
+        onClose={() => setPayQrOpen(false)}
+        codes={payQrCodes}
+        restaurantName={paymentQr.restaurant_name}
+        loading={qrState.loading}
+        error={qrState.error}
+        onRetry={loadPaymentQr}
+      />
       <QrEnlargeModal open={qrModal.open} title={qrModal.title} image={qrModal.image} onClose={() => setQrModal({ open: false, title: '', image: '' })} />
     </div>
   )

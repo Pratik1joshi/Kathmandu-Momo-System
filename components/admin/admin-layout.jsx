@@ -48,16 +48,46 @@ function readNavScrollSync() {
 }
 
 // Static, literal Tailwind classes (never templated) so the JIT compiler keeps them.
+/**
+ * One hue per nav group, spread around the colour wheel.
+ *
+ * The previous palette drew four of its tints from neighbouring hues (sky,
+ * blue, indigo, purple). At a 50-level fill those are indistinguishable — every
+ * band read as the same pale blue, so the grouping carried no information. The
+ * hues below sit roughly 45-160 degrees apart:
+ *
+ *   amber 45  ·  lime 90  ·  emerald 160  ·  cyan 190
+ *   indigo 240  ·  fuchsia 320  ·  rose 350
+ *
+ * The two closest remaining pairs (emerald/cyan and fuchsia/rose, ~30 apart)
+ * are deliberately assigned to groups that sit far apart in the sidebar, so
+ * they are never adjacent bands. Fills are 100 rather than 50 and headers are
+ * 800 rather than 700, so the bands are actually visible.
+ *
+ * GROUP_TINTS below is the single source of truth — both roles' navs read from
+ * it, so a group keeps its colour wherever it appears.
+ */
 const NAV_TINTS = {
-  blue: { bg: 'bg-blue-50/70', header: 'text-blue-700', activeBg: 'bg-blue-100', activeBorder: 'border-blue-600', hover: 'hover:bg-blue-100/70' },
-  sky: { bg: 'bg-sky-50/70', header: 'text-sky-700', activeBg: 'bg-sky-100', activeBorder: 'border-sky-600', hover: 'hover:bg-sky-100/70' },
-  violet: { bg: 'bg-violet-50/70', header: 'text-violet-700', activeBg: 'bg-violet-100', activeBorder: 'border-violet-600', hover: 'hover:bg-violet-100/70' },
-  emerald: { bg: 'bg-emerald-50/70', header: 'text-emerald-700', activeBg: 'bg-emerald-100', activeBorder: 'border-emerald-600', hover: 'hover:bg-emerald-100/70' },
-  indigo: { bg: 'bg-indigo-50/70', header: 'text-indigo-700', activeBg: 'bg-indigo-100', activeBorder: 'border-indigo-600', hover: 'hover:bg-indigo-100/70' },
-  pink: { bg: 'bg-pink-50/70', header: 'text-pink-700', activeBg: 'bg-pink-100', activeBorder: 'border-pink-600', hover: 'hover:bg-pink-100/70' },
-  amber: { bg: 'bg-amber-50/70', header: 'text-amber-700', activeBg: 'bg-amber-100', activeBorder: 'border-amber-600', hover: 'hover:bg-amber-100/70' },
-  purple: { bg: 'bg-purple-50/70', header: 'text-purple-700', activeBg: 'bg-purple-100', activeBorder: 'border-purple-600', hover: 'hover:bg-purple-100/70' },
-  rose: { bg: 'bg-rose-50/70', header: 'text-rose-700', activeBg: 'bg-rose-100', activeBorder: 'border-rose-600', hover: 'hover:bg-rose-100/70' },
+  amber: { bg: 'bg-amber-100', header: 'text-amber-800', activeBg: 'bg-amber-200', activeBorder: 'border-amber-600', hover: 'hover:bg-amber-200/70' },
+  lime: { bg: 'bg-lime-100', header: 'text-lime-800', activeBg: 'bg-lime-200', activeBorder: 'border-lime-600', hover: 'hover:bg-lime-200/70' },
+  emerald: { bg: 'bg-emerald-100', header: 'text-emerald-800', activeBg: 'bg-emerald-200', activeBorder: 'border-emerald-600', hover: 'hover:bg-emerald-200/70' },
+  cyan: { bg: 'bg-cyan-100', header: 'text-cyan-800', activeBg: 'bg-cyan-200', activeBorder: 'border-cyan-600', hover: 'hover:bg-cyan-200/70' },
+  indigo: { bg: 'bg-indigo-100', header: 'text-indigo-800', activeBg: 'bg-indigo-200', activeBorder: 'border-indigo-600', hover: 'hover:bg-indigo-200/70' },
+  fuchsia: { bg: 'bg-fuchsia-100', header: 'text-fuchsia-800', activeBg: 'bg-fuchsia-200', activeBorder: 'border-fuchsia-600', hover: 'hover:bg-fuchsia-200/70' },
+  rose: { bg: 'bg-rose-100', header: 'text-rose-800', activeBg: 'bg-rose-200', activeBorder: 'border-rose-600', hover: 'hover:bg-rose-200/70' },
+};
+
+/** Group label -> hue. Shared by every role's nav so colours never disagree. */
+const GROUP_TINTS = {
+  Menu: 'amber',
+  Ledgers: 'rose',
+  Operations: 'cyan',
+  Inventory: 'lime',
+  Records: 'lime',
+  Finance: 'indigo',
+  'Cash & Credit': 'indigo',
+  HRM: 'fuchsia',
+  Accounting: 'emerald',
 };
 
 export default function AdminLayout({ children }) {
@@ -80,17 +110,22 @@ export default function AdminLayout({ children }) {
   const navScrollRef = useRef(null);
   const navScrollRestoredRef = useRef(false);
 
-  // Resolve auth + nav prefs before paint when possible (avoids spinner flash
-  // without disagreeing with the server HTML).
+  /*
+   * Resolve auth + nav prefs before paint (avoids a spinner flash without
+   * disagreeing with the server HTML).
+   *
+   * This one keeps its setState-in-effect deliberately. Lazy useState() was
+   * tried here and caused a hydration mismatch — see the note on the `loading`
+   * declaration above, which exists because of that bug. useSyncExternalStore
+   * would be mismatch-free but its post-hydration update is not guaranteed to
+   * land before paint, which reintroduces the flash this effect removes.
+   * useLayoutEffect is the tool that satisfies both constraints.
+   */
   useLayoutEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- deliberate: see comment above */
     setOpenGroups(readNavGroupsSync());
     if (readPanelAuthSync()) setLoading(false);
-  }, []);
-
-  // Restore expanded groups once on mount (also covered above; keep for safety).
-  useEffect(() => {
-    const saved = readNavGroupsSync();
-    if (Object.keys(saved).length) setOpenGroups(saved);
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
 
   const toggleGroup = (label) => {
@@ -128,14 +163,30 @@ export default function AdminLayout({ children }) {
     };
     apply();
     mq.addEventListener('change', apply);
-    const token = localStorage.getItem('pos_token');
-    const user = JSON.parse(localStorage.getItem('pos_user') || '{}');
-    const roleAllowed = isCashierPanel
-      ? ['admin', 'cashier'].includes(user.role)
-      : user.role === 'admin';
-    if (!token || !roleAllowed) router.push('/login');
-    else setLoading(false);
-    return () => mq.removeEventListener('change', apply);
+
+    /*
+     * Auth gate. Deferred into a microtask rather than run synchronously in the
+     * effect body: it either redirects or clears the spinner, and neither is
+     * state derived from props, so there is nothing to compute during render.
+     * `cancelled` stops a redirect firing after the layout has unmounted.
+     */
+    let cancelled = false;
+    Promise.resolve().then(() => {
+      if (cancelled) return;
+      const token = localStorage.getItem('pos_token');
+      let user = {};
+      try { user = JSON.parse(localStorage.getItem('pos_user') || '{}'); } catch { user = {}; }
+      const roleAllowed = isCashierPanel
+        ? ['admin', 'cashier'].includes(user.role)
+        : user.role === 'admin';
+      if (!token || !roleAllowed) router.push('/login');
+      else setLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+      mq.removeEventListener('change', apply);
+    };
   }, [router, isCashierPanel]);
 
   useEffect(() => {
@@ -166,13 +217,20 @@ export default function AdminLayout({ children }) {
   // When entering POS, force-collapse (don't overwrite user's saved preference).
   // When leaving POS, restore the saved preference.
   useEffect(() => {
-    if (!isDesktop) return;
-    if (isPosRoute) {
-      setSidebarOpen(false);
-    } else {
+    if (!isDesktop) return undefined;
+    // Deferred out of the effect body: this reacts to a route change, it does
+    // not derive render output, so it does not belong in the render pass.
+    let cancelled = false;
+    Promise.resolve().then(() => {
+      if (cancelled) return;
+      if (isPosRoute) {
+        setSidebarOpen(false);
+        return;
+      }
       const saved = localStorage.getItem('admin_sidebar_open');
       setSidebarOpen(saved !== null ? saved === 'true' : true);
-    }
+    });
+    return () => { cancelled = true; };
   }, [isPosRoute, isDesktop]);
 
   useEffect(() => {
@@ -261,18 +319,37 @@ export default function AdminLayout({ children }) {
 
   // Delay backdrop so the opening tap does not immediately close the menu
   useEffect(() => {
-    if (sidebarOpen && !isDesktop) {
-      openLockRef.current = true;
-      setBackdropReady(false);
-      const t = setTimeout(() => {
-        setBackdropReady(true);
-        openLockRef.current = false;
-      }, 180);
-      return () => clearTimeout(t);
+    /*
+     * The backdrop starts hidden every time this runs, so `false` is simply the
+     * value for the current inputs rather than something to set from an effect
+     * — it is derived below with useMemo-free arithmetic and only the delayed
+     * `true` needs a timer. That removes the synchronous setState that used to
+     * queue a second render on every sidebar toggle.
+     */
+    if (!(sidebarOpen && !isDesktop)) {
+      openLockRef.current = false;
+      return undefined;
     }
-    setBackdropReady(false);
-    openLockRef.current = false;
+    openLockRef.current = true;
+    const t = setTimeout(() => {
+      setBackdropReady(true);
+      openLockRef.current = false;
+    }, 180);
+    // Reset on cleanup, so the next open gets the full 180ms delay again.
+    // (Deriving `false` without this left the flag true after a close, which
+    // made the backdrop live immediately on the following open — the exact tap
+    // race the delay exists to prevent.)
+    return () => {
+      clearTimeout(t);
+      setBackdropReady(false);
+      openLockRef.current = false;
+    };
   }, [sidebarOpen, isDesktop]);
+
+  // `backdropReady` only ever means "the open animation has finished". While the
+  // sidebar is closed, or on desktop, it is false by definition — derived here
+  // instead of pushed in by the effect above.
+  const backdropVisible = sidebarOpen && !isDesktop && backdropReady;
 
   const openSidebar = useCallback(() => {
     setSidebarOpen(true);
@@ -362,7 +439,7 @@ export default function AdminLayout({ children }) {
     },
     {
       label: 'Operations',
-      tint: 'sky',
+      tint: 'cyan',
       items: [
         { icon: LayoutGrid, label: 'Tables', href: '/admin/tables', color: 'text-cyan-600' },
         { icon: ReceiptText, label: 'Bills', href: '/admin/bills', color: 'text-emerald-600' },
@@ -381,7 +458,7 @@ export default function AdminLayout({ children }) {
     { icon: Receipt, label: 'Supplier Ledger', href: '/admin/accounts-payable', color: 'text-orange-700' },
     {
       label: 'Inventory',
-      tint: 'purple',
+      tint: 'lime',
       items: [
         { icon: Gauge, label: 'Inventory Report', href: '/admin/inventory/dashboard', color: 'text-indigo-700' },
         { icon: Warehouse, label: 'Inventory', href: '/admin/inventory', color: 'text-indigo-600' },
@@ -394,7 +471,7 @@ export default function AdminLayout({ children }) {
     },
     {
       label: 'Finance',
-      tint: 'emerald',
+      tint: 'indigo',
       items: [
         { icon: Wallet, label: 'Expenses', href: '/admin/expenses', color: 'text-emerald-600' },
         { icon: PiggyBank, label: 'Savings & Deposits', href: '/admin/savings', color: 'text-sky-700' },
@@ -404,7 +481,7 @@ export default function AdminLayout({ children }) {
     },
     {
       label: 'Accounting',
-      tint: 'rose',
+      tint: 'emerald',
       items: [
         { icon: CalendarClock, label: 'Opening & Closing', href: '/admin/business-days', color: 'text-emerald-700' },
         { icon: Gauge, label: 'Finance Dashboard', href: '/admin/finance-dashboard', color: 'text-gray-900' },
@@ -422,7 +499,7 @@ export default function AdminLayout({ children }) {
     },
     {
       label: 'HRM',
-      tint: 'blue',
+      tint: 'fuchsia',
       items: [
         { icon: Building2, label: 'Departments', href: '/admin/hrm/departments', color: 'text-pink-600' },
         { icon: Contact, label: 'Designations', href: '/admin/hrm/designations', color: 'text-pink-600' },
@@ -454,7 +531,7 @@ export default function AdminLayout({ children }) {
     },
     {
       label: 'Ledgers',
-      tint: 'indigo',
+      tint: 'rose',
       items: [
         { icon: Receipt, label: 'Customer Ledger', href: '/cashier/accounts-receivable', color: 'text-teal-700', requiredPermission: 'customer_ledger.access' },
         { icon: Receipt, label: 'Supplier Ledger', href: '/cashier/accounts-payable', color: 'text-orange-700', requiredPermission: 'supplier_ledger.access' },
@@ -462,7 +539,7 @@ export default function AdminLayout({ children }) {
     },
     {
       label: 'Operations',
-      tint: 'sky',
+      tint: 'cyan',
       items: [
         { icon: BellRing, label: 'Waiter Calls', href: '/cashier/waiter-requests', color: 'text-amber-700', badge: waiterCallsBadge, requiredPermission: 'waiter_calls.access' },
         { icon: Inbox, label: 'Online Orders', href: '/cashier/online-orders', color: 'text-amber-600', badge: ordersBadge, requiredPermission: 'online_orders.access' },
@@ -475,7 +552,7 @@ export default function AdminLayout({ children }) {
     },
     {
       label: 'Records',
-      tint: 'purple',
+      tint: 'lime',
       items: [
         { icon: Users, label: 'Customers', href: '/cashier/customers', color: 'text-pink-600', requiredPermission: 'customers.access' },
         { icon: Gauge, label: 'Inventory Dashboard', href: '/cashier/inventory/dashboard', color: 'text-indigo-700', requiredPermission: 'inventory.dashboard.view' },
@@ -490,7 +567,7 @@ export default function AdminLayout({ children }) {
     },
     {
       label: 'Cash & Credit',
-      tint: 'emerald',
+      tint: 'indigo',
       items: [
         { icon: Wallet, label: 'Expenses', href: '/cashier/expenses', color: 'text-emerald-600', requiredPermission: 'expenses.manage' },
         { icon: PiggyBank, label: 'Savings & Deposits', href: '/cashier/savings', color: 'text-sky-700', requiredPermission: 'savings.manage' },
@@ -501,7 +578,7 @@ export default function AdminLayout({ children }) {
     },
     {
       label: 'HRM',
-      tint: 'blue',
+      tint: 'fuchsia',
       items: [
         { icon: Building2, label: 'Departments', href: '/cashier/hrm/departments', color: 'text-pink-600', requiredPermission: 'hrm.departments.manage' },
         { icon: Contact, label: 'Designations', href: '/cashier/hrm/designations', color: 'text-pink-600', requiredPermission: 'hrm.designations.manage' },
@@ -511,7 +588,7 @@ export default function AdminLayout({ children }) {
     },
     {
       label: 'Accounting',
-      tint: 'rose',
+      tint: 'emerald',
       items: [
         { icon: Gauge, label: 'Finance Dashboard', href: '/cashier/finance-dashboard', color: 'text-gray-900', requiredPermission: 'finance_dashboard.access' },
         { icon: BookOpen, label: 'Chart of Accounts', href: '/cashier/chart-of-accounts', color: 'text-indigo-600', requiredPermission: 'chart_of_accounts.access' },
@@ -632,7 +709,7 @@ export default function AdminLayout({ children }) {
         <div className="h-12 w-12" aria-hidden />
       </div>
 
-      {backdropReady && sidebarOpen && !isDesktop && (
+      {backdropVisible && (
         <button
           type="button"
           aria-label="Close menu"

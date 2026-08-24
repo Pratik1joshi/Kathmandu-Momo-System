@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireAuth, handleRouteError } from '@/lib/api-guard.js';
 import Database from '@/lib/db/index.js';
-import { deductStockForItems, restoreStockForItems, autoLinkBeverageStock } from '@/lib/stock.js';
+import { deductStockForItems, restoreStockForItems, ensureStockSchema } from '@/lib/stock.js';
 import { getOrderWorkspace, logPosEvent, ensureKotProSchema } from '@/lib/kot-service.js';
 
 async function loadOpenOrder(db, orderId) {
@@ -48,7 +48,7 @@ export async function POST(request, context) {
 
     const db = Database.getInstance();
     await ensureKotProSchema(db);
-    await autoLinkBeverageStock(db);
+    await ensureStockSchema(db);
 
     const resolved = [];
     const result = await db.transaction(async (tx) => {

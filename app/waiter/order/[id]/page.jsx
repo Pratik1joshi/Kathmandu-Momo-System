@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import { useRouter, useParams } from 'next/navigation'
 import {
-  ArrowLeft, Plus, RefreshCw, Send, CreditCard, X, ChefHat, Printer, Ban, Receipt, Users, ArrowLeftRight,
+  ArrowLeft, Plus, RefreshCw, Send, CreditCard, X, ChefHat, Printer, Ban, Receipt, Users, ArrowLeftRight, QrCode,
 } from 'lucide-react'
 import { useToast } from '@/components/ui/toast'
 import { friendlyMessage, friendlyFromError } from '@/lib/friendly-message'
@@ -14,6 +14,7 @@ import { formatElapsed } from '@/lib/restaurant-status'
 import { formatNepalClock } from '@/lib/time-utils'
 import { printKot, printProforma } from '@/lib/pos-print.js'
 import { tableBoardState, computeTableStatusCounts, DashboardTableCard } from '@/components/tables/table-room-board'
+import PayQrModal from '@/components/waiter/pay-qr-modal'
 
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 
@@ -84,6 +85,7 @@ export default function WaiterOrderPage() {
   const [confirmBill, setConfirmBill] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [cancelSentItem, setCancelSentItem] = useState(null)
+  const [showPayQr, setShowPayQr] = useState(false)
   const [showTablePicker, setShowTablePicker] = useState(false)
   const [pickerTables, setPickerTables] = useState([])
   const [pickerStatusFilter, setPickerStatusFilter] = useState('all')
@@ -367,6 +369,14 @@ export default function WaiterOrderPage() {
               <ArrowLeftRight className="w-4 h-4 text-slate-700" />
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => setShowPayQr(true)}
+            className="h-10 w-10 rounded-xl bg-slate-100 flex items-center justify-center"
+            title="Show payment QR"
+          >
+            <QrCode className="w-4 h-4" />
+          </button>
           <button type="button" onClick={load} className="h-10 w-10 rounded-xl bg-slate-100 flex items-center justify-center">
             <RefreshCw className="w-4 h-4 text-slate-700" />
           </button>
@@ -601,6 +611,27 @@ export default function WaiterOrderPage() {
           onConfirm={confirmCancelSentItem}
         />
       )}
+
+      {/*
+        * Read-only payment QR: the same codes the admin uploaded in Settings,
+        * shown big enough to scan across a table. It records NOTHING — the
+        * cashier still settles the bill and verifies the transfer afterwards.
+        *
+        * The amount above the code is the bill's grand total once a bill
+        * exists, and the running item total before that. A static merchant QR
+        * carries no amount, so the guest types it in — which is exactly why it
+        * has to be readable at a glance.
+        */}
+      <PayQrModal
+        open={showPayQr}
+        onClose={() => setShowPayQr(false)}
+        codes={[
+          settings.esewa_qr_image && { key: 'esewa', label: 'eSewa / Fonepay', image: settings.esewa_qr_image },
+          settings.bank_qr_image && { key: 'bank', label: 'Bank', image: settings.bank_qr_image },
+        ].filter(Boolean)}
+        restaurantName={settings.restaurant_name || ''}
+        amountDue={bill ? Number(bill.grand_total || 0) : total}
+      />
 
       {showTablePicker && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">

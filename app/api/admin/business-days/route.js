@@ -23,7 +23,20 @@ export async function GET(request) {
     }
     const context = await businessDayContext(db);
     if (view === 'closing' && context.current) {
-      return NextResponse.json({ ...context, summary: await businessDaySummary(db, context.current) });
+      // The audit rows come along so the open-day screen can show the same
+      // "Notes & closing history" panel the closing-report dialog shows.
+      const [summary, audit] = await Promise.all([
+        businessDaySummary(db, context.current),
+        db.all(
+          `SELECT a.*, u.full_name AS actor_full_name
+             FROM business_day_audit a
+             LEFT JOIN users u ON u.id = a.actor_id
+            WHERE a.business_day_id = ?
+            ORDER BY a.created_at DESC, a.id DESC`,
+          [context.current.id]
+        ).catch(() => []),
+      ]);
+      return NextResponse.json({ ...context, summary, audit });
     }
     return NextResponse.json(context);
   } catch (error) {

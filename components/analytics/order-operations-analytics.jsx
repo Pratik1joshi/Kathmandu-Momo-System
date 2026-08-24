@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
-  AlertTriangle, Banknote, ChefHat, ClipboardList, Clock3, FileClock, ListChecks,
+  AlertTriangle, Banknote, ChefHat, ClipboardList, Clock3, FileClock, History, ListChecks,
   ReceiptText, Search, Tags, Users, WalletCards,
 } from 'lucide-react';
 import { BarChart, ChartCard, RankBars } from '@/components/admin/report-kit';
@@ -18,6 +18,193 @@ const NAV = [
   ['billing', 'Bills & Money', WalletCards],
   ['audit', 'Staff & Audit', FileClock],
 ];
+
+/**
+ * Merge every reversal, rewrite and giveaway into one time-ordered list.
+ *
+ * Six record types answer the same question — an order cancelled, a kitchen
+ * ticket cancelled, a line removed, a bill voided or refunded, a bill reopened
+ * and re-billed, a discount given — and each lived on a different tab. Read
+ * together they are the shift's exception log: the actions that move money
+ * without selling anything.
+ *
+ * This reports actions and values. It does not label anyone's behaviour as
+ * suspicious — the reader decides what a pattern means, with the reason and the
+ * staff member beside every row.
+ *
+ * `value` is the money impact as a POSITIVE magnitude, with the kind naming the
+ * direction, so the column totals without sign errors.
+ */
+function buildChangeLog(report, related) {
+  const rows = [];
+  for (const row of related(report.cancellations)) {
+    rows.push({
+      id: `order-${row.id}`, at: row.cancelledAt || row.createdAt, kind: 'Order cancelled', tone: 'negative',
+      document: row.orderNumber, orderId: row.id, where: `${row.table} \u00b7 ${row.orderType}`,
+      value: Math.abs(Number(row.originalValue || 0)),
+      detail: `${row.quantity} item(s), ${row.kotCount} KOT${row.kitchenStarted ? ' \u00b7 prep started' : ''}`,
+      reason: row.reason, actor: row.cancelledBy, actorRole: row.cancelledByRole,
+    });
+  }
+  for (const row of related(report.kots).filter((k) => k.lifecycle === 'cancelled' || k.status === 'cancelled')) {
+    rows.push({
+      id: `kot-${row.id}`, at: row.cancelledAt || row.printedAt, kind: 'KOT cancelled', tone: 'negative',
+      document: row.kotNumber, orderId: row.orderId,
+      where: row.table && row.table !== '\u2014' ? `Table ${row.table}` : (row.orderType || '\u2014'),
+      value: Math.abs(Number(row.value || 0)),
+      detail: (row.items || []).map((item) => `${item.quantity}\u00d7 ${item.name}`).join(', ') || 'No snapshot',
+      reason: row.reason, actor: row.cancelledBy, actorRole: row.cancelledByRole,
+    });
+  }
+  for (const row of related(report.itemChanges).filter((i) => ['item_removed', 'kot_item_cancelled'].includes(i.action))) {
+    rows.push({
+      id: `item-${row.id}`, at: row.createdAt, kind: 'Item removed', tone: 'negative',
+      document: row.orderNumber, orderId: row.orderId, where: '\u2014',
+      value: Math.abs(Number(row.valueDifference || 0)),
+      detail: `${row.quantity}\u00d7 ${row.item}`, reason: row.reason, actor: row.actor, actorRole: row.actorRole,
+    });
+  }
+  for (const row of related(report.corrections)) {
+    rows.push({
+      id: `corr-${row.id}`, at: row.createdAt, kind: row.type === 'void' ? 'Bill voided' : 'Refund', tone: 'negative',
+      document: row.billNumber, orderId: row.orderId, where: row.orderNumber,
+      value: Math.abs(Number(row.amount || 0)),
+      detail: row.originalMethods?.join(' + ') || 'Method not recorded',
+      reason: row.reason, actor: row.actor, actorRole: row.actorRole,
+    });
+  }
+  for (const row of related(report.revisions)) {
+    const delta = Number(row.delta || 0);
+    rows.push({
+      id: `rev-${row.id}`, at: row.createdAt, kind: 'Bill reopened / changed', tone: delta < 0 ? 'negative' : 'warning',
+      document: row.billNumber, orderId: row.orderId, where: row.orderNumber, value: Math.abs(delta),
+      detail: `${money(row.originalTotal)} \u2192 ${money(row.newTotal)}`,
+      reason: row.reason, actor: row.createdBy, actorRole: '',
+    });
+  }
+  for (const row of related(report.discounts)) {
+    rows.push({
+      id: `disc-${row.id}`, at: row.createdAt, kind: 'Discount given', tone: 'warning',
+      document: row.billNumber, orderId: row.orderId,
+      where: row.table && row.table !== '\u2014' ? `Table ${row.table}` : (row.orderType || row.orderNumber),
+      value: Math.abs(Number(row.discount || 0)),
+      detail: `${money(row.gross)} \u2192 ${money(row.netItemValue ?? row.gross - row.discount)} (${percent(row.discountPercent)})`,
+      reason: row.discountReason, actor: row.cashier, actorRole: row.cashierRole,
+    });
+  }
+  return rows.sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+}
+
+const CHANGE_KINDS = [
+  'Order cancelled', 'KOT cancelled', 'Item removed',
+  'Bill voided', 'Refund', 'Bill reopened / changed', 'Discount given',
+];
+
+export /** Metric cards double as filters: the count and the way to see it are one control. */
+const CHANGE_GROUPS = [
+  ['cancellations', 'Cancellations', ['Order cancelled', 'KOT cancelled', 'Item removed']],
+  ['voids', 'Voids & refunds', ['Bill voided', 'Refund']],
+  ['rebilled', 'Re-billed', ['Bill reopened / changed']],
+  ['discounts', 'Discounts given', ['Discount given']],
+];
+
+export function AllChanges({ report, related = (rows) => rows || [] }) {
+  const [kind, setKind] = useState('');
+  const [group, setGroup] = useState('');
+  const [search, setSearch] = useState('');
+  const rows = buildChangeLog(report, related);
+  const groupKinds = CHANGE_GROUPS.find(([id]) => id === group)?.[2] || null;
+  const query = search.trim().toLowerCase();
+  const shown = rows.filter((row) => {
+    if (kind && row.kind !== kind) return false;
+    if (groupKinds && !groupKinds.includes(row.kind)) return false;
+    if (!query) return true;
+    return `${row.kind} ${row.document || ''} ${row.where || ''} ${row.detail || ''} ${row.reason || ''} ${row.actor || ''}`
+      .toLowerCase().includes(query);
+  });
+  const totalValue = shown.reduce((sum, row) => sum + row.value, 0);
+  const countOf = (name) => rows.filter((row) => row.kind === name).length;
+  const groupCount = (kinds) => rows.filter((row) => kinds.includes(row.kind)).length;
+  const groupValue = (kinds) => rows.filter((row) => kinds.includes(row.kind)).reduce((sum, row) => sum + row.value, 0);
+  const selectGroup = (id) => { setGroup((current) => (current === id ? '' : id)); setKind(''); };
+  return <>
+    <DashboardSection>
+      <SectionHeading
+        icon={History} tone="rose" eyebrow="Exception log"
+        title="Everything cancelled, changed, refunded or discounted"
+        description="One chronological list across orders, kitchen tickets, items and bills. Value is the money impact of each action; reason and staff appear wherever the application persisted them." />
+      <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-6">
+        <button type="button" onClick={() => { setGroup(''); setKind(''); }}
+          className={`rounded-xl border p-4 text-left transition-colors ${group || kind ? 'border-gray-200 bg-gray-50 hover:border-gray-300' : 'border-gray-950 bg-white'}`}>
+          <p className="text-xs text-gray-500">All changes</p>
+          <p className="mt-1 text-lg font-semibold tabular-nums text-gray-950">{rows.length}</p>
+        </button>
+        <MiniMetric label={kind || group ? 'Value shown' : 'Value affected'} value={money(totalValue)} negative />
+        {CHANGE_GROUPS.map(([id, label, kinds]) => (
+          <button key={id} type="button" onClick={() => selectGroup(id)}
+            className={`rounded-xl border p-4 text-left transition-colors ${group === id ? 'border-gray-950 bg-white' : 'border-gray-200 bg-gray-50 hover:border-gray-300'}`}>
+            <p className="text-xs text-gray-500">{label}</p>
+            <p className="mt-1 text-lg font-semibold tabular-nums text-gray-950">{groupCount(kinds)}</p>
+            <p className="mt-0.5 text-xs tabular-nums text-red-700">{money(groupValue(kinds))}</p>
+          </button>
+        ))}
+      </div>
+      <label className="relative mt-4 block">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+        <input
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Search bill, order, KOT, table, item, reason or staff…"
+          className="h-10 w-full rounded-lg border border-gray-300 bg-white pl-9 pr-3 text-sm"
+        />
+      </label>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {['', ...CHANGE_KINDS].map((name) => (
+          <button
+            key={name || 'all'} type="button" onClick={() => { setKind(name); setGroup(''); }}
+            className={`h-9 rounded-full border px-3 text-sm font-medium transition-colors ${
+              kind === name ? 'border-gray-950 bg-gray-950 text-white' : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
+            }`}>
+            {name || 'All'} ({name ? countOf(name) : rows.length})
+          </button>
+        ))}
+      </div>
+    </DashboardSection>
+    <DashboardSection>
+      {shown.length === 0 ? (
+        <p className="py-12 text-center text-sm text-gray-400">
+          {rows.length
+            ? 'No change matches this filter or search.'
+            : 'Nothing was cancelled, voided, refunded, re-billed or discounted in this period.'}
+        </p>
+      ) : (
+        <ScrollTable>
+          <table className="w-full min-w-[1240px] text-left text-sm">
+            <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-400">
+              <tr><Th>Time</Th><Th>What happened</Th><Th>Document</Th><Th>Where</Th><Th right>Value</Th><Th>Detail</Th><Th>Reason</Th><Th>Staff</Th></tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {shown.map((row) => (
+                <tr key={row.id}>
+                  <Td><NepalTime value={row.at} /></Td>
+                  <Td><StatusPill tone={row.tone}>{row.kind}</StatusPill></Td>
+                  <Td>{row.orderId
+                    ? <Link href={`/admin/orders/${row.orderId}`} className="font-semibold text-gray-900 hover:text-blue-700 hover:underline">{row.document || '\u2014'}</Link>
+                    : <span className="font-semibold">{row.document || '\u2014'}</span>}</Td>
+                  <Td>{row.where}</Td>
+                  <Td right><span className="font-semibold text-red-700">{money(row.value)}</span></Td>
+                  <Td><span className="line-clamp-2 max-w-[280px] text-xs text-gray-500">{row.detail}</span></Td>
+                  <Td>{row.reason || 'No reason recorded'}</Td>
+                  <Td>{row.actor || '\u2014'}{row.actorRole ? <p className="text-xs text-gray-400">{row.actorRole}</p> : null}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </ScrollTable>
+      )}
+    </DashboardSection>
+  </>;
+}
 
 const ACTION_LABELS = {
   order_created: 'Order created', item_added: 'Item added', item_edited: 'Item edited', item_removed: 'Item removed',
@@ -82,6 +269,11 @@ function Overview({ report, live, drill }) {
     ['Orders Created', s.ordersCreated, 'number', 'orders', ''], ['Completed Orders', s.completedOrders, 'number', 'orders', 'completed'], ['Open Orders', s.openOrders, 'number', 'orders', 'pending'], ['Cancelled Orders', s.cancelledOrders, 'number', 'cancellations', 'cancelled'],
     ['Total Order Value', s.totalOrderValue, 'currency', 'orders', ''], ['Completed Sales', s.completedSalesValue, 'currency', 'billing', ''], ['Average Order', s.averageOrderValue, 'currency', 'orders', ''],
     ['Dine-in', s.dineIn, 'number', 'orders', ''], ['Takeaway', s.takeaway, 'number', 'orders', ''], ['Delivery', s.delivery, 'number', 'orders', ''],
+    // Collections by medium, beside the order counts: what was actually taken,
+    // split the way the drawer is reconciled. QR is every digital medium; the
+    // per-provider split belongs to the payment breakdown chart, not a headline.
+    ['Cash Sale', s.cashSale, 'currency', 'billing', ''], ['QR / Digital Sale', s.qrSale, 'currency', 'billing', ''], ['Credit Sale', s.creditSale, 'currency', 'billing', ''],
+    ['Service / Extra Charge', s.serviceCharge, 'currency', 'billing', ''],
     ['Pending Payments', s.pendingPayments, 'number', 'billing', ''], ['Unpaid Bills', s.unpaidBills, 'number', 'billing', ''],
     ['Discounted Bills', s.discountedBills, 'number', 'billing', ''], ['Discount Given', s.discountAmount, 'currency', 'billing', ''],
     ['Voided Bills', s.voidedBills, 'number', 'billing', ''], ['Void Value', s.voidValue, 'currency', 'billing', ''], ['Refunds', s.refunds, 'number', 'billing', ''], ['Refund Value', s.refundValue, 'currency', 'billing', ''],
@@ -89,7 +281,7 @@ function Overview({ report, live, drill }) {
   const hourRows = (report.charts?.byHour || []).filter((row) => row.value > 0);
   const typeRows = (report.charts?.byType || []).map((row) => ({ label: row.type, value: row.orders, meta: `${money(row.sales)} · ${percent(row.cancellationRate)} cancelled` }));
   return <>
-    <DashboardSection><SectionHeading eyebrow="Period summary" title="Everything that happened to orders" description="Click a metric to open the relevant detail section." /><div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">{cards.filter(([, value], index) => index < 12 || Number(value) > 0).map(([label, value, format, target, nextStatus]) => <button key={label} type="button" onClick={() => drill(target, nextStatus)} className="rounded-xl border border-gray-200 bg-gray-50 p-3.5 text-left transition-[border-color,transform] duration-150 ease-out hover:border-gray-300 active:scale-[0.98]"><p className="text-xs text-gray-500">{label}</p><p className={`mt-1 text-lg font-semibold tabular-nums ${/Void|Refund|Discount/.test(label) && Number(value) > 0 ? 'text-red-700' : 'text-gray-950'}`}>{format === 'currency' ? money(value) : Number(value || 0).toLocaleString()}</p></button>)}</div></DashboardSection>
+    <DashboardSection><SectionHeading eyebrow="Period summary" title="Everything that happened to orders" description="Click a metric to open the relevant detail section." /><div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">{cards.filter(([, value], index) => index < 16 || Number(value) > 0).map(([label, value, format, target, nextStatus]) => <button key={label} type="button" onClick={() => drill(target, nextStatus)} className="rounded-xl border border-gray-200 bg-gray-50 p-3.5 text-left transition-[border-color,transform] duration-150 ease-out hover:border-gray-300 active:scale-[0.98]"><p className="text-xs text-gray-500">{label}</p><p className={`mt-1 text-lg font-semibold tabular-nums ${/Void|Refund|Discount/.test(label) && Number(value) > 0 ? 'text-red-700' : 'text-gray-950'}`}>{format === 'currency' ? money(value) : Number(value || 0).toLocaleString()}</p></button>)}</div></DashboardSection>
     <DashboardSection><SectionHeading icon={Clock3} tone="blue" eyebrow="Lifecycle" title="Order → kitchen → billing → payment" description="These are independent persisted states; later stages never overwrite the earlier counts." /><Lifecycle values={report.lifecycle} /><div className="mt-6 grid gap-5 xl:grid-cols-2"><ChartCard title="Orders by Nepal hour" isEmpty={!hourRows.length} empty="No orders in this period."><BarChart data={hourRows} color="blue" format="number" height={240} /></ChartCard><ChartCard title="Order type performance" isEmpty={!typeRows.length} empty="No order types in this period."><RankBars data={typeRows} color="slate" format="number" /></ChartCard></div></DashboardSection>
     <DashboardSection><SectionHeading icon={ChefHat} tone="orange" eyebrow="Kitchen data quality" title="Prep timing that can be trusted" description={report.kitchenQuality?.note} /><KitchenQuality data={report.kitchenQuality} live={live} /><ReasonGrid reasons={report.reasons} compact /></DashboardSection>
   </>;
@@ -134,6 +326,31 @@ function Cancellations({ report, related }) {
   </>;
 }
 
+/**
+ * Bill / order cell for the billing tables.
+ *
+ * The bill number links to the ORDER detail page, not to a bills search: what
+ * someone checking a discount wants is the order it was given on — the items,
+ * the table and the audit trail — and /admin/bills only re-filters a list they
+ * then have to click through. Bills raised without an order row (none in the
+ * POS flow, but the column is nullable) fall back to the bills search so the
+ * link is never dead.
+ */
+function BillOrderCell({ row }) {
+  const label = row.billNumber || `Bill ${row.billId ?? ''}`.trim();
+  const href = row.orderId
+    ? `/admin/orders/${row.orderId}`
+    : `/admin/bills?search=${encodeURIComponent(row.billNumber || '')}`;
+  return (
+    <Td>
+      <Link href={href} className="font-semibold text-gray-900 hover:text-blue-700 hover:underline" title={row.orderId ? 'Open order details' : 'Find this bill'}>
+        {label}
+      </Link>
+      <p className="text-xs text-gray-400">{row.orderNumber || 'No order linked'}</p>
+    </Td>
+  );
+}
+
 function BillsAndMoney({ report, related }) {
   const discounts = related(report.discounts);
   const corrections = related(report.corrections);
@@ -144,7 +361,7 @@ function BillsAndMoney({ report, related }) {
   const discountValue = discounts.reduce((sum, row) => sum + Number(row.discount || 0), 0);
   return <>
     <DashboardSection><SectionHeading icon={Banknote} tone="emerald" eyebrow="Billing control" title="Discounts, voids, refunds, reopens and payment state" description="Voids and refunds are separate financial actions. Payment allocations remain separate from bill status." /><div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-6"><MiniMetric label="Discounted bills" value={discounts.length} /><MiniMetric label="Discount amount" value={money(discountValue)} negative /><MiniMetric label="Voided bills" value={voids.length} /><MiniMetric label="Void value" value={money(voids.reduce((sum, row) => sum + row.amount, 0))} negative /><MiniMetric label="Refunds" value={refunds.length} /><MiniMetric label="Refund value" value={money(refunds.reduce((sum, row) => sum + row.amount, 0))} negative /></div><div className="mt-6 grid gap-5 xl:grid-cols-2"><ChartCard title="Payment methods" isEmpty={!report.payments?.length} empty="No payments in this period."><RankBars data={(report.payments || []).map((row) => ({ label: row.method, value: row.amount, meta: `${row.transactions} transactions` }))} color="emerald" format="currency" /></ChartCard><ChartCard title="Discounts by cashier context" hint="The application does not persist a separate discount approver" isEmpty={!report.staff?.some((row) => row.discountValue > 0)} empty="No discounts in this period."><RankBars data={(report.staff || []).filter((row) => row.discountValue > 0).map((row) => ({ label: row.name, value: row.discountValue, meta: `${row.discounts} bills` }))} color="red" format="currency" /></ChartCard></div></DashboardSection>
-    <DashboardSection><SectionHeading icon={Tags} tone="amber" title="Discounted bills" description="Bill cashier is contextual attribution only; the schema has no separate applied-by or approved-by discount field." /><ScrollTable><table className="w-full min-w-[1160px] text-left text-sm"><thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-400"><tr><Th>Time</Th><Th>Bill / order</Th><Th right>Gross</Th><Th right>Discount</Th><Th right>%</Th><Th right>Final</Th><Th>Reason</Th><Th>Cashier context</Th></tr></thead><tbody className="divide-y divide-gray-100">{discounts.map((row) => <tr key={row.id}><Td><NepalTime value={row.createdAt} /></Td><Td><Link href={`/admin/bills?search=${encodeURIComponent(row.billNumber)}`} className="font-semibold hover:underline">{row.billNumber}</Link><p className="text-xs text-gray-400">{row.orderNumber}</p></Td><Td right>{money(row.gross)}</Td><Td right><span className="font-semibold text-red-700">{money(row.discount)}</span></Td><Td right>{percent(row.discountPercent)}</Td><Td right>{money(row.total)}</Td><Td>{row.discountReason}</Td><Td>{row.cashier}<p className="text-xs text-gray-400">{row.cashierRole}</p></Td></tr>)}</tbody></table></ScrollTable></DashboardSection>
+    <DashboardSection><SectionHeading icon={Tags} tone="amber" title="Discounted bills" description="Bill cashier is contextual attribution only; the schema has no separate applied-by or approved-by discount field." /><ScrollTable><table className="w-full min-w-[1280px] text-left text-sm"><thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-400"><tr><Th>Time</Th><Th>Bill / order</Th><Th>Table</Th><Th right>Gross</Th><Th right>Discount</Th><Th right>%</Th><Th right>Final</Th><Th>Reason</Th><Th>Cashier context</Th></tr></thead><tbody className="divide-y divide-gray-100">{discounts.map((row) => <tr key={row.id}><Td><NepalTime value={row.createdAt} /></Td><BillOrderCell row={row} /><Td>{row.table}<p className="text-xs text-gray-400">{row.orderType}</p></Td><Td right>{money(row.gross)}</Td><Td right><span className="font-semibold text-red-700">{money(row.discount)}</span></Td><Td right>{percent(row.discountPercent)}</Td><Td right>{money(row.total)}</Td><Td>{row.discountReason}</Td><Td>{row.cashier}<p className="text-xs text-gray-400">{row.cashierRole}</p></Td></tr>)}</tbody></table></ScrollTable></DashboardSection>
     <DashboardSection><div className="grid gap-7 xl:grid-cols-2"><div><SectionHeading title="Voids & refunds" description="A void reverses the sale; a refund returns money after the sale." /><ScrollTable><table className="w-full min-w-[800px] text-left text-sm"><thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-400"><tr><Th>Time</Th><Th>Action</Th><Th>Bill / order</Th><Th right>Amount</Th><Th>Payment / reason</Th><Th>Staff</Th></tr></thead><tbody className="divide-y divide-gray-100">{corrections.map((row) => <tr key={row.id}><Td><NepalTime value={row.createdAt} /></Td><Td><StatusPill tone="negative">{labelize(row.type)}</StatusPill></Td><Td>{row.billNumber}<p className="text-xs text-gray-400">{row.orderNumber}</p></Td><Td right>{money(row.amount)}</Td><Td>{row.originalMethods.join(' + ') || 'Not recorded'}<p className="text-xs text-gray-500">{row.reason}</p></Td><Td>{row.actor}<p className="text-xs text-gray-400">{row.actorRole}</p></Td></tr>)}</tbody></table></ScrollTable></div><div><SectionHeading title="Reopened bills" description="Original invoice history stays immutable; each change is represented by an audited delta." /><ScrollTable><table className="w-full min-w-[820px] text-left text-sm"><thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-400"><tr><Th>Reopened</Th><Th>Bill / order</Th><Th right>Original</Th><Th right>New</Th><Th right>Difference</Th><Th>Reason / staff</Th></tr></thead><tbody className="divide-y divide-gray-100">{revisions.map((row) => <tr key={row.id}><Td><NepalTime value={row.createdAt} /></Td><Td>{row.billNumber}<p className="text-xs text-gray-400">{row.orderNumber}</p></Td><Td right>{money(row.originalTotal)}</Td><Td right>{money(row.newTotal)}</Td><Td right><span className={row.delta < 0 ? 'font-semibold text-red-700' : row.delta > 0 ? 'font-semibold text-emerald-700' : ''}>{row.delta > 0 ? '+' : ''}{money(row.delta)}</span></Td><Td>{row.reason}<p className="text-xs text-gray-400">{row.createdBy}</p></Td></tr>)}</tbody></table></ScrollTable></div></div></DashboardSection>
     {pending.length > 0 && <DashboardSection><SectionHeading icon={ReceiptText} tone="rose" title="Pending and unpaid bills" description="Bills whose received payment is below the current bill total." /><ScrollTable><table className="w-full min-w-[860px] text-left text-sm"><thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-400"><tr><Th>Bill / order</Th><Th>Status</Th><Th>Methods</Th><Th right>Total</Th><Th right>Paid</Th><Th right>Outstanding</Th></tr></thead><tbody className="divide-y divide-gray-100">{pending.map((row) => <tr key={row.id}><Td>{row.billNumber}<p className="text-xs text-gray-400">{row.orderNumber}</p></Td><Td><StatusPill tone="warning">{row.paymentStatus || row.status}</StatusPill></Td><Td>{row.methods.join(' + ') || 'Not recorded'}</Td><Td right>{money(row.total)}</Td><Td right>{money(row.paid)}</Td><Td right><span className="font-semibold text-red-700">{money(Math.max(row.outstanding, row.total - row.paid))}</span></Td></tr>)}</tbody></table></ScrollTable></DashboardSection>}
   </>;

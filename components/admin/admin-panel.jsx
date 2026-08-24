@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Store, TrendingUp, Users, DollarSign, Plus, Search, Filter, Edit, Trash2, Eye, RefreshCw, Moon, Sun } from 'lucide-react'
 
 export default function AdminPanel() {
@@ -765,11 +765,9 @@ function AllProductsView({ shops }) {
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
 
-  useEffect(() => {
-    fetchAllProducts()
-  }, [shops])
-
-  const fetchAllProducts = async () => {
+  // Memoised and declared before the effect that runs it: as a plain arrow
+  // below, it was read before its own declaration and rebuilt every render.
+  const fetchAllProducts = useCallback(async () => {
     setLoading(true)
     const allProducts = []
     
@@ -787,7 +785,13 @@ function AllProductsView({ shops }) {
     
     setProducts(allProducts)
     setLoading(false)
-  }
+  }, [shops])
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => { if (!cancelled) await fetchAllProducts() })()
+    return () => { cancelled = true }
+  }, [fetchAllProducts])
 
   const filteredProducts = products.filter(p => 
     p.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||

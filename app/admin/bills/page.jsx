@@ -14,6 +14,7 @@ import ReviseSettlementForm from '@/components/billing/revise-settlement-form';
 import { latestReopenChanges, buildChangeIndex } from '@/lib/reopen-diff.js';
 import { useConfirm } from '@/components/ui/confirm';
 import PaginationControls from '@/components/ui/pagination-controls';
+import { useCapabilities } from '@/lib/use-capabilities.js';
 import DateRangeFilter from '@/components/ui/date-range-filter';
 import { compactBillNumber, compactOrderNumber } from '@/lib/document-display.js';
 import { printFinalBill } from '@/lib/pos-print.js';
@@ -113,6 +114,9 @@ export default function BillsPage() {
   const [error, setError] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  // Deleting an order is admin-only by default and toggleable per role from
+  // /admin/permissions. Hidden rather than shown-and-403'd.
+  const { can } = useCapabilities();
   const [deleteReason, setDeleteReason] = useState('');
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [page, setPage] = useState(1);
@@ -272,7 +276,7 @@ export default function BillsPage() {
             <p className="mt-3 text-sm">No bills match these filters.</p>
           </div>
         ) : (
-          <BillTable bills={data.bills} onSelect={openRow} onDeleteActive={(bill) => {
+          <BillTable bills={data.bills} onSelect={openRow} canDelete={can('orders.delete')} onDeleteActive={(bill) => {
             setDeleteTarget(bill);
             setDeleteReason('');
           }} />
@@ -342,8 +346,8 @@ export default function BillsPage() {
   );
 }
 
-function BillTable({ bills, onSelect, onDeleteActive }) {
-  const canDeleteActive = (b) => b.orderId && b.tab === 'active' && b.isOpenOrder;
+function BillTable({ bills, onSelect, onDeleteActive, canDelete = false }) {
+  const canDeleteActive = (b) => canDelete && b.orderId && b.tab === 'active' && b.isOpenOrder;
   return (
     <>
       {/* Desktop table */}

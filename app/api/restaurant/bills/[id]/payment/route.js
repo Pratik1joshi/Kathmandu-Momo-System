@@ -8,7 +8,7 @@ import { completeReservationForOrder } from '@/lib/leads.js';
 import { handleRouteError } from '@/lib/api-guard.js';
 import { logger } from '@/lib/logger.js';
 import { ensureAccountingSchema, postSaleJournal } from '@/lib/accounting.js';
-import { currentBusinessDayId } from '@/lib/business-days.js';
+import { businessDayIdForExistingWork } from '@/lib/business-days.js';
 
 const orderRepo = new OrderRepository();
 const authService = new AuthService();
@@ -94,12 +94,13 @@ export async function POST(request, { params }) {
         err.status = 404;
         throw err;
       }
-      const businessDayId = await currentBusinessDayId(tx, { required: true, allowStale: true });
-      if (Number(order.business_day_id || 0) !== Number(businessDayId)) {
-        const err = new Error('This order does not belong to the current business day.');
-        err.status = 409;
-        throw err;
-      }
+      // Still-live work is CARRIED FORWARD into the currently open business
+      // day rather than rejected: a table opened before the day rolled over
+      // must still be billable. businessDayIdForExistingWork() refuses orders
+      // that are already finished (completed/cancelled) and preserves the
+      // original day in orders.carried_from_business_day_id. The bill itself
+      // is still stamped with the CURRENT day, which is what it returns.
+      const businessDayId = await businessDayIdForExistingWork(tx, 'orders', orderId);
 
       // Enrich with table number if missing
       if (order.table_id && !order.table_number) {

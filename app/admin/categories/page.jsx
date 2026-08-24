@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import AdminLayout from '@/components/admin/admin-layout';
 import { Plus, Edit, Trash2, Save, X, FolderOpen, GripVertical } from 'lucide-react';
 import { useToast } from '@/components/ui/toast';
@@ -22,11 +22,12 @@ export default function CategoriesPage() {
     food_group: DEFAULT_FOOD_GROUP
   });
 
-  useEffect(() => {
-    fetchCategories();
-  }, []);
-
-  const fetchCategories = async () => {
+  /*
+   * Declared before the effect that runs it, and memoised: as a plain arrow
+   * below the effect it was a new identity every render and read before its own
+   * declaration, so the dependency array could never be honest about it.
+   */
+  const fetchCategories = useCallback(async () => {
     try {
       const token = localStorage.getItem('pos_token');
       const response = await fetch('/api/restaurant/menu/categories', {
@@ -42,7 +43,19 @@ export default function CategoriesPage() {
       console.error('Error:', error);
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    // Kicked off inside an async callback, not straight in the effect body, and
+    // guarded so a response arriving after unmount cannot set state on a gone
+    // component. fetchCategories itself stays reusable — the mutation handlers
+    // below call it to refresh.
+    let cancelled = false;
+    (async () => {
+      if (!cancelled) await fetchCategories();
+    })();
+    return () => { cancelled = true; };
+  }, [fetchCategories]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();

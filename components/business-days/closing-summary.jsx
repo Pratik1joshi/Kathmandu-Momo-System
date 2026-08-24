@@ -4,11 +4,10 @@ import React from 'react';
 import Link from 'next/link';
 import { AlertTriangle, Banknote, ChevronDown, ChevronUp, CircleCheck, CreditCard, ReceiptText, Utensils } from 'lucide-react';
 import { financialToneClass } from '@/lib/financial-tone';
+import DenominationTable, { CASH_DENOMINATIONS, emptyDenominationCounts } from '@/components/business-days/denomination-table.jsx';
 
 const amount = (value) => `Rs ${Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const count = (value) => Number(value || 0).toLocaleString('en-IN');
-const CASH_DENOMINATIONS = [1000, 500, 100, 50, 20, 10, 5, 1];
-const emptyDenominationCounts = () => Object.fromEntries(CASH_DENOMINATIONS.map((value) => [value, '']));
 
 function Metric({ label, value, money = true, tone }) {
   return <div className="min-w-0 border-l-2 border-gray-200 pl-3"><p className="text-xs font-medium text-gray-500">{label}</p><p className={`mt-1 truncate text-base font-semibold tabular-nums ${money ? financialToneClass({ label, value, tone }) : 'text-gray-950'}`}>{money ? amount(value) : count(value)}</p></div>;
@@ -81,27 +80,29 @@ export default function ClosingSummary({ summary, countedCash = '', onCountedCas
       </div>
     </Section>
 
-    <section className="border-y-2 border-gray-950 bg-gray-950 px-4 py-6 text-white sm:px-6 lg:px-8">
-      <div className="mb-5 flex items-center gap-2"><Banknote className="h-5 w-5" /><h2 className="text-base font-semibold">Cash reconciliation</h2></div>
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="border border-white/20 bg-white/5 p-5">
-          <p className="text-xs font-semibold uppercase text-gray-400">Expected Cash</p>
-          <p className="mt-2 text-3xl font-bold tabular-nums sm:text-4xl">{amount(expected)}</p>
-          <button type="button" onClick={() => setShowCash((value) => !value)} className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-gray-300 hover:text-white">
-            {showCash ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />} Cash calculation
+    <section className="border-y-2 border-gray-950 bg-gray-950 px-3 py-4 text-white sm:px-4 lg:px-5">
+      <div className="mb-3 flex items-center gap-2"><Banknote className="h-4 w-4" /><h2 className="text-sm font-semibold">Cash reconciliation</h2></div>
+      {/* Exact halves, equal height — a plain 2-column grid rather than
+          weighted fractions, so the two panels read as one comparison. */}
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:items-stretch">
+        <div className="flex h-full flex-col border border-white/20 bg-white/5 p-3">
+          <p className="text-[11px] font-semibold uppercase text-gray-400">Expected Cash</p>
+          <p className="mt-1 text-2xl font-bold tabular-nums">{amount(expected)}</p>
+          <button type="button" onClick={() => setShowCash((value) => !value)} className="mt-auto inline-flex items-center gap-1 pt-3 text-xs font-medium text-gray-300 hover:text-white">
+            {showCash ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />} Cash calculation
           </button>
         </div>
-        <div className="border border-white/20 bg-white p-5 text-gray-950">
-          <label className="block text-xs font-semibold uppercase text-gray-500">Counted Cash</label>
-          {interactive ? <><div className="mt-2 flex items-baseline justify-between gap-3 border-b-2 border-gray-950 pb-2"><p className="text-3xl font-bold tabular-nums sm:text-4xl">{amount(denominationTotal)}</p><button type="button" onClick={clearDenominationCount} className="text-xs font-semibold text-gray-500 hover:text-gray-950">Clear</button></div><p className="mt-3 text-xs text-gray-500">Enter how many notes you have for each denomination. The total is calculated automatically.</p><div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">{CASH_DENOMINATIONS.map((denomination) => { const value = (Number(denominationCounts[denomination]) || 0) * denomination; return <label key={denomination} className="grid grid-cols-[auto_minmax(70px,1fr)_auto] items-center gap-2 border border-gray-200 bg-gray-50 px-3 py-2.5"><span className="shrink-0 text-sm font-bold tabular-nums text-gray-900">Rs {denomination.toLocaleString('en-IN')} ×</span><input aria-label={`Number of Rs ${denomination} notes`} type="number" min="0" step="1" inputMode="numeric" value={denominationCounts[denomination] ?? ''} onChange={(event) => updateDenominationCount(denomination, event.target.value)} className="min-w-0 border-b border-gray-300 bg-white px-2 py-1.5 text-center text-base font-bold tabular-nums outline-none focus:border-gray-950" placeholder="0" /><span className="shrink-0 text-sm font-semibold tabular-nums text-gray-600">= {amount(value)}</span></label>; })}</div></>
-            : <><p className="mt-2 text-3xl font-bold tabular-nums sm:text-4xl">{amount(summary?.reconciliation?.counted_cash ?? summary?.business_day?.counted_cash)}</p><DenominationBreakdown counts={summary?.reconciliation?.cash_denominations} /></>}
-          <div className={`mt-4 border-l-4 pl-3 ${state === 'SHORT' ? 'border-rose-600 text-rose-700' : state === 'OVER' ? 'border-amber-500 text-amber-700' : state === 'MATCHED' ? 'border-emerald-600 text-emerald-700' : 'border-gray-300 text-gray-500'}`}>
-            <p className="text-xs font-bold uppercase">{state || 'Difference'}</p>
-            <p className="text-xl font-bold tabular-nums">{difference == null ? 'Enter counted cash' : amount(Math.abs(difference))}</p>
+        <div className="flex h-full flex-col border border-white/20 bg-white p-3 text-gray-950">
+          <label className="block text-[11px] font-semibold uppercase text-gray-500">Counted Cash</label>
+          {interactive ? <><div className="mt-1 flex items-baseline justify-between gap-3 border-b border-gray-950 pb-1.5"><p className="text-2xl font-bold tabular-nums">{amount(denominationTotal)}</p><button type="button" onClick={clearDenominationCount} className="text-[11px] font-semibold text-gray-500 hover:text-gray-950">Clear</button></div><p className="mt-2 text-[11px] text-gray-500">Enter how many notes you have for each denomination. The total is calculated automatically.</p><div className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-2">{CASH_DENOMINATIONS.map((denomination) => { const value = (Number(denominationCounts[denomination]) || 0) * denomination; return <label key={denomination} className="grid grid-cols-[auto_minmax(56px,1fr)_auto] items-center gap-1.5 border border-gray-200 bg-gray-50 px-2 py-1"><span className="shrink-0 text-[11px] font-bold tabular-nums text-gray-900">Rs {denomination.toLocaleString('en-IN')} ×</span><input aria-label={`Number of Rs ${denomination} notes`} type="number" min="0" step="1" inputMode="numeric" value={denominationCounts[denomination] ?? ''} onChange={(event) => updateDenominationCount(denomination, event.target.value)} className="h-7 min-w-0 border-b border-gray-300 bg-white px-1 py-0 text-center text-sm font-bold tabular-nums outline-none focus:border-gray-950" placeholder="0" /><span className="shrink-0 text-[11px] font-semibold tabular-nums text-gray-600">= {amount(value)}</span></label>; })}</div></>
+            : <><p className="mt-1 text-2xl font-bold tabular-nums">{amount(summary?.reconciliation?.counted_cash ?? summary?.business_day?.counted_cash)}</p><DenominationTable counts={summary?.reconciliation?.cash_denominations} className="mt-3" /></>}
+          <div className={`mt-3 border-l-4 pl-2.5 ${state === 'SHORT' ? 'border-rose-600 text-rose-700' : state === 'OVER' ? 'border-amber-500 text-amber-700' : state === 'MATCHED' ? 'border-emerald-600 text-emerald-700' : 'border-gray-300 text-gray-500'}`}>
+            <p className="text-[11px] font-bold uppercase">{state || 'Difference'}</p>
+            <p className="text-lg font-bold tabular-nums">{difference == null ? 'Enter counted cash' : amount(Math.abs(difference))}</p>
           </div>
         </div>
       </div>
-      {showCash && <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 border-t border-white/20 pt-4 text-sm sm:grid-cols-3 lg:grid-cols-5">
+      {showCash && <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-white/20 pt-3 text-xs sm:grid-cols-3 lg:grid-cols-5">
         <CashLine label="Opening Cash" value={breakdown.opening_cash} />
         <CashLine label="Cash Collections" value={breakdown.cash_collections} sign="+" />
         <CashLine label="Credit Collections" value={breakdown.credit_collections} sign="+" />
@@ -141,7 +142,3 @@ function CashLine({ label, value, sign = '' }) {
   return <div><p className="text-xs text-gray-400">{label}</p><p className={`mt-0.5 font-semibold tabular-nums ${tone}`}>{sign} {amount(value)}</p></div>;
 }
 
-function DenominationBreakdown({ counts }) {
-  if (counts == null || typeof counts !== 'object') return <p className="mt-3 text-xs text-gray-500">Note breakdown was not recorded for this closing.</p>;
-  return <div className="mt-4 border-t border-gray-200 pt-3"><p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Recorded note count</p><div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-4">{CASH_DENOMINATIONS.map((denomination) => { const quantity = Number(counts[denomination] || 0); return <span key={denomination} className={`tabular-nums ${quantity ? 'font-medium text-gray-800' : 'text-gray-400'}`}>Rs {denomination.toLocaleString('en-IN')} × {quantity} = <strong>{amount(denomination * quantity)}</strong></span>; })}</div></div>;
-}

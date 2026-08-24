@@ -59,21 +59,7 @@ export default function CashierDashboard() {
   const [tableStatusFilter, setTableStatusFilter] = useState('all');
   const [menuTable, setMenuTable] = useState(null);
 
-  useEffect(() => {
-    checkAuth();
-  }, []);
 
-  useEffect(() => {
-    if (user) {
-      fetchData();
-      fetchTables();
-      const interval = setInterval(() => {
-        fetchData();
-        fetchTables();
-      }, 5000);
-      return () => clearInterval(interval);
-    }
-  }, [filter, user]);
 
   const fetchTables = useCallback(async () => {
     try {
@@ -94,7 +80,7 @@ export default function CashierDashboard() {
     router.push(`/cashier/pos?table=${table.id}`);
   };
 
-  const checkAuth = async () => {
+  const checkAuth = useCallback(async () => {
     try {
       const token = localStorage.getItem('pos_token');
       
@@ -133,9 +119,9 @@ export default function CashierDashboard() {
       setLoading(false);
       router.push('/login');
     }
-  };
+  }, [router]);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       const token = localStorage.getItem('pos_token');
       
@@ -188,7 +174,32 @@ export default function CashierDashboard() {
     } catch (error) {
       console.error('Error fetching data:', error);
     }
-  };
+  }, [filter]);
+
+  /*
+   * Both effects previously called functions declared further down the
+   * component body — read before their own declaration, and a fresh identity on
+   * every render, so no dependency array could describe them honestly. The
+   * fetchers are now memoised above and the work runs inside an async callback
+   * rather than synchronously in the effect body.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    (async () => { if (!cancelled) await checkAuth(); })();
+    return () => { cancelled = true; };
+  }, [checkAuth]);
+
+  useEffect(() => {
+    if (!user) return undefined;
+    let cancelled = false;
+    const refresh = async () => {
+      if (cancelled) return;
+      await Promise.all([fetchData(), fetchTables()]);
+    };
+    refresh();
+    const interval = setInterval(refresh, 5000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [user, fetchData, fetchTables]);
 
   const handleLogout = () => {
     localStorage.removeItem('pos_token');

@@ -6,6 +6,7 @@ import { ArrowRight, BadgeDollarSign, Banknote, CircleAlert, Landmark, Layers3, 
 import { BarChart, ChartCard, ChartGrid, RankBars, TrendChart } from '@/components/admin/report-kit';
 import DonutChart, { DEFAULT_COLORS } from '@/components/admin/donut-chart';
 import { financialTone } from '@/lib/financial-tone';
+import { CashFlowCard, ChannelMix, CountedCash, DigitalReceipts, MoneyPosition } from '@/components/admin/summary-kit.jsx';
 import {
   CompactMetrics, DashboardSection, Metric, PrimaryKpis, SectionHeading,
   TableWrap, money, percent,
@@ -83,6 +84,31 @@ export function PaymentFinance({ data }) {
       </div>
 
       <PaymentSummary data={data} />
+
+      <div className="mt-5">
+        <ChannelMix data={data.channelMix || {}} className="overflow-hidden rounded-xl" />
+      </div>
+
+      {/* The physical drawer count lives on this Sales & Money view only — the
+          same card the Summary Report prints (components/admin/summary-kit.jsx).
+          Rendered unconditionally: gating it on days_closed made a period with
+          no counted close look like a missing feature, so the card names which
+          empty state it is instead. */}
+      {/* The three cash-position blocks an owner checks on this view: what was
+          physically counted, which QR money was a sale rather than a money
+          exchange, and what actually left the drawer. Same cards the Summary
+          Report prints, so one figure looks identical wherever it is read. */}
+      <div className="mt-5 grid gap-5 xl:grid-cols-2">
+        <MoneyPosition data={data.moneyPosition || {}} className="overflow-hidden rounded-xl" />
+        <CashFlowCard data={data.cashFlow || {}} className="overflow-hidden rounded-xl" />
+      </div>
+      <div className="mt-5">
+        <CountedCash data={data.cashReconciliation || {}} className="overflow-hidden rounded-xl" />
+      </div>
+      <div className="mt-5">
+        <DigitalReceipts data={data.digitalReceipts || {}} className="overflow-hidden rounded-xl" />
+      </div>
+
 
       <div className="mt-5 grid gap-5 xl:grid-cols-2">
         <ChartCard title="Net Item Sales Trend" hint="Menu item sales after discounts; before tax, service and refunds" isEmpty={!sales.trend?.length} empty="No settled sales in this period.">
@@ -283,3 +309,4 @@ export function MenuPerformance({ data }) {
     </DashboardSection>
   );
 }
+

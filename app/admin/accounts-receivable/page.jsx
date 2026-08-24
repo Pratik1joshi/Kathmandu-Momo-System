@@ -38,7 +38,7 @@ export default function AccountsReceivablePage() {
   const posPath = isCashier ? '/cashier/pos' : '/admin/pos';
   const { addToast } = useToast();
 
-  const [overview, setOverview] = useState({ receivables: [], ar_balance: 0, banks: [] });
+  const [overview, setOverview] = useState({ receivables: [], ageing: [], ar_balance: 0, banks: [] });
   const [loading, setLoading] = useState(true);
   const [settings, setSettings] = useState({});
   const [qrModal, setQrModal] = useState({ open: false, title: '', image: '' });
@@ -235,16 +235,28 @@ export default function AccountsReceivablePage() {
     <AdminLayout>
       <header className="border-b border-gray-200 bg-white px-4 py-5 sm:px-6 lg:px-8">
         <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Customer Ledger</h1>
-        <p className="mt-1 text-sm text-gray-500">Manage customer statements and transactions.</p>
+        <p className="mt-1 text-sm text-gray-500">Who owes you on a named credit account, how long it has been outstanding, and what they have paid.</p>
       </header>
 
       <div className="space-y-6 bg-gray-50 p-4 sm:p-6 lg:p-8">
         <div className="rounded-2xl border border-gray-900 bg-gray-900 px-5 py-4 text-white">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">Total outstanding customer credit</span>
+            <span className="text-sm font-medium">Owed on credit accounts</span>
             <span className="text-xl font-bold tabular-nums">{money(overview.ar_balance)}</span>
           </div>
+          {/*
+            Named so it cannot be mistaken for the Reports figure. This counts
+            named credit customers only; Reports &gt; Sales &gt; "Still Owed to You"
+            also counts walk-in bills that were part-paid and have no account,
+            so that number is legitimately the larger of the two.
+          */}
+          <p className="mt-1.5 text-xs text-gray-300">
+            Named credit customers only. Part-paid walk-in bills have no credit account and are not
+            counted here — Reports › Sales shows the combined figure.
+          </p>
         </div>
+
+        <ReceivableAgeing rows={overview.ageing} />
 
         <div className="flex gap-2 border-b border-gray-200">
           <button
@@ -604,6 +616,11 @@ export default function AccountsReceivablePage() {
                 Discount
               </button>
             </div>
+            {actionFor.mode === 'writeoff' && (
+              <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                A discount forgives part of what this customer owes. No money is received and nothing is added to the drawer — the outstanding balance simply goes down.
+              </p>
+            )}
             <div className="space-y-3">
               <Field label={actionFor.mode === 'writeoff' ? 'Discount amount' : 'Amount'}>
                 <input type="number" min="0" step="any" value={form.amount} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))} className={INPUT} />
@@ -692,3 +709,76 @@ function Field({ label, children }) {
   return <label className="block"><span className="mb-1 block text-sm font-medium text-gray-700">{label}</span>{children}</label>;
 }
 const INPUT = adminInputClass;
+
+const AGE_BUCKETS = [
+  { key: '0-30', label: '0–30 days', tone: 'text-gray-900' },
+  { key: '31-60', label: '31–60 days', tone: 'text-amber-700' },
+  { key: '61-90', label: '61–90 days', tone: 'text-orange-700' },
+  { key: '90+', label: 'Over 90 days', tone: 'text-rose-700' },
+];
+
+/**
+ * How long the money has been owed.
+ *
+ * The API has always returned this; nothing rendered it, so the query ran on
+ * every page load and the owner never saw the one thing an ageing report is
+ * for — spotting the debt that has quietly gone stale.
+ */
+function ReceivableAgeing({ rows }) {
+  const list = rows || [];
+  if (!list.length) return null;
+
+  const totals = AGE_BUCKETS.map((b) => ({
+    ...b,
+    amount: list.reduce((sum, r) => sum + Number(r[b.key] || 0), 0),
+  }));
+  const grand = totals.reduce((sum, b) => sum + b.amount, 0);
+  if (grand <= 0) return null;
+
+  const estimated = list.filter((r) => r.ageing_estimated);
+  const oldest = [...list].sort((a, b) => Number(b['90+'] || 0) - Number(a['90+'] || 0))[0];
+
+  return (
+    <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
+      <div className="mb-4">
+        <h2 className="text-base font-semibold text-gray-900">How long it has been owed</h2>
+        <p className="mt-0.5 text-sm text-gray-500">
+          The same {money(grand)} split by age. Anything past 90 days is unlikely to be collected without chasing.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        {totals.map((b) => (
+          <div key={b.key} className="rounded-xl border border-gray-200 p-4">
+            <p className="text-xs font-medium text-gray-500">{b.label}</p>
+            <p className={`mt-1.5 text-lg font-bold tabular-nums ${b.amount > 0 ? b.tone : 'text-gray-300'}`}>
+              {money(b.amount)}
+            </p>
+            <p className="mt-0.5 text-xs text-gray-400">
+              {grand ? Math.round((b.amount / grand) * 100) : 0}% of what is owed
+            </p>
+          </div>
+        ))}
+      </div>
+
+      {oldest && Number(oldest['90+'] || 0) > 0 && (
+        <p className="mt-4 rounded-lg bg-rose-50 px-3.5 py-2.5 text-sm text-rose-800">
+          <span className="font-semibold">{oldest.name}</span> has {money(oldest['90+'])} outstanding for more
+          than 90 days &mdash; the largest stale balance on the book.
+        </p>
+      )}
+
+      {estimated.length > 0 && (
+        // Surfaced rather than silently rescaled: see receivableAgeing() in
+        // lib/accounting-receivables.js.
+        <p className="mt-3 text-xs text-amber-700">
+          The age split is approximate for {estimated.length} customer(s) &mdash;{' '}
+          {estimated.map((r) => r.name).slice(0, 3).join(', ')}
+          {estimated.length > 3 ? ` and ${estimated.length - 3} more` : ''} &mdash; because their ledger entries
+          do not add up to their current balance. The totals above are correct; only the age bands are
+          estimated.
+        </p>
+      )}
+    </section>
+  );
+}

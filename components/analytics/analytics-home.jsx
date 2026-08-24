@@ -27,6 +27,7 @@ export function AnalyticsKeyMetrics({ data }) {
   const inventory = data.inventory || {};
   const averageOrder = totals.bills ? totals.billedTotal / totals.bills : 0;
   const openingBalance = data.businessDayMetrics?.openingCash ?? finance.openingBalance;
+  const ops = data.orderOperations?.summary || {};
   const metrics = [
     ['Opening Balance', openingBalance, 'currency', 'Drawer at opening'],
     ['Total Item Sales', totals.itemSales, 'currency', 'Before customer discounts'],
@@ -40,6 +41,13 @@ export function AnalyticsKeyMetrics({ data }) {
     ['Profit Margin', finance.profitMargin, 'percent', 'Of total sales'],
     ['Avg Order', averageOrder, 'currency', `${number(totals.bills)} bills`],
     ['Net Revenue', totals.netSales, 'currency', 'After refunds; tax/service included'],
+    // Collections, not sales: a bill sold in one period and paid in another is
+    // counted in the period it was PAID. QR covers every digital medium; the
+    // per-provider split is the payment breakdown's job.
+    ['Cash Sale', ops.cashSale, 'currency', 'Collected in cash'],
+    ['QR / Digital Sale', ops.qrSale, 'currency', 'QR, card and wallet'],
+    ['Credit Sale', ops.creditSale, 'currency', 'Billed to credit — not yet collected'],
+    ['Service / Extra Charge', ops.serviceCharge, 'currency', 'Service and per-bill extras'],
   ];
 
   return (

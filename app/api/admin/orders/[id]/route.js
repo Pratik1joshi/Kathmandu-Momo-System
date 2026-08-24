@@ -227,7 +227,7 @@ export async function PATCH(request, { params }) {
  */
 export async function DELETE(request, { params }) {
   try {
-    const auth = await requireAuth(request, { roles: ['admin'] });
+    const auth = await requireAuth(request, { roles: ['admin', 'cashier'], permission: 'orders.delete' });
     if (auth.error) return auth.error;
 
     const { id } = await params;

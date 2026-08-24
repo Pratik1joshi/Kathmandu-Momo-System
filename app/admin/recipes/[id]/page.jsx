@@ -14,7 +14,7 @@ import { useToast } from '@/components/ui/toast';
 import { friendlyFromError } from '@/lib/friendly-message';
 import { apiJson } from '@/lib/authed-fetch';
 import { formatNepalDate } from '@/lib/time-utils';
-import { KpiCards, DataNotes } from '@/components/admin/report-kit';
+import { KpiCards } from '@/components/admin/report-kit';
 import RecipePanel from '@/components/inventory/recipe-panel';
 
 export default function RecipeProfilePage() {
@@ -246,13 +246,6 @@ export default function RecipeProfilePage() {
           )}
         </section>
 
-        <DataNotes
-          notes={[
-            'Food cost is priced at each ingredient\'s current moving-average cost, so it reflects today\'s prices rather than what the dish cost when it was last sold.',
-            'The cost history above is per ingredient, not per recipe version. The schema snapshots a cost basis on every stock movement, but it does not record which recipe an order deduction came from, nor what the recipe looked like at that moment.',
-            'Full recipe versioning would need a recipe_versions table (a row per saved edit, with its ingredient lines) plus a version_id stamped on each order deduction. Neither exists today, so nothing here reconstructs a past recipe — it only shows real, recorded cost movements.',
-          ]}
-        />
       </div>
 
       {editing && (

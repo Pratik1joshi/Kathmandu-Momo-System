@@ -90,6 +90,7 @@ export async function DELETE(request, context) {
 
     const { id } = await context.params;
     const db = Database.getInstance();
+    await ensureColumn(db, 'inventory_items', 'pos_stock_visible', 'INTEGER DEFAULT 0');
 
     // Deleting a menu item with order history would silently orphan those
     // order_items (menu_item_id is ON DELETE SET NULL) and drop them out of
@@ -102,7 +103,16 @@ export async function DELETE(request, context) {
       );
     }
 
-    await db.run('DELETE FROM menu_items WHERE id = ?', [id]);
+    // Clear the inventory link in the same transaction as the delete — see the
+    // note in lib/db/repositories/menu.js deleteItem(): the FK is not
+    // guaranteed on databases where menu_item_id was added by ensureColumn().
+    await db.transaction(async (tx) => {
+      await tx.run(
+        'UPDATE inventory_items SET menu_item_id = NULL, pos_stock_visible = 0, updated_at = CURRENT_TIMESTAMP WHERE menu_item_id = ?',
+        [id]
+      );
+      await tx.run('DELETE FROM menu_items WHERE id = ?', [id]);
+    });
 
     return NextResponse.json({
       message: 'Product deleted successfully',

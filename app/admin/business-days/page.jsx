@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { AlertTriangle, CalendarClock, CircleCheck, LockKeyhole, Printer, RefreshCw, UnlockKeyhole } from 'lucide-react';
 import AdminLayout from '@/components/admin/admin-layout';
 import ClosingSummary from '@/components/business-days/closing-summary';
+import DayNotesPanel from '@/components/business-days/day-notes-panel.jsx';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { apiJson } from '@/lib/authed-fetch';
 import { friendlyFromError, friendlyMessage } from '@/lib/friendly-message';
@@ -171,6 +172,7 @@ export default function BusinessDaysPage() {
 
         <div className="border border-gray-200 bg-white px-4 py-6 sm:px-6 lg:px-8">
           <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 pb-5"><div><h2 className="text-xl font-bold text-gray-950">Business day closing</h2><p className="mt-1 text-sm text-gray-500">Review the entire day before closing. Figures refresh from operational and accounting records.</p></div><button type="button" onClick={() => load({ quiet: true })} className="inline-flex h-9 items-center gap-2 border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50"><RefreshCw className="h-4 w-4" />Refresh figures</button></div>
+          <DayNotesPanel day={context.current} audit={context.audit || []} className="mb-6" />
           {summary && <ClosingSummary summary={summary} countedCash={countedCash} onCountedCashChange={setCountedCash} denominationCounts={cashDenominations} onDenominationCountsChange={setCashDenominations} interactive />}
           <div className="border-t border-gray-200 pt-6">
             <label className="block"><span className="mb-2 block text-sm font-semibold text-gray-900">Closing Note <span className="font-normal text-gray-500">optional</span></span><textarea value={closingNote} onChange={(event) => setClosingNote(event.target.value)} rows={3} maxLength={1000} className="w-full border border-gray-300 px-3 py-2 text-sm outline-none focus:border-gray-900" placeholder="Handover details or notes for management" /></label>
@@ -186,7 +188,7 @@ export default function BusinessDaysPage() {
       <History rows={history} onSelect={inspectDay} />
     </main>
 
-    <Dialog open={Boolean(selected)} onOpenChange={(open) => { if (!open) setSelected(null); }}><DialogContent className="sm:max-w-6xl" onClose={() => setSelected(null)}><DialogHeader><DialogTitle>Closing Report Â· {formatDate(selected?.day?.business_date)}</DialogTitle></DialogHeader><DayNotes day={selected?.day} />{selected?.summary && <div className="mt-6"><ClosingSummary summary={selected.summary} countedCash={selected.day?.counted_cash ?? ''} /></div>}<div className="mt-6 flex justify-end"><button type="button" onClick={() => window.print()} className="inline-flex h-10 items-center gap-2 border border-gray-300 px-4 text-sm font-semibold"><Printer className="h-4 w-4" />Print</button></div></DialogContent></Dialog>
+    <Dialog open={Boolean(selected)} onOpenChange={(open) => { if (!open) setSelected(null); }}><DialogContent className="sm:max-w-6xl" onClose={() => setSelected(null)}><DialogHeader><DialogTitle>Closing Report Â· {formatDate(selected?.day?.business_date)}</DialogTitle></DialogHeader><DayNotesPanel day={selected?.day} audit={selected?.audit || []} className="mt-4" />{selected?.summary && <div className="mt-6"><ClosingSummary summary={selected.summary} countedCash={selected.day?.counted_cash ?? ''} /></div>}<div className="mt-6 flex justify-end"><button type="button" onClick={() => window.print()} className="inline-flex h-10 items-center gap-2 border border-gray-300 px-4 text-sm font-semibold"><Printer className="h-4 w-4" />Print</button></div></DialogContent></Dialog>
   </AdminLayout>;
 }
 
@@ -229,7 +231,7 @@ function OpeningForm({ context, opening, setOpening, busy, onSubmit, confirmNext
   </div>;
 }
 function History({ rows, onSelect }) {
-  return <section className="mt-6 border border-gray-200 bg-white"><div className="border-b border-gray-200 px-5 py-4"><h2 className="text-sm font-semibold text-gray-950">Business Day History</h2></div><div className="overflow-x-auto"><table className="w-full min-w-[980px] text-sm"><thead className="bg-gray-50 text-left text-xs uppercase text-gray-500"><tr>{['Business Date','Opened','Closed','Opened By','Closed By','Opening Cash','Expected','Counted','Difference','Sales','Status'].map((label) => <th key={label} className="px-4 py-3 font-semibold">{label}</th>)}</tr></thead><tbody className="divide-y divide-gray-100">{rows.map((day) => { let snap={};try{snap=JSON.parse(day.closing_snapshot||'{}')}catch{} return <tr key={day.id} onClick={() => onSelect(day.id)} className="cursor-pointer hover:bg-gray-50"><td className="px-4 py-3 font-semibold text-gray-950">{formatDate(day.business_date)}</td><td className="px-4 py-3 text-gray-600">{formatTime(day.opened_at)}</td><td className="px-4 py-3 text-gray-600">{formatTime(day.closed_at)}</td><td className="px-4 py-3 text-gray-600">{day.opened_by_name || '-'}</td><td className="px-4 py-3 text-gray-600">{day.closed_by_name || '-'}</td><td className="px-4 py-3 text-right tabular-nums">{money(day.opening_cash)}</td><td className="px-4 py-3 text-right tabular-nums">{day.expected_cash == null ? '-' : money(day.expected_cash)}</td><td className="px-4 py-3 text-right tabular-nums">{day.counted_cash == null ? '-' : money(day.counted_cash)}</td><td className={`px-4 py-3 text-right font-semibold tabular-nums ${Number(day.cash_difference)<0?'text-rose-700':Number(day.cash_difference)>0?'text-amber-700':'text-emerald-700'}`}>{day.cash_difference==null?'-':money(day.cash_difference)}</td><td className="px-4 py-3 text-right tabular-nums">{money(snap?.sales?.billed_total)}</td><td className="px-4 py-3"><span className={`inline-flex items-center gap-1 text-xs font-semibold ${day.status==='open'?'text-emerald-700':'text-gray-600'}`}>{day.status==='open'?<UnlockKeyhole className="h-3.5 w-3.5"/>:<LockKeyhole className="h-3.5 w-3.5"/>}{day.force_closed?'Force closed':day.status}</span></td></tr>;})}{rows.length===0&&<tr><td colSpan={11} className="px-4 py-10 text-center text-gray-500">No business day history yet.</td></tr>}</tbody></table></div></section>;
+  return <section className="mt-6 border border-gray-200 bg-white"><div className="border-b border-gray-200 px-5 py-4"><h2 className="text-sm font-semibold text-gray-950">Business Day History</h2></div><div className="overflow-x-auto"><table className="w-full min-w-[980px] text-sm"><thead className="bg-gray-50 text-left text-xs uppercase text-gray-500"><tr>{['Business Date','Opened','Closed','Opened By','Closed By','Opening Cash','Expected','Counted','Difference','Sales','Notes','Status'].map((label) => <th key={label} className="px-4 py-3 font-semibold">{label}</th>)}</tr></thead><tbody className="divide-y divide-gray-100">{rows.map((day) => { let snap={};try{snap=JSON.parse(day.closing_snapshot||'{}')}catch{} return <tr key={day.id} onClick={() => onSelect(day.id)} className="cursor-pointer hover:bg-gray-50"><td className="px-4 py-3 font-semibold text-gray-950">{formatDate(day.business_date)}</td><td className="px-4 py-3 text-gray-600">{formatTime(day.opened_at)}</td><td className="px-4 py-3 text-gray-600">{formatTime(day.closed_at)}</td><td className="px-4 py-3 text-gray-600">{day.opened_by_name || '-'}</td><td className="px-4 py-3 text-gray-600">{day.closed_by_name || '-'}</td><td className="px-4 py-3 text-right tabular-nums">{money(day.opening_cash)}</td><td className="px-4 py-3 text-right tabular-nums">{day.expected_cash == null ? '-' : money(day.expected_cash)}</td><td className="px-4 py-3 text-right tabular-nums">{day.counted_cash == null ? '-' : money(day.counted_cash)}</td><td className={`px-4 py-3 text-right font-semibold tabular-nums ${Number(day.cash_difference)<0?'text-rose-700':Number(day.cash_difference)>0?'text-amber-700':'text-emerald-700'}`}>{day.cash_difference==null?'-':money(day.cash_difference)}</td><td className="px-4 py-3 text-right tabular-nums">{money(snap?.sales?.billed_total)}</td><td className="px-4 py-3"><DayNotesCell day={day} /></td><td className="px-4 py-3"><span className={`inline-flex items-center gap-1 text-xs font-semibold ${day.status==='open'?'text-emerald-700':'text-gray-600'}`}>{day.status==='open'?<UnlockKeyhole className="h-3.5 w-3.5"/>:<LockKeyhole className="h-3.5 w-3.5"/>}{day.force_closed?'Force closed':day.status}</span></td></tr>;})}{rows.length===0&&<tr><td colSpan={12} className="px-4 py-10 text-center text-gray-500">No business day history yet.</td></tr>}</tbody></table></div></section>;
 }
 
 function StaleBanner({ businessDate, reason, setReason, busy, onContinue }) {
@@ -247,13 +249,27 @@ function StaleBanner({ businessDate, reason, setReason, busy, onContinue }) {
 
 function Status({ label, value }) { return <div><p className="text-xs font-medium text-emerald-700">{label}</p><p className="mt-0.5 max-w-48 truncate font-semibold text-gray-950">{value}</p></div>; }
 
-function DayNotes({ day }) {
-  if (!day) return null;
-  const items = [
-    day.opening_note && { label: 'Opening Note', text: day.opening_note, tone: 'default' },
-    day.force_closed && day.force_close_reason && { label: 'Force-Close Reason', text: day.force_close_reason, tone: 'warn' },
-    day.closing_note && { label: 'Closing Note', text: day.closing_note, tone: 'default' },
-  ].filter(Boolean);
-  if (!items.length) return null;
-  return <div className="mt-4 space-y-3">{items.map((item) => <div key={item.label} className={`border px-4 py-3 text-sm ${item.tone === 'warn' ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-gray-200 bg-gray-50 text-gray-800'}`}><p className="text-xs font-semibold uppercase tracking-wide opacity-70">{item.label}</p><p className="mt-1 whitespace-pre-wrap">{item.text}</p></div>)}</div>;
+
+/**
+ * Compact notes cell for the history table. Shows the first note that exists
+ * (force-close reason wins, it is the one worth seeing at a glance), truncated,
+ * with the full text on hover. The row already opens the closing report, which
+ * shows all of them in full.
+ */
+function DayNotesCell({ day }) {
+  const note =
+    (day.force_closed && day.force_close_reason) ||
+    day.closing_note ||
+    day.opening_note ||
+    '';
+  if (!note) return <span className="text-gray-300">-</span>;
+  const warn = Boolean(day.force_closed && day.force_close_reason);
+  return (
+    <span
+      title={note}
+      className={`block max-w-[200px] truncate text-xs ${warn ? 'font-medium text-amber-800' : 'text-gray-600'}`}
+    >
+      {note}
+    </span>
+  );
 }

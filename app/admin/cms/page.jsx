@@ -51,7 +51,13 @@ export default function CmsPage() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    // Inside an async callback rather than the effect body, and guarded so a
+    // slow response cannot set state after unmount.
+    let cancelled = false;
+    (async () => { if (!cancelled) await load(); })();
+    return () => { cancelled = true; };
+  }, [load]);
 
   const showToast = (msg, kind = 'ok') => {
     setToast({ msg, kind });
@@ -181,10 +187,16 @@ function ImageUpload({ value, alt, onChange, section, label = 'Image' }) {
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
   const [err, setErr] = useState(null);
-  const [altText, setAltText] = useState(alt || '');
   const inputRef = useRef(null);
 
-  useEffect(() => { setAltText(alt || ''); }, [alt]);
+  // Same reset-during-render rule as useDraft: the effect version briefly
+  // rendered the previous image's alt text before correcting itself.
+  const [altText, setAltText] = useState(alt || '');
+  const [altSource, setAltSource] = useState(alt);
+  if (altSource !== alt) {
+    setAltSource(alt);
+    setAltText(alt || '');
+  }
 
   const upload = (file) => {
     if (!file) return;
@@ -265,9 +277,22 @@ function ImageUpload({ value, alt, onChange, section, label = 'Image' }) {
 
 /* ---------- section forms ---------- */
 
+/**
+ * An editable copy of a prop.
+ *
+ * Resets during render when `data` changes rather than in an effect. The effect
+ * version rendered the form once with the *previous* section's values and then
+ * corrected itself, which showed as a flash of the last-edited section when
+ * switching between them. Adjusting state during render is React's documented
+ * pattern for this and commits no extra render.
+ */
 function useDraft(data) {
   const [draft, setDraft] = useState(data);
-  useEffect(() => setDraft(data), [data]);
+  const [source, setSource] = useState(data);
+  if (source !== data) {
+    setSource(data);
+    setDraft(data);
+  }
   const set = (patch) => setDraft((d) => ({ ...d, ...patch }));
   const dirty = JSON.stringify(draft) !== JSON.stringify(data);
   return [draft, set, dirty];
@@ -512,10 +537,11 @@ function AboutForm({ data, onSave }) {
 }
 
 function GalleryForm({ data, onSave }) {
-  const [d, setDraft] = useState(data);
-  useEffect(() => setDraft(data), [data]);
+  // Was its own copy of the useDraft effect; share the hook so there is one
+  // definition of "editable copy of a prop" in this file.
+  const [d, setDraftPatch, dirty] = useDraft(data);
+  const setDraft = (next) => setDraftPatch(typeof next === 'function' ? next(d) : next);
   const items = d.items || [];
-  const dirty = JSON.stringify(d) !== JSON.stringify(data);
   const [newAlt, setNewAlt] = useState('');
   const inputRef = useRef(null);
   const [err, setErr] = useState(null);
@@ -651,15 +677,27 @@ function MediaLibrary() {
   const [filter, setFilter] = useState('all'); // all | site | upload | in_use
   const [copied, setCopied] = useState(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  /*
+   * `loading` already starts true, so the mount path does not need to set it —
+   * doing so was a synchronous setState reached straight from the effect. A
+   * manual refresh passes `showSpinner` to get the spinner back.
+   */
+  const load = useCallback(async ({ showSpinner = false } = {}) => {
+    if (showSpinner) setLoading(true);
     const res = await fetch('/api/admin/cms/media', { headers: authHeaders() });
     const j = await res.json().catch(() => ({ media: [] }));
     setMedia(j.media || []);
     setCounts(j.counts || { uploads: 0, site: 0 });
     setLoading(false);
   }, []);
-  useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    // Inside an async callback rather than the effect body, and guarded so a
+    // slow response cannot set state after unmount.
+    let cancelled = false;
+    (async () => { if (!cancelled) await load(); })();
+    return () => { cancelled = true; };
+  }, [load]);
 
   const del = async (m) => {
     if (m.source === 'site') {

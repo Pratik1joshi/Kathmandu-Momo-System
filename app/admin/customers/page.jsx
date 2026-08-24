@@ -4,11 +4,12 @@ import { useState, useEffect } from 'react';
 import AdminLayout from '@/components/admin/admin-layout';
 import { Search, Plus, Edit, Trash2, Phone, Mail, Eye, Users, Crown, ShieldAlert, Wallet, ShoppingBag } from 'lucide-react';
 import { formatCurrency } from '@/lib/currency';
-import { usePathname, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/ui/toast';
 import { useConfirm } from '@/components/ui/confirm';
 import { friendlyMessage, friendlyFromError } from '@/lib/friendly-message';
 import FieldError, { inputErrorClass } from '@/components/ui/field-error';
+import { useCapabilities } from '@/lib/use-capabilities.js';
 import {
   digitsOnly,
   numbersOnlyInput,
@@ -38,7 +39,10 @@ export default function AdminCustomers() {
   const { addToast } = useToast();
   const { confirm } = useConfirm();
   const router = useRouter();
-  const isCashier = usePathname()?.startsWith('/cashier');
+  // Was gated on the URL, which let a cashier who opened /admin/customers
+  // directly see a button the route rejects. Now gated on the permission the
+  // route actually checks, so the two can never disagree.
+  const { can } = useCapabilities();
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -367,7 +371,7 @@ export default function AdminCustomers() {
                     >
                       <Edit className="w-4 h-4" />
                     </button>
-                    {!isCashier && (
+                    {can('customers.delete') && (
                       <button
                         type="button"
                         onClick={() => handleDelete(customer.id)}

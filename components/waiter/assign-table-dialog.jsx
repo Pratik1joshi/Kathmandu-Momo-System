@@ -1,9 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Sparkles, MapPin } from 'lucide-react';
 import { parsePartySize, parsePreferences } from '@/lib/reservation-core';
+
+/** Client-ness never changes after hydration, so there is nothing to subscribe to. */
+const subscribeNoop = () => () => {};
 
 function bucketTables(tables, reservation) {
   const party = parsePartySize(reservation?.guests, reservation?.party_size);
@@ -45,6 +48,54 @@ function bucketTables(tables, reservation) {
 }
 
 /**
+ * One labelled band of table buttons.
+ *
+ * Defined at module scope, not inside AssignTableDialog. As an inner component
+ * it was a brand-new function identity on every render, so React unmounted and
+ * remounted all five bands — and every table button inside them — each time the
+ * selection changed. Everything it used to close over is now a prop.
+ */
+function TableGroup({ title, items, tone, selectedId, busy, reservation, onSelect }) {
+  if (!items.length) return null;
+  return (
+    <div className="space-y-1.5">
+      <p className={`text-[11px] font-semibold uppercase tracking-wide ${tone}`}>{title}</p>
+      <div className="grid grid-cols-2 gap-1.5">
+        {items.map((t) => {
+          const id = String(t.id);
+          const active = selectedId === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              disabled={
+                busy ||
+                (Boolean(t.current_order_id) &&
+                  Number(t.id) !== Number(reservation.table_id) &&
+                  ['occupied', 'cooking', 'ready', 'dining', 'awaiting_payment'].includes(t.status))
+              }
+              onClick={() => onSelect(id)}
+              className={`text-left rounded-xl border px-2.5 py-2 text-sm ${
+                active
+                  ? 'border-slate-900 bg-slate-900 text-white'
+                  : 'border-slate-200 bg-white text-slate-800'
+              } disabled:opacity-40`}
+            >
+              <span className="font-semibold">T{t.table_number}</span>
+              <span className={`block text-[10px] ${active ? 'text-slate-300' : 'text-slate-500'}`}>
+                {t.capacity ? `${t.capacity} seats` : '—'}
+                {!t.fit ? ' · tight' : ''}
+                {t.status === 'reserved' ? ' · held' : ''}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/**
  * Smart table picker for assign / change table.
  */
 export default function AssignTableDialog({
@@ -57,66 +108,37 @@ export default function AssignTableDialog({
   onClose,
   onConfirm,
 }) {
-  const [mounted, setMounted] = useState(false);
-  const [selectedId, setSelectedId] = useState('');
+  // createPortal needs `document`, which does not exist while server-rendering.
+  // useSyncExternalStore is the supported way to ask "am I on the client yet":
+  // the server snapshot is false, the client snapshot true, with no setState in
+  // an effect and no extra render pass.
+  const mounted = useSyncExternalStore(subscribeNoop, () => true, () => false);
 
-  useEffect(() => setMounted(true), []);
-
-  useEffect(() => {
-    if (!open || !reservation) return;
-    const { recommended } = bucketTables(tables, reservation);
-    setSelectedId(
-      reservation.table_id
-        ? String(reservation.table_id)
-        : recommended
-          ? String(recommended.id)
-          : ''
-    );
-  }, [open, reservation, tables]);
+  // The user's explicit pick. Null means "no pick yet", so the default derived
+  // from props applies — which is why this no longer needs an effect to copy a
+  // prop into state and re-render.
+  const [chosenId, setChosenId] = useState(null);
 
   const buckets = useMemo(() => bucketTables(tables, reservation), [tables, reservation]);
 
-  if (!open || !mounted || !reservation) return null;
+  const defaultId = reservation?.table_id
+    ? String(reservation.table_id)
+    : buckets.recommended
+      ? String(buckets.recommended.id)
+      : '';
+  const selectedId = chosenId ?? defaultId;
 
-  const Group = ({ title, items, tone }) => {
-    if (!items.length) return null;
-    return (
-      <div className="space-y-1.5">
-        <p className={`text-[11px] font-semibold uppercase tracking-wide ${tone}`}>{title}</p>
-        <div className="grid grid-cols-2 gap-1.5">
-          {items.map((t) => {
-            const id = String(t.id);
-            const active = selectedId === id;
-            return (
-              <button
-                key={id}
-                type="button"
-                disabled={
-                  busy ||
-                  (Boolean(t.current_order_id) &&
-                    Number(t.id) !== Number(reservation.table_id) &&
-                    ['occupied', 'cooking', 'ready', 'dining', 'awaiting_payment'].includes(t.status))
-                }
-                onClick={() => setSelectedId(id)}
-                className={`text-left rounded-xl border px-2.5 py-2 text-sm ${
-                  active
-                    ? 'border-slate-900 bg-slate-900 text-white'
-                    : 'border-slate-200 bg-white text-slate-800'
-                } disabled:opacity-40`}
-              >
-                <span className="font-semibold">T{t.table_number}</span>
-                <span className={`block text-[10px] ${active ? 'text-slate-300' : 'text-slate-500'}`}>
-                  {t.capacity ? `${t.capacity} seats` : '—'}
-                  {!t.fit ? ' · tight' : ''}
-                  {t.status === 'reserved' ? ' · held' : ''}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    );
-  };
+  // Forget the previous pick when the dialog opens for a different booking.
+  // Adjusting state during render (rather than in an effect) is React's
+  // documented pattern for this and costs no extra committed render.
+  const openFor = open && reservation ? String(reservation.id ?? '') : null;
+  const [lastOpenFor, setLastOpenFor] = useState(openFor);
+  if (openFor !== lastOpenFor) {
+    setLastOpenFor(openFor);
+    setChosenId(null);
+  }
+
+  if (!open || !mounted || !reservation) return null;
 
   return createPortal(
     <div className="fixed inset-0 z-[190] flex items-end sm:items-center justify-center p-0 sm:p-4">
@@ -138,7 +160,7 @@ export default function AssignTableDialog({
           {buckets.recommended && (
             <button
               type="button"
-              onClick={() => setSelectedId(String(buckets.recommended.id))}
+              onClick={() => setChosenId(String(buckets.recommended.id))}
               className={`w-full text-left rounded-xl border px-3 py-2.5 flex items-center gap-2 ${
                 selectedId === String(buckets.recommended.id)
                   ? 'border-emerald-600 bg-emerald-50'
@@ -158,11 +180,24 @@ export default function AssignTableDialog({
             </button>
           )}
 
-          <Group title="Available" items={buckets.available} tone="text-emerald-700" />
-          <Group title="Reserved soon" items={buckets.reservedSoon} tone="text-yellow-800" />
-          <Group title="Occupied" items={buckets.occupied} tone="text-orange-700" />
-          <Group title="Cleaning" items={buckets.cleaning} tone="text-slate-600" />
-          <Group title="Other" items={buckets.unavailable} tone="text-slate-500" />
+          {[
+            ['Available', buckets.available, 'text-emerald-700'],
+            ['Reserved soon', buckets.reservedSoon, 'text-yellow-800'],
+            ['Occupied', buckets.occupied, 'text-orange-700'],
+            ['Cleaning', buckets.cleaning, 'text-slate-600'],
+            ['Other', buckets.unavailable, 'text-slate-500'],
+          ].map(([title, items, tone]) => (
+            <TableGroup
+              key={title}
+              title={title}
+              items={items}
+              tone={tone}
+              selectedId={selectedId}
+              busy={busy}
+              reservation={reservation}
+              onSelect={setChosenId}
+            />
+          ))}
 
           {error && (
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950">

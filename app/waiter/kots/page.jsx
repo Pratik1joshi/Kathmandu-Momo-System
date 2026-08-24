@@ -10,6 +10,7 @@ import { formatNepalDateTime } from '@/lib/report-dates.js'
 import { printKot } from '@/lib/pos-print.js'
 import OperationalDateFilter from '@/components/ui/operational-date-filter'
 import { operationalDateRange } from '@/lib/operational-date-range'
+import { orderTypeLabel } from '@/lib/order-types.js'
 
 const TABS = [
   { id: 'active', label: 'Active' },
@@ -136,7 +137,11 @@ export default function WaiterKotsPage() {
             <div key={kot.kot_id} className="rounded-2xl bg-white border border-slate-200 shadow-sm p-3.5 flex items-center justify-between gap-3">
               <button type="button" onClick={() => !isKitchen && router.push(`/waiter/order/${kot.order_id}`)} className={`flex-1 min-w-0 text-left ${isKitchen ? 'cursor-default' : ''}`}>
                 <p className="text-sm font-semibold text-slate-900">
-                  {kot.kot_number} · Table {kot.table_number || '—'}{kot.party_label ? ` · ${kot.party_label}` : ''}
+                  {/* Tickets now print their channel (K / K-TW / K-D), so the
+                      line says the channel instead of "Table —" for the two
+                      off-premise ones, which is what that used to read. */}
+                  {kot.kot_number} · {kot.table_number ? `Table ${kot.table_number}` : orderTypeLabel(kot)}
+                  {kot.party_label ? ` · ${kot.party_label}` : ''}
                 </p>
                 <p className="text-xs text-slate-500 mt-0.5 capitalize">
                   {kot.kot_type} · {kot.status} · {kot.item_count} item(s), {kot.total_qty} qty

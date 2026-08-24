@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireAuth, handleRouteError } from '@/lib/api-guard.js';
 import Database from '@/lib/db/index.js';
-import { calculateBillTotals, parseSettingsRates } from '@/lib/billing-totals.js';
+import { calculateBillTotals, parseSettingsRates, resolveServiceCharge } from '@/lib/billing-totals.js';
 import { resolveCustomerForSale } from '@/lib/customers.js';
 import { ensureAccountingSchema } from '@/lib/accounting.js';
 import {
@@ -15,7 +15,7 @@ import { getOrderWorkspace, logPosEvent, ensureKotProSchema } from '@/lib/kot-se
 import { refundBillAdmin, recordAudit } from '@/lib/bills-admin.js';
 import { diffReopenItems, parseJsonField } from '@/lib/reopen-diff.js';
 import { nextDocumentNumber } from '@/lib/document-numbers.js';
-import { currentBusinessDayId } from '@/lib/business-days.js';
+import { businessDayIdForExistingWork } from '@/lib/business-days.js';
 import { ensurePermissionCache, isPermissionAllowedSync } from '@/lib/permissions.js';
 import { ensureOrderColumns } from '@/lib/online-orders.js';
 import { ensureDeliverySchema } from '@/lib/delivery.js';
@@ -149,10 +149,13 @@ export async function POST(request, context) {
       const lock = tx.driver === 'postgres' ? ' FOR UPDATE' : '';
       const order = await tx.get(`SELECT * FROM orders WHERE id = ?${lock}`, [orderId]);
       if (!order) throw Object.assign(new Error('Order not found.'), { status: 404 });
-      const businessDayId = await currentBusinessDayId(tx, { required: true, allowStale: true });
-      if (Number(order.business_day_id || 0) !== Number(businessDayId)) {
-        throw Object.assign(new Error('This order does not belong to the current business day.'), { status: 409 });
-      }
+      // Still-live work is CARRIED FORWARD into the currently open business
+      // day rather than rejected: a table opened before the day rolled over
+      // must still be billable. businessDayIdForExistingWork() refuses orders
+      // that are already finished (completed/cancelled) and preserves the
+      // original day in orders.carried_from_business_day_id. The bill itself
+      // is still stamped with the CURRENT day, which is what it returns.
+      const businessDayId = await businessDayIdForExistingWork(tx, 'orders', orderId);
 
       const paid = await tx.get("SELECT id, bill_number FROM bills WHERE order_id = ? AND status = 'paid'", [orderId]);
       if (paid && !reopenedBill) {
@@ -209,10 +212,23 @@ export async function POST(request, context) {
         : data.delivery_executive_id !== undefined
           ? (data.delivery_executive_id ? parseInt(data.delivery_executive_id, 10) : null)
           : (order.delivery_executive_id || null);
+      /*
+       * The optional per-bill service / extra charge. The client sends the mode
+       * and the value it was keyed in as, never a computed amount — the bill is
+       * re-priced here, so a tampered or stale client total can never become the
+       * charge. With no mode sent, the house rate from Settings still applies.
+       */
+      const service = resolveServiceCharge(
+        data.service_charge_mode
+          ? { enabled: true, mode: data.service_charge_mode, value: data.service_charge_value }
+          : null,
+        servicePercent
+      );
       const totals = calculateBillTotals(subtotal, {
         discountAmount: Number(data.discount || 0) > 0 ? Number(data.discount) : undefined,
         vatPercent,
-        servicePercent,
+        servicePercent: service.servicePercent,
+        serviceAmount: service.serviceAmount,
         deliveryFee,
       });
 
@@ -270,7 +286,7 @@ export async function POST(request, context) {
              WHERE id = ?`,
             [
               totals.subtotal, totals.tax, totals.tax, totals.serviceCharge, totals.deliveryFee,
-              totals.discount, totals.total, vatPercent, servicePercent,
+              totals.discount, totals.total, vatPercent, totals.servicePercent,
               idempotencyKey, reopenedBill.id,
             ]
           );
@@ -328,7 +344,9 @@ export async function POST(request, context) {
           refundDue: payment.refundDue || 0,
           deferTotals,
           vatPercent,
-          servicePercent,
+          // The percent THIS bill was charged at — 0 when the cashier keyed a
+          // flat rupee amount — so the receipt and the stored row agree.
+          servicePercent: totals.servicePercent,
           idempotencyKey,
         };
       }
@@ -349,7 +367,7 @@ export async function POST(request, context) {
         actorRole: auth.user?.role,
       });
 
-      const billNumber = await nextDocumentNumber(tx, { type: 'bill', prefix: 'BILL' });
+      const billNumber = await nextDocumentNumber(tx, { type: 'bill', prefix: 'BILL', order });
       const billResult = await tx.run(
         `INSERT INTO bills (bill_number, order_id, customer_id, subtotal, tax, vat_amount, service_charge, delivery_fee,
            discount_amount, discount_reason, grand_total, status, payment_status, outstanding_amount,
@@ -357,7 +375,7 @@ export async function POST(request, context) {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', 'unpaid', ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
         [billNumber, orderId, customerInfo.customer_id, totals.subtotal, totals.tax, totals.tax,
           totals.serviceCharge, totals.deliveryFee, totals.discount, data.discount_reason || null, totals.total,
-          totals.total, auth.user.id, vatPercent, servicePercent, idempotencyKey, businessDayId]
+          totals.total, auth.user.id, vatPercent, totals.servicePercent, idempotencyKey, businessDayId]
       );
       const billId = billResult.lastInsertRowid;
 
@@ -501,7 +519,7 @@ export async function POST(request, context) {
         tax: result.totals.tax,
         tax_percent: vatPercent,
         service_charge: result.totals.serviceCharge,
-        service_charge_percent: servicePercent,
+        service_charge_percent: result.servicePercent,
         delivery_fee: result.totals.deliveryFee,
         grand_total: result.totals.total,
         already_paid: result.alreadyPaid,

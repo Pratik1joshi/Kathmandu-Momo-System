@@ -28,6 +28,73 @@ function money(n) {
   return Math.round(n * 100) / 100;
 }
 
+/**
+ * Demo beverage inventory. This used to be created at REQUEST time by
+ * ensureBeverageInventory() in lib/stock.js, which meant a live database's
+ * inventory could be entirely fabricated — invented opening balances inflating
+ * stock valuation and food cost. It is demo data, so it lives in the demo seed.
+ *
+ * The menu link is written by EXACT name only. Never match on substrings here:
+ * the rule that was removed linked menu "Steam Rice" to "Tea Leaves" because
+ * "steam" contains "tea".
+ */
+async function seedDemoBeverageInventory() {
+  const beverages = [
+    { menuName: 'Coke', invName: 'Coke Cans', qty: 48, unit: 'pcs', cost: 40 },
+    { menuName: 'Masala Tea', invName: 'Masala Tea Cups', qty: 100, unit: 'pcs', cost: 15 },
+    { menuName: 'Coffee', invName: 'Coffee Cups', qty: 80, unit: 'pcs', cost: 25 },
+    { menuName: 'Cold Coffee', invName: 'Cold Coffee Cups', qty: 60, unit: 'pcs', cost: 35 },
+    { menuName: 'Sweet Lassi', invName: 'Lassi Glasses', qty: 40, unit: 'pcs', cost: 30 },
+    { menuName: 'Fresh Lemonade', invName: 'Lemonade Glasses', qty: 50, unit: 'pcs', cost: 20 },
+  ];
+
+  let created = 0;
+  for (const b of beverages) {
+    const existing = await pool.query(
+      `SELECT id FROM inventory_items WHERE lower(trim(item_name)) = lower(trim($1)) LIMIT 1`,
+      [b.invName]
+    );
+    if (existing.rows.length) continue;
+
+    // Exact menu name, and only if that menu item is not already linked.
+    const menu = await pool.query(
+      `SELECT m.id FROM menu_items m
+        WHERE lower(trim(m.name)) = lower(trim($1))
+          AND NOT EXISTS (
+            SELECT 1 FROM inventory_items i
+             WHERE i.menu_item_id = m.id AND COALESCE(i.is_archived, 0) = 0
+          )
+        LIMIT 1`,
+      [b.menuName]
+    );
+
+    // Created at zero, then stocked through the ledger's own movement row so
+    // the opening balance has a real cost basis like every other change.
+    const inserted = await pool.query(
+      `INSERT INTO inventory_items
+         (item_name, quantity, unit, cost_per_unit, min_stock_level, supplier, notes, menu_item_id)
+       VALUES ($1, 0, $2, $3, $4, 'Beverage Co', 'Demo beverage stock (seed-orders.mjs)', $5)
+       RETURNING id`,
+      [b.invName, b.unit, b.cost, Math.max(6, Math.floor(b.qty / 4)), menu.rows[0]?.id || null]
+    );
+    const id = inserted.rows[0].id;
+
+    await pool.query(
+      `UPDATE inventory_items SET quantity = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+      [b.qty, id]
+    );
+    await pool.query(
+      `INSERT INTO stock_movements
+         (inventory_item_id, change_type, quantity_changed, reason, unit_cost, balance_after,
+          quantity_requested, variance)
+       VALUES ($1, 'opening_balance', $2, 'Demo beverage stock (seed-orders.mjs)', $3, $2, $2, 0)`,
+      [id, b.qty, b.cost]
+    );
+    created++;
+  }
+  if (created) console.log(`Seeded ${created} demo beverage inventory items.`);
+}
+
 async function main() {
   const menuItems = (
     await pool.query(
@@ -40,6 +107,8 @@ async function main() {
     console.error('No menu_items or tables found — run db:pg:init first.');
     process.exit(1);
   }
+
+  await seedDemoBeverageInventory();
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);

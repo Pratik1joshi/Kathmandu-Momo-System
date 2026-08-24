@@ -32,18 +32,33 @@ function CustomerCreditLedger({ range }) {
   const from = range?.start || '';
   const to = range?.end || '';
 
-  // Fetch the whole period unfiltered by status — the two totals need both
-  // buckets at once, and the status pills below just filter this in memory.
+  /*
+   * Fetch the whole period unfiltered by status — the two totals need both
+   * buckets at once, and the status pills below just filter this in memory.
+   *
+   * The work runs inside an async callback rather than straight in the effect
+   * body (which set state synchronously on every render pass), and a `cancelled`
+   * flag drops responses that arrive after the inputs have moved on — typing in
+   * the search box used to let a slow earlier request overwrite a newer result.
+   */
   useEffect(() => {
-    setLoading(true);
-    const params = new URLSearchParams({ view: 'history' });
-    if (from) params.set('from', from);
-    if (to) params.set('to', to);
-    if (query.trim()) params.set('search', query.trim());
-    apiJson(`/api/admin/accounts-receivable?${params}`)
-      .then((d) => setRows(d.history || []))
-      .catch(() => setRows([]))
-      .finally(() => setLoading(false));
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      const params = new URLSearchParams({ view: 'history' });
+      if (from) params.set('from', from);
+      if (to) params.set('to', to);
+      if (query.trim()) params.set('search', query.trim());
+      try {
+        const d = await apiJson(`/api/admin/accounts-receivable?${params}`);
+        if (!cancelled) setRows(d.history || []);
+      } catch {
+        if (!cancelled) setRows([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
   }, [from, to, query]);
 
   const charged = rows.filter((r) => r.status === 'charged');
@@ -469,7 +484,7 @@ export function RecentActivity({ data, pagination, loading = false, onPageChange
             <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-400">
               <tr>
                 <th className="px-4 py-2.5">Time</th><th className="px-4 py-2.5">Bill / Order</th><th className="px-4 py-2.5">Table / Channel</th><th className="px-4 py-2.5">Customer</th><th className="px-4 py-2.5">Cashier</th><th className="px-4 py-2.5">Payment</th>
-                <th className="px-4 py-2.5 text-right">Subtotal</th><th className="px-4 py-2.5 text-right">Discount</th><th className="px-4 py-2.5 text-right">Cash</th><th className="px-4 py-2.5 text-right">QR</th><th className="px-4 py-2.5">QR Type</th>
+                <th className="px-4 py-2.5 text-right">Subtotal</th><th className="px-4 py-2.5 text-right">Discount</th><th className="px-4 py-2.5 text-right">Cash</th><th className="px-4 py-2.5 text-right">Digital</th><th className="px-4 py-2.5">Digital Via</th>
                 <th className="px-4 py-2.5 text-right">Food</th><th className="px-4 py-2.5 text-right">Beverage</th><th className="px-4 py-2.5 text-right">Tobacco</th><th className="px-4 py-2.5 text-right">Final Total</th>
               </tr>
             </thead>

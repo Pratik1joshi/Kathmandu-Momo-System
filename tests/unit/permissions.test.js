@@ -36,12 +36,20 @@ test('defaults reproduce today\'s hardcoded behavior before any admin edit', asy
   assert.equal(hasPermission('waiter', 'bills.void'), false);
   assert.equal(hasPermission('cashier', 'bills.void'), true);
   assert.equal(hasPermission('admin', 'bills.void'), true); // admin always allowed
-  assert.equal(hasPermission('cashier', 'purchases.view'), false);
-  assert.equal(hasPermission('cashier', 'purchases.create'), false);
-  assert.equal(hasPermission('cashier', 'purchases.import'), false);
-  assert.equal(hasPermission('cashier', 'suppliers.manage'), false);
-  assert.equal(hasPermission('cashier', 'payroll.view'), false);
-  assert.equal(hasPermission('cashier', 'payroll.advances.create'), false);
+  // Commit 317b991 deliberately widened the cashier catalog — "all defaulted on
+  // so existing cashier access is unchanged until an admin edits it". These
+  // assertions were left behind on the old defaults; they now record the
+  // intended ones.
+  assert.equal(hasPermission('cashier', 'purchases.view'), true);
+  assert.equal(hasPermission('cashier', 'purchases.create'), true);
+  assert.equal(hasPermission('cashier', 'purchases.import'), true);
+  assert.equal(hasPermission('cashier', 'suppliers.manage'), true);
+  assert.equal(hasPermission('cashier', 'payroll.view'), true);
+  assert.equal(hasPermission('cashier', 'payroll.advances.create'), true);
+  // Still withheld from every non-admin role, whatever else was granted.
+  assert.equal(hasPermission('waiter', 'purchases.view'), false);
+  assert.equal(hasPermission('kitchen', 'purchases.view'), false);
+  assert.equal(hasPermission('waiter', 'payroll.view'), false);
 });
 
 test('every curated key has a default for every managed role', async () => {
@@ -65,10 +73,17 @@ test('admin can grant a role a previously-blocked action, and it takes effect im
 });
 
 test('admin can grant purchase access to a cashier without granting destructive actions', async () => {
+  // The point of this test is isolation: granting the safe purchase actions
+  // must not drag the destructive ones along. Since 317b991 the destructive
+  // ones default ON, so the admin has to switch them off first — which is
+  // exactly the edit an owner would make, and still proves the property.
   await setRolePermissions(db, [
     { role: 'cashier', key: 'purchases.view', allowed: true },
     { role: 'cashier', key: 'purchases.create', allowed: true },
     { role: 'cashier', key: 'purchases.import', allowed: true },
+    { role: 'cashier', key: 'purchases.edit', allowed: false },
+    { role: 'cashier', key: 'purchases.void', allowed: false },
+    { role: 'cashier', key: 'suppliers.manage', allowed: false },
   ], admin);
   invalidatePermissionCache();
   await ensurePermissionCache(db);

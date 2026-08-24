@@ -7,6 +7,7 @@ import {
   nepalRangeUtcBounds,
   nepalDateSql,
 } from '@/lib/report-dates.js';
+import { countedBillSql, openBillSql } from '@/lib/report-scope.js';
 import { requireAuth } from '@/lib/api-guard.js';
 import { dateKey } from '@/lib/reports.js';
 import { FEATURES } from '@/lib/deployment.js';
@@ -54,7 +55,7 @@ export async function GET(request) {
       : { sql: inDay(dateColumn), params: [tB.startUtc, tB.endUtcExclusive] };
     const orderDay = dayScope('created_at', 'business_day_id');
     const orderDayO = dayScope('o.created_at', 'o.business_day_id');
-    const billDay = dayScope('COALESCE(paid_at, created_at)', 'business_day_id');
+    const billDay = dayScope('created_at', 'business_day_id');
     const paymentDay = dayScope('created_at', 'business_day_id');
     const kotPrintedDay = dayScope('k.printed_at', 'k.business_day_id');
     const kotCompletedDay = dayScope('k.completed_at', 'k.business_day_id');
@@ -99,12 +100,12 @@ export async function GET(request) {
       db.get(`SELECT COUNT(*) as c FROM orders WHERE ${inDay('created_at')} AND COALESCE(status,'') != 'cancelled'`, [yB.startUtc, yB.endUtcExclusive]).catch(() => ({ c: 0 })),
       db.get(
         `SELECT COUNT(*) as c, COALESCE(AVG(grand_total), 0) as avg_ticket, COALESCE(SUM(grand_total), 0) as revenue
-         FROM bills WHERE ${billDay.sql} AND LOWER(COALESCE(status,'')) IN ('paid','reopened')`,
+         FROM bills WHERE ${billDay.sql} AND ${countedBillSql('bills')}`,
         billDay.params
       ).catch(() => ({ c: 0, avg_ticket: 0, revenue: 0 })),
       db.get(`SELECT COUNT(*) as c FROM orders WHERE ${LIVE_ORDER}`).catch(() => ({ c: 0 })),
       db.get(
-        `SELECT COUNT(*) as c FROM bills WHERE LOWER(COALESCE(status,'')) IN ('unpaid','open','pending','in_progress')`
+        `SELECT COUNT(*) as c FROM bills WHERE ${openBillSql('bills')}`
       ).catch(() => ({ c: 0 })),
       db.get(`SELECT COUNT(*) as c FROM bills WHERE LOWER(COALESCE(status,'')) = 'reopened'`).catch(() => ({ c: 0 })),
       db.get(`SELECT COALESCE(SUM(outstanding_amount), 0) as total FROM bills WHERE COALESCE(outstanding_amount,0) > 0`).catch(() => ({ total: 0 })),
@@ -135,7 +136,7 @@ export async function GET(request) {
         SELECT b.id, b.bill_number, b.created_at, b.grand_total, o.table_number
         FROM bills b
         LEFT JOIN orders o ON b.order_id = o.id
-        WHERE LOWER(COALESCE(b.status, 'unpaid')) IN ('unpaid','open','pending','in_progress')
+        WHERE ${openBillSql('b')}
         ORDER BY b.created_at ASC
         LIMIT 8
       `).catch(() => []),
@@ -199,11 +200,11 @@ export async function GET(request) {
         LIMIT 20
       `, [tB.startUtc, tB.endUtcExclusive]).catch(() => []),
       db.all(`
-        SELECT ${nd('COALESCE(paid_at, created_at)')} as d, COUNT(*) as orders, COALESCE(SUM(grand_total), 0) as revenue
+        SELECT ${nd('created_at')} as d, COUNT(*) as orders, COALESCE(SUM(grand_total), 0) as revenue
         FROM bills
-        WHERE ${inDay('COALESCE(paid_at, created_at)')}
-          AND LOWER(COALESCE(status, 'paid')) IN ('paid','reopened')
-        GROUP BY ${nd('COALESCE(paid_at, created_at)')}
+        WHERE ${inDay('created_at')}
+          AND ${countedBillSql('bills')}
+        GROUP BY ${nd('created_at')}
         ORDER BY d ASC
       `, [wB.startUtc, wB.endUtcExclusive]).catch(() => []),
       db.all(`
@@ -266,7 +267,7 @@ export async function GET(request) {
         SELECT COALESCE(SUM(discount_amount), 0) as total
         FROM bills
         WHERE ${billDay.sql}
-          AND LOWER(COALESCE(status,'')) IN ('paid','reopened')
+          AND ${countedBillSql('bills')}
       `, billDay.params).catch(() => ({ total: 0 })),
     ]);
 

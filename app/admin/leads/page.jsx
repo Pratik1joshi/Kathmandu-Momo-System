@@ -10,6 +10,7 @@ import {
   MessageSquare, Archive, UserCheck, AlertTriangle, Plus,
   Star, Wallet,
 } from 'lucide-react';
+import { nepalDateString } from '@/lib/report-dates.js';
 
 const RES_STATUS = {
   new: { label: 'New', badge: 'bg-sky-100 text-sky-800' },
@@ -347,12 +348,10 @@ export default function AdminLeadsPage() {
               <button
                 type="button"
                 onClick={() => {
-                  const today = new Date();
-                  const pad = (n) => String(n).padStart(2, '0');
-                  setCreateForm({
-                    ...emptyCreate,
-                    date: `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`,
-                  });
+                  // Nepal calendar, not the browser's: a host opening the form
+                  // just after midnight NPT on a UTC-set machine was handed
+                  // yesterday's date as the default booking date.
+                  setCreateForm({ ...emptyCreate, date: nepalDateString() });
                   setShowCreate(true);
                 }}
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium bg-stone-900 text-white"

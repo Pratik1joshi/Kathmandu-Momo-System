@@ -276,6 +276,33 @@ export default function CustomerProfilePage() {
           <div className="w-full max-w-md rounded-2xl bg-white p-6 max-h-[94dvh] overflow-y-auto">
             <h3 className="mb-1 text-lg font-bold text-gray-900">{payFor === 'writeoff' ? 'Give discount' : 'Receive payment'} — {customer.name}</h3>
             <p className="mb-4 text-sm text-gray-500">Outstanding {formatCurrency(summary.outstanding_credit)}</p>
+            {/* Mode lives inside the dialog so a cashier who opened the wrong
+                one can switch without backing out. The outer buttons still
+                work — they just pre-select a mode. */}
+            <div className="mb-4 grid grid-cols-2 gap-2 rounded-lg bg-gray-100 p-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setPayFor('pay');
+                  setForm((f) => ({ ...f, amount: String(summary.outstanding_credit) }));
+                }}
+                className={`rounded-md py-1.5 text-sm font-semibold transition-colors ${payFor === 'pay' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-800'}`}
+              >
+                Receive payment
+              </button>
+              <button
+                type="button"
+                onClick={() => setPayFor('writeoff')}
+                className={`rounded-md py-1.5 text-sm font-semibold transition-colors ${payFor === 'writeoff' ? 'bg-white text-amber-800 shadow-sm' : 'text-gray-500 hover:text-gray-800'}`}
+              >
+                Give discount
+              </button>
+            </div>
+            {payFor === 'writeoff' && (
+              <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                A discount forgives part of what this customer owes. No money is received and nothing is added to the drawer — the outstanding balance simply goes down.
+              </p>
+            )}
             <div className="space-y-3">
               <Field label={payFor === 'writeoff' ? 'Discount amount' : 'Amount'}>
                 <input type="number" min="0" step="any" value={form.amount} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))} className={INPUT} />
