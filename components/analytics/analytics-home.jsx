@@ -44,8 +44,8 @@ export function AnalyticsKeyMetrics({ data }) {
     // Collections, not sales: a bill sold in one period and paid in another is
     // counted in the period it was PAID. QR covers every digital medium; the
     // per-provider split is the payment breakdown's job.
-    ['Cash Sale', ops.cashSale, 'currency', 'Collected in cash'],
-    ['QR / Digital Sale', ops.qrSale, 'currency', 'QR, card and wallet'],
+    ['Cash Collected', ops.cashSale, 'currency', 'Payment received in cash'],
+    ['QR / Digital Collected', ops.qrSale, 'currency', 'QR, card and wallet received'],
     ['Credit Sale', ops.creditSale, 'currency', 'Billed to credit — not yet collected'],
     ['Service / Extra Charge', ops.serviceCharge, 'currency', 'Service and per-bill extras'],
   ];

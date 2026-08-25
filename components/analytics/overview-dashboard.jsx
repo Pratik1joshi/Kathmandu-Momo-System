@@ -48,7 +48,7 @@ export default function OverviewDashboard({
       <div className="mb-5 overflow-x-auto border-b border-gray-200" role="tablist" aria-label="Analytics views">
         <div className="flex min-w-max gap-1">
           {tabs.map(([id, label, Icon]) => (
-            <button key={id} type="button" role="tab" aria-selected={view === id} onClick={() => setView(id)} className={`inline-flex h-11 items-center gap-2 border-b-2 px-3 text-sm font-medium transition-[border-color,color,transform] duration-150 ease-out active:scale-[0.98] ${view === id ? 'border-gray-950 text-gray-950' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-800'}`}>
+            <button key={id} type="button" role="tab" aria-selected={view === id} onClick={() => setView(id)} className={`inline-flex h-11 shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-3 text-sm font-medium transition-[border-color,color,transform] duration-150 ease-out active:scale-[0.98] ${view === id ? 'border-gray-950 text-gray-950' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-800'}`}>
               <Icon className="h-4 w-4" />{label}
             </button>
           ))}

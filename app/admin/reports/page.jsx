@@ -373,10 +373,10 @@ export default function ReportsPage() {
 
         {/* Tab bar — grouped by report kind, horizontally scrollable on mobile */}
         <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
-          <div className="flex w-max items-stretch gap-1 rounded-xl border border-gray-200 bg-white p-1 shadow-sm sm:w-auto">
+          <div className="flex w-max min-w-max items-stretch gap-1 rounded-xl border border-gray-200 bg-white p-1 shadow-sm">
             {tabGroups.map((group, groupIndex) => (
-              <div key={group.kind} className={`flex items-center gap-1 ${groupIndex ? 'ml-1 border-l border-gray-200 pl-2' : ''}`}>
-                <span className="hidden select-none pr-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400 lg:inline">
+              <div key={group.kind} className={`flex shrink-0 items-center gap-1 ${groupIndex ? 'ml-1 border-l border-gray-200 pl-2' : ''}`}>
+                <span className="hidden shrink-0 select-none whitespace-nowrap pr-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400 lg:inline">
                   {group.label}
                 </span>
                 {group.tabs.map((t) => (
