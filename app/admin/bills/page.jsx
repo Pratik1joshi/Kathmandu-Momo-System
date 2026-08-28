@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import AdminLayout from '@/components/admin/admin-layout';
 import { formatValue } from '@/components/admin/report-kit';
 import { formatNepalDateTime } from '@/lib/report-dates.js';
@@ -102,6 +102,7 @@ const panelOrdersPath = () => typeof window !== 'undefined' && window.location.p
 
 export default function BillsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [tab, setTab] = useState('active');
   const [search, setSearch] = useState('');
   const [channel, setChannel] = useState('');
@@ -118,6 +119,11 @@ export default function BillsPage() {
   // /admin/permissions. Hidden rather than shown-and-403'd.
   const { can } = useCapabilities();
   const [deleteReason, setDeleteReason] = useState('');
+
+  useEffect(() => {
+    const requestedBill = Number(searchParams.get('bill'));
+    if (requestedBill > 0) setSelectedId(requestedBill);
+  }, [searchParams]);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
@@ -547,6 +553,13 @@ function BillDetailPanel({ id, onClose, onChanged }) {
     printFinalBill(receipt, { size: paySettings?.receipt_paper_size || '80', reprint: true });
   };
 
+  const voidRefundByMethod = Object.entries((bill?.payments || []).reduce((totals, payment) => {
+    if (['voided', 'cancelled', 'failed'].includes(String(payment.settlementStatus || 'received').toLowerCase())) return totals;
+    const method = String(payment.method || 'other').toLowerCase();
+    totals[method] = Number(totals[method] || 0) + Number(payment.amount || 0);
+    return totals;
+  }, {}));
+
   return (
     <div className="fixed inset-0 z-[80] flex justify-end">
       <div className="absolute inset-0 bg-black/30" onClick={onClose} />
@@ -730,7 +743,11 @@ function BillDetailPanel({ id, onClose, onChanged }) {
                     <ActionForm title="Void bill" tone="red" busy={busy} requireReason reason={actionReason} setReason={setActionReason} onCancel={() => setAction(null)}
                       onConfirm={() => runAction({ action: 'void', reason: actionReason })}
                       confirmLabel="Void bill & reverse sale">
-                      <p className="text-xs text-gray-500">Reverses the sale journal and restocks ingredients. This cannot be undone.</p>
+                      <div className="space-y-2 text-xs text-gray-600">
+                        <p>Reverses the sale, every later credit collection/write-off, customer balance and stock movement. This cannot be undone.</p>
+                        {voidRefundByMethod.length > 0 && <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2"><p className="font-semibold text-red-800">Return or reverse this received money:</p>{voidRefundByMethod.map(([method, amount]) => <div key={method} className="mt-1 flex items-center justify-between gap-4 capitalize text-red-700"><span>{method.replaceAll('_', ' ')}</span><strong className="tabular-nums">{formatValue(amount, 'currency')}</strong></div>)}</div>}
+                        {!voidRefundByMethod.length && <p className="rounded-lg bg-gray-50 px-3 py-2 text-gray-500">No cash or digital money was received on this bill.</p>}
+                      </div>
                     </ActionForm>
                   )}
                 </div>

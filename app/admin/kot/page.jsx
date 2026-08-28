@@ -6,7 +6,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import AdminLayout from '@/components/admin/admin-layout';
 import {
   ChefHat, Loader2, Plus, CreditCard, Printer, FileText, RefreshCw, Search,
@@ -53,6 +53,7 @@ const panelPosPath = () => typeof window !== 'undefined' && window.location.path
 
 export default function AdminKotPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { addToast } = useToast();
   const { prompt } = useConfirm();
   const notify = useCallback((description, variant = 'default') => addToast({ description, variant }), [addToast]);
@@ -61,7 +62,12 @@ export default function AdminKotPage() {
   const [kots, setKots] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState(null);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(() => searchParams.get('search') || '');
+
+  useEffect(() => {
+    const requested = searchParams.get('search');
+    if (requested) setSearch(requested);
+  }, [searchParams]);
   const [dateRange, setDateRange] = useState({ period: '', from: '', to: '' });
   const [paperSize, setPaperSize] = useState('80');
   const [counts, setCounts] = useState({ active: 0, completed: 0, cancelled: 0, all: 0 });

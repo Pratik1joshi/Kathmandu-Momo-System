@@ -4,7 +4,7 @@ import { resolvePeriodRange } from '@/lib/report-dates.js';
 import { requireAuth, handleRouteError } from '@/lib/api-guard.js';
 import {
   allowedReportTabs, buildReport, ensureReportSchema, getFilterOptions,
-  FILTER_UNAVAILABLE_REASON, REPORT_TABS, supportedFilters,
+  dateKey, FILTER_UNAVAILABLE_REASON, REPORT_TABS, supportedFilters,
 } from '@/lib/reports.js';
 import { currentBusinessDay } from '@/lib/business-days.js';
 
@@ -89,7 +89,7 @@ export async function GET(request) {
     if (filters.businessDayId) {
       const day = await db.get('SELECT id,business_date,status,opened_at,closed_at FROM business_days WHERE id=?', [filters.businessDayId]);
       if (!day) return NextResponse.json({ error: 'Business day not found.' }, { status: 404 });
-      range.start = String(day.business_date).slice(0, 10);
+      range.start = dateKey(day.business_date);
       range.end = range.start;
       range.period = 'business_day';
       range.label = `Business Day · ${range.start}${day.status === 'open' ? ' · Open' : ''}`;

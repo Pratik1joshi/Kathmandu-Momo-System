@@ -8,6 +8,7 @@ import {
 import { ChartCard, RankBars, TrendChart, formatValue } from '@/components/admin/report-kit';
 import DonutChart, { DEFAULT_COLORS } from '@/components/admin/donut-chart';
 import { financialToneClass } from '@/lib/financial-tone';
+import { ReconciliationSummary } from './payment-reconciliation';
 
 const money = (value) => formatValue(value, 'currency');
 const number = (value) => formatValue(value, 'number');
@@ -70,6 +71,67 @@ export function AnalyticsKeyMetrics({ data }) {
   );
 }
 
+export function OwnerMoneyMetrics({ data }) {
+  const finance = data.finance || {};
+  const totals = data.totals || {};
+  const inventory = data.inventory || {};
+  const payments = data.payments || {};
+  const openingBalance = data.businessDayMetrics?.openingCash ?? finance.openingBalance;
+  // Grand total is the authoritative final bill value. Anything added after
+  // discounted items, tax and delivery is presented as service / extra charge.
+  const serviceExtra = Math.max(0, Number(totals.billedTotal || 0) - Number(totals.netItemSales || 0) - Number(totals.tax || 0) - Number(totals.deliveryFee || 0));
+  const netCollection = Number(totals.itemSales || 0) - Number(totals.discounts || 0)
+    + serviceExtra + Number(totals.deliveryFee || 0) + Number(totals.tax || 0)
+    - Number(totals.refunds || 0) - Number(inventory.purchaseValue || 0) - Number(finance.operatingExpenses || 0);
+  const creditSales = Number(payments.creditSales || 0);
+  const channelRows = data.channelMix?.rows || [];
+  const channelValue = (id) => Number(channelRows.find((row) => row.channel === id)?.billedTotal || 0);
+  const flow = [
+    ['Opening Balance', openingBalance, '', 'Drawer cash at opening', 'neutral'],
+    ['Total Sales', totals.itemSales, '', 'Everything sold at menu price', 'positive'],
+    ['Discounts', totals.discounts, '−', 'Discounts given to customers', 'negative'],
+    ['Service / Extra Charges', serviceExtra, '+', 'Service and checkout extras', 'positive'],
+    ['Delivery Charges', totals.deliveryFee, '+', 'Delivery fees billed', 'positive'],
+    ['Tax Collected', totals.tax, '+', 'Tax included in customer bills', 'neutral'],
+    ['Refunds', totals.refunds, '−', 'Money returned to customers', 'negative'],
+    ['Purchases', inventory.purchaseValue, '−', `${number(inventory.purchases)} purchase records`, 'negative'],
+    ['Expenses', finance.operatingExpenses, '−', 'Operating expenses', 'negative'],
+    ['Net Collection', netCollection, '=', 'Sales after every addition and deduction', netCollection < 0 ? 'negative' : 'result'],
+  ];
+  const settlement = [
+    ['Cash Collected', payments.cashCollected, 'Payment received in cash'],
+    ['Bank / QR Collected', payments.onlineCollected, 'QR, card, wallet and bank'],
+    ['Sold on Credit', creditSales, 'Not money received; may be collected later'],
+  ];
+  const channels = [
+    ['Dine-in Sales', channelValue('dine_in'), 'Finalized dine-in bills'],
+    ['Takeaway Sales', channelValue('takeaway'), 'Finalized takeaway bills'],
+    ['Delivery Sales', channelValue('delivery'), 'Finalized delivery bills'],
+  ];
+
+  return <section aria-label="Key financial figures" className="mb-5 space-y-4">
+    <div className="overflow-hidden rounded-xl border border-gray-200 bg-gray-200 shadow-sm">
+      <div className="border-b border-gray-200 bg-white px-4 py-3 sm:px-5"><h2 className="text-sm font-semibold text-gray-950">Money flow</h2><p className="mt-0.5 text-xs text-gray-500">Start with total sales, apply every addition and deduction, then read the final result.</p></div>
+      <div className="grid grid-cols-2 gap-px sm:grid-cols-3 lg:grid-cols-5">{flow.map(([label, value, sign, detail, tone]) => <MoneyFlowCard key={label} label={label} value={value} sign={sign} detail={detail} tone={tone} />)}</div>
+    </div>
+    <div className="grid gap-4 lg:grid-cols-2">
+      <BlueMetricGroup title="How settlement was recorded" note="Cash and bank/QR are received money. Credit is tracked separately until resolved." rows={settlement} />
+      <BlueMetricGroup title="Where sales came from" note="The same finalized sales split by order type." rows={channels} />
+    </div>
+  </section>;
+}
+
+function MoneyFlowCard({ label, value, sign, detail, tone }) {
+  const styles = tone === 'result' ? 'bg-emerald-50 ring-1 ring-inset ring-emerald-200' : tone === 'negative' ? 'bg-rose-50/50' : 'bg-white';
+  const valueStyle = tone === 'result' ? 'text-emerald-800' : tone === 'negative' ? 'text-rose-700' : tone === 'positive' ? 'text-emerald-700' : 'text-gray-950';
+  const signStyle = sign === '−' ? 'bg-rose-100 text-rose-700' : sign === '+' ? 'bg-emerald-100 text-emerald-700' : sign === '=' ? 'bg-emerald-700 text-white' : 'bg-gray-100 text-gray-500';
+  return <div className={`min-w-0 px-4 py-4 sm:px-5 ${styles}`}><div className="flex items-center gap-1.5"><span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded text-xs font-bold ${signStyle}`}>{sign || '•'}</span><p className="truncate text-xs font-semibold text-gray-600">{label}</p></div><p className={`mt-2 truncate text-xl font-bold tabular-nums ${valueStyle}`} title={String(value ?? 0)}>{money(value)}</p><p className="mt-1 truncate text-xs text-gray-400">{detail}</p></div>;
+}
+
+function BlueMetricGroup({ title, note, rows }) {
+  return <section className="overflow-hidden rounded-xl border border-blue-200 bg-blue-50/50"><div className="border-b border-blue-100 px-4 py-3"><h2 className="text-sm font-semibold text-blue-950">{title}</h2><p className="mt-0.5 text-xs text-blue-700">{note}</p></div><div className="grid grid-cols-3 divide-x divide-blue-100">{rows.map(([label, value, detail]) => <div key={label} className="min-w-0 bg-white/80 px-3 py-4 sm:px-4"><p className="truncate text-xs font-semibold text-blue-700">{label}</p><p className="mt-1.5 truncate text-lg font-bold tabular-nums text-blue-900" title={String(value ?? 0)}>{money(value)}</p><p className="mt-1 line-clamp-2 text-[11px] text-blue-600">{detail}</p></div>)}</div></section>;
+}
+
 function OverviewCard({ title, icon: Icon, tone, moneyTone, href, value, detail, children }) {
   return (
     <Link href={href} className="group flex min-h-[154px] flex-col rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition-[border-color,transform] duration-150 ease-out hover:border-gray-300 active:scale-[0.98]">
@@ -116,7 +178,7 @@ export default function AnalyticsHome({ data }) {
       </div>
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5" aria-label="Business overview">
-        <OverviewCard title="Payments" icon={CreditCard} tone="blue" moneyTone="text-emerald-700" href="/admin/reports?tab=finance" value={money(payments.grossCollected)} detail={`${money(payments.cashCollected)} cash · ${money(payments.onlineCollected)} online`}>
+        <OverviewCard title="Money Received" icon={CreditCard} tone="blue" moneyTone="text-emerald-700" href="/admin/reports?tab=finance" value={money(payments.grossCollected)} detail={`${money(payments.cashCollected)} cash · ${money(payments.onlineCollected)} online · credit excluded`}>
           <div className="mt-auto flex h-1.5 overflow-hidden rounded-full bg-gray-100" aria-label={`${Math.round(cashShare)} percent cash`}>
             <span className="bg-blue-600" style={{ width: `${cashShare}%` }} />
             <span className="flex-1 bg-cyan-400" />
@@ -127,6 +189,8 @@ export default function AnalyticsHome({ data }) {
         <OverviewCard title="Expenses" icon={WalletCards} tone="rose" moneyTone="text-rose-700" href="/admin/expenses" value={money(finance.operatingExpenses)} detail={`Food cost ${money(finance.cogs)}`} />
         <OverviewCard title="Stock" icon={PackageSearch} tone="violet" href="/admin/inventory" value={money(inventory.value)} detail={`${number(inventory.low)} low stock · ${number(inventory.out)} out`} />
       </section>
+
+      <ReconciliationSummary data={data} />
 
       <section aria-label="Visual business breakdown" className="border-t border-gray-200 pt-7">
         <div className="mb-5"><p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-400">Visual dashboard</p><h2 className="mt-1 text-lg font-semibold text-gray-950">What is driving the business</h2><p className="mt-1 text-sm text-gray-500">Hover, tap, or focus a donut segment to inspect its share.</p></div>

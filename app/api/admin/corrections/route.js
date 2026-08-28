@@ -2,8 +2,14 @@ import { NextResponse } from 'next/server';
 import Database from '@/lib/db/index';
 import { requireAuth, handleRouteError } from '@/lib/api-guard.js';
 import { ensureAccountingSchema } from '@/lib/accounting.js';
-import { reverseJournal, listCorrections } from '@/lib/accounting-corrections.js';
-import { voidPaidBill, refundBill, listBillCorrections } from '@/lib/bill-corrections.js';
+import { listCorrections } from '@/lib/accounting-corrections.js';
+import {
+  voidPaidBill,
+  refundBill,
+  listBillCorrections,
+  getCorrectionJournalPreview,
+  reverseCorrectionByJournal,
+} from '@/lib/bill-corrections.js';
 
 export async function GET(request) {
   try {
@@ -11,6 +17,10 @@ export async function GET(request) {
     if (auth.error) return auth.error;
     const db = Database.getInstance();
     await ensureAccountingSchema(db);
+    const q = new URL(request.url).searchParams;
+    if (q.get('journal_id')) {
+      return NextResponse.json(await getCorrectionJournalPreview(db, q.get('journal_id')));
+    }
     const [corrections, billCorrections] = await Promise.all([listCorrections(db), listBillCorrections(db)]);
     return NextResponse.json({ corrections, bill_corrections: billCorrections });
   } catch (error) {
@@ -28,8 +38,16 @@ export async function POST(request) {
     const by = auth.user?.id || null;
 
     if (data.action === 'reverse') {
-      const journal_id = await db.transaction((tx) => reverseJournal(tx, { journal_id: data.journal_id, reason: data.reason, created_by: by }));
-      return NextResponse.json({ message: 'Journal reversed.', journal_id }, { status: 201 });
+      const result = await reverseCorrectionByJournal(db, {
+        journal_id: data.journal_id,
+        reason: data.reason,
+        restock: data.restock !== false,
+        created_by: by,
+      });
+      return NextResponse.json({
+        message: result.action === 'void_bill' ? 'Bill and its credit balance were reversed.' : 'Journal reversed.',
+        ...result,
+      }, { status: 201 });
     }
     if (data.action === 'void_bill') {
       const result = await voidPaidBill(db, {

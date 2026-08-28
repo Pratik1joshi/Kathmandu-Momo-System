@@ -138,6 +138,12 @@ export async function GET(request) {
     const conditions = ['1=1'];
     const params = [];
 
+    const focusedId = Number(searchParams.get('id'));
+    if (focusedId > 0) {
+      conditions.push('e.id = ?');
+      params.push(focusedId);
+    }
+
     const category = searchParams.get('category');
     if (category && category !== 'all') {
       conditions.push('e.category = ?');

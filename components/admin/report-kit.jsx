@@ -7,7 +7,10 @@
  * gray-500 secondary text, small colour chips, semantic colour only.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import {
   Area, AreaChart as RcAreaChart, Bar, BarChart as RcBarChart, CartesianGrid, Cell,
   LabelList, ResponsiveContainer, Scatter, ScatterChart as RcScatterChart,
@@ -15,7 +18,8 @@ import {
 } from 'recharts';
 import {
   TrendingUp, TrendingDown, Star, Clock3, CreditCard, Wallet, Info,
-  AlertTriangle, Search, ArrowUpDown, Download, Lightbulb,
+  AlertTriangle, Search, ArrowUpDown, Download, Lightbulb, X, LoaderCircle,
+  ReceiptText, PackageSearch,
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/currency';
 import { formatNepalDateTime } from '@/lib/report-dates';
@@ -455,9 +459,13 @@ function Badge({ value }) {
 }
 
 /** 5. Detailed table — sticky header, searchable, sortable, CSV export. */
-export function DataTable({ title, columns, rows, empty, csvName, truncated, limit, onExportAll }) {
+export function DataTable({ title, columns, rows, empty, csvName, truncated, limit, onExportAll, toolbar, detailContext }) {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState({ key: null, dir: 'desc' });
+  const [detailRow, setDetailRow] = useState(null);
+  const [detailData, setDetailData] = useState(null);
+  const [detailError, setDetailError] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -484,6 +492,74 @@ export function DataTable({ title, columns, rows, empty, csvName, truncated, lim
   const toggleSort = (key) =>
     setSort((prev) => (prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'desc' }));
 
+  const openDetails = (row) => {
+    setDetailData(null);
+    setDetailError(null);
+    setDetailLoading(Boolean(detailContext));
+    setDetailRow(row);
+  };
+
+  const totalColumns = useMemo(() => columns.filter((column) => {
+    if (column.total === false) return false;
+    if (column.total === 'sum') return true;
+    if (!['currency', 'number'].includes(column.type)) return false;
+    return !/(avg|average|margin|rate|minutes?|wait|duration|utilisation|percent|%)/i.test(column.label);
+  }), [columns]);
+  const totalKeys = useMemo(() => new Set(totalColumns.map((column) => column.key)), [totalColumns]);
+  const totalLabelIndex = useMemo(() => {
+    const firstNonTotal = columns.findIndex((column) => !totalKeys.has(column.key));
+    return firstNonTotal >= 0 ? firstNonTotal : 0;
+  }, [columns, totalKeys]);
+
+  const totalsFor = (source) => Object.fromEntries(totalColumns.map((column) => [
+    column.key,
+    source.reduce((sum, row) => sum + (Number(row[column.key]) || 0), 0),
+  ]));
+  const visibleTotals = useMemo(() => Object.fromEntries(totalColumns.map((column) => [
+    column.key,
+    visible.reduce((sum, row) => sum + (Number(row[column.key]) || 0), 0),
+  ])), [visible, totalColumns]);
+
+  useEffect(() => {
+    if (!detailRow) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setDetailRow(null);
+    };
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [detailRow]);
+
+  useEffect(() => {
+    if (!detailRow || !detailContext) return undefined;
+    const controller = new AbortController();
+    fetch('/api/admin/reports/details', {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${localStorage.getItem('pos_token')}`,
+      },
+      body: JSON.stringify({ ...detailContext, row: detailRow }),
+    })
+      .then(async (response) => {
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error || 'The full record could not be loaded.');
+        setDetailData(body.detail);
+      })
+      .catch((error) => {
+        if (error.name !== 'AbortError') setDetailError(error.message);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setDetailLoading(false);
+      });
+    return () => controller.abort();
+  }, [detailRow, detailContext]);
+
   /**
    * A download is the complete table, never the truncated view: when the server
    * capped this table, re-ask for it uncapped before writing the file.
@@ -503,6 +579,13 @@ export function DataTable({ title, columns, rows, empty, csvName, truncated, lim
     const csvRows = source.map((row) =>
       Object.fromEntries(columns.map((c) => [c.label, c.type === 'datetime' ? formatNepalDateTime(row[c.key]) : row[c.key] ?? '']))
     );
+    if (source.length && totalColumns.length) {
+      const exportTotals = totalsFor(source);
+      csvRows.push(Object.fromEntries(columns.map((column, index) => [
+        column.label,
+        index === 0 ? 'TOTAL' : (exportTotals[column.key] ?? ''),
+      ])));
+    }
     const blob = new Blob([toCsv(headers, csvRows)], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -514,6 +597,7 @@ export function DataTable({ title, columns, rows, empty, csvName, truncated, lim
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6 animate-in fade-in duration-300">
+      {toolbar && <div className="-mx-5 -mt-5 mb-5 border-b border-gray-200 sm:-mx-6 sm:-mt-6">{toolbar}</div>}
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-baseline gap-2">
           <h2 className="text-base font-semibold text-gray-900">{title}</h2>
@@ -560,7 +644,7 @@ export function DataTable({ title, columns, rows, empty, csvName, truncated, lim
           {search.trim() ? `Nothing in this table matches “${search.trim()}”.` : empty}
         </p>
       ) : (
-        <div className="max-h-[560px] overflow-auto rounded-xl border border-gray-100">
+        <div className="max-h-[560px] overflow-auto rounded-t-xl border border-gray-100">
           <table className="w-full min-w-[640px] text-sm">
             <thead className="sticky top-0 z-10 bg-white">
               <tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-400">
@@ -576,7 +660,20 @@ export function DataTable({ title, columns, rows, empty, csvName, truncated, lim
             </thead>
             <tbody className="divide-y divide-gray-100">
               {visible.map((row, i) => (
-                <tr key={i} className="hover:bg-gray-50/70">
+                <tr
+                  key={i}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => openDetails(row)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      openDetails(row);
+                    }
+                  }}
+                  className="cursor-pointer outline-none transition-colors hover:bg-blue-50/60 focus-visible:bg-blue-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+                  aria-label={`View details for row ${i + 1} in ${title}`}
+                >
                   {columns.map((c) => (
                     <td key={c.key} className={`whitespace-nowrap px-4 py-3.5 ${c.align === 'right' ? `text-right tabular-nums font-medium ${c.type === 'currency' ? financialToneClass({ label: c.label, value: row[c.key], tone: c.tone }) : 'text-gray-900'}` : 'text-gray-600'}`}>
                       {c.type === 'badge' || c.type === 'status'
@@ -587,11 +684,203 @@ export function DataTable({ title, columns, rows, empty, csvName, truncated, lim
                 </tr>
               ))}
             </tbody>
+            {totalColumns.length > 0 && (
+              <tfoot className="sticky bottom-0 z-10 border-t-2 border-gray-300 bg-gray-100 shadow-[0_-5px_12px_rgba(15,23,42,0.08)]">
+                <tr className="text-sm">
+                  {columns.map((column, index) => (
+                    <td key={column.key} className={`whitespace-nowrap px-4 py-3 font-bold ${column.align === 'right' ? 'text-right tabular-nums text-gray-950' : 'text-gray-600'}`}>
+                      {index === totalLabelIndex
+                        ? 'TOTAL'
+                        : totalKeys.has(column.key)
+                          ? formatValue(visibleTotals[column.key], column.type)
+                          : ''}
+                    </td>
+                  ))}
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       )}
+      {detailRow && createPortal(
+        <RecordDetailsModal
+          tableTitle={title}
+          columns={columns}
+          row={detailRow}
+          detail={detailData}
+          loading={detailLoading}
+          error={detailError}
+          onClose={() => setDetailRow(null)}
+        />,
+        document.body
+      )}
     </div>
   );
+}
+
+function RecordDetailsModal({ tableTitle, columns, row, detail, loading, error, onClose }) {
+  const headingId = `record-details-${String(tableTitle).replace(/[^a-z0-9_-]/gi, '-')}`;
+  const primaryColumn = columns[0];
+  const primaryValue = primaryColumn ? formatValue(row[primaryColumn.key], primaryColumn.type) : null;
+  const title = detail?.title || 'Record details';
+  const subtitle = detail?.subtitle || (primaryValue != null ? `${primaryColumn.label}: ${primaryValue}` : null);
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-gray-950/55 p-3 backdrop-blur-[2px] animate-in fade-in duration-150 motion-reduce:animate-none sm:p-6"
+      role="presentation"
+      onMouseDown={onClose}
+    >
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={headingId}
+        onMouseDown={(event) => event.stopPropagation()}
+        className="flex max-h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-200 ease-out motion-reduce:animate-none"
+      >
+        <header className="flex shrink-0 items-start justify-between gap-4 border-b border-gray-200 px-5 py-4 sm:px-6">
+          <div className="min-w-0">
+            <p className="truncate text-xs font-semibold uppercase tracking-[0.12em] text-gray-400">{detail?.eyebrow || tableTitle}</p>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <h2 id={headingId} className="text-xl font-bold text-gray-950 sm:text-2xl">{title}</h2>
+              {detail?.status && <Badge value={String(detail.status).replace(/_/g, ' ')} />}
+            </div>
+            {subtitle && <p className="mt-1 truncate text-sm text-gray-500">{subtitle}</p>}
+          </div>
+          <button
+            type="button"
+            autoFocus
+            onClick={onClose}
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-gray-200 text-gray-500 transition-[color,background-color,transform] duration-150 ease-out hover:bg-gray-100 hover:text-gray-950 active:scale-[0.96]"
+            aria-label="Close details"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </header>
+
+        <div className="min-h-0 flex-1 overflow-y-auto bg-gray-50/70">
+          {loading ? (
+            <div className="flex min-h-72 flex-col items-center justify-center px-6 text-center">
+              <LoaderCircle className="h-6 w-6 animate-spin text-gray-400 motion-reduce:animate-none" />
+              <p className="mt-3 text-sm font-medium text-gray-700">Loading linked items, payments and activity…</p>
+            </div>
+          ) : error ? (
+            <div className="m-5 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700 sm:m-6">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <div><p className="font-semibold">Full details could not be loaded</p><p className="mt-0.5">{error}</p></div>
+            </div>
+          ) : detail ? (
+            <div className="space-y-5 p-4 sm:p-6">
+              {detail.summary?.length > 0 && (
+                <dl className="grid overflow-hidden rounded-xl border border-gray-200 bg-white sm:grid-cols-2 lg:grid-cols-4">
+                  {detail.summary.map((item, index) => (
+                    <div key={`${item.label}-${index}`} className="min-w-0 border-b border-gray-100 px-4 py-3 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0">
+                      <dt className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">{item.label}</dt>
+                      <dd className="mt-1 truncate text-sm font-semibold tabular-nums text-gray-950" title={String(item.value ?? '')}>{detailValue(item.value, item.format)}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+              {(detail.sections || []).map((section, index) => (
+                section.type === 'table'
+                  ? <RecordDetailTable key={`${section.title}-${index}`} section={section} />
+                  : <RecordDetailFields key={`${section.title}-${index}`} section={section} />
+              ))}
+            </div>
+          ) : null}
+        </div>
+
+        <footer className="flex shrink-0 items-center justify-between gap-4 border-t border-gray-200 bg-white px-5 py-3 sm:px-6">
+          <p className="text-xs text-gray-500">Press Escape or click outside to close.</p>
+          <button type="button" onClick={onClose} className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition-transform duration-150 ease-out hover:bg-gray-800 active:scale-[0.97]">Close</button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+function detailValue(value, format) {
+  if (format === 'datetime') return formatNepalDateTime(value);
+  return formatValue(value, format === 'text' ? undefined : format);
+}
+
+function RecordDetailFields({ section }) {
+  const pathname = usePathname();
+  const cashier = pathname?.startsWith('/cashier');
+  if (!section.items?.length) return null;
+  return (
+    <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+      <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-3 sm:px-5">
+        <ReceiptText className="h-4 w-4 text-gray-400" />
+        <h3 className="text-sm font-semibold text-gray-950">{section.title}</h3>
+      </div>
+      <dl className="divide-y divide-gray-100 px-4 sm:px-5">
+        {section.items.map((item, index) => (
+          <div key={`${item.label}-${index}`} className="grid gap-1 py-3 sm:grid-cols-[180px_minmax(0,1fr)] sm:gap-5">
+            <dt className="text-xs font-medium text-gray-500">{item.label}</dt>
+            <dd className={`break-words text-sm ${['currency', 'number', 'percent'].includes(item.format) ? 'font-semibold tabular-nums text-gray-950' : 'text-gray-700'}`}>
+              {item.link ? <RecordEntityLink link={item.link} cashier={cashier}>{detailValue(item.value, item.format)}</RecordEntityLink> : detailValue(item.value, item.format)}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
+function RecordDetailTable({ section }) {
+  const pathname = usePathname();
+  const cashier = pathname?.startsWith('/cashier');
+  return (
+    <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+      <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-3 sm:px-5">
+        <div className="flex items-center gap-2"><PackageSearch className="h-4 w-4 text-gray-400" /><h3 className="text-sm font-semibold text-gray-950">{section.title}</h3></div>
+        <span className="text-xs tabular-nums text-gray-400">{section.rows?.length || 0} {section.rows?.length === 1 ? 'record' : 'records'}</span>
+      </div>
+      {!section.rows?.length ? <p className="px-5 py-8 text-center text-sm text-gray-500">{section.empty}</p> : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[680px] text-sm">
+            <thead><tr className="border-b border-gray-100 bg-gray-50/80 text-left text-[11px] uppercase tracking-wide text-gray-400">
+              {section.columns.map((column) => <th key={column.key} className={`whitespace-nowrap px-4 py-2.5 font-semibold ${column.align === 'right' ? 'text-right' : ''}`}>{column.label}</th>)}
+            </tr></thead>
+            <tbody className="divide-y divide-gray-100">
+              {section.rows.map((record, rowIndex) => <tr key={record.id || `${section.title}-${rowIndex}`} className="align-top">
+                {section.columns.map((column) => <td key={column.key} className={`px-4 py-3 ${column.align === 'right' ? 'text-right font-medium tabular-nums text-gray-950' : 'text-gray-600'}`}>
+                  {column.format === 'status' ? <Badge value={String(record[column.key] || '—').replace(/_/g, ' ')} /> : record._links?.[column.key] ? <RecordEntityLink link={record._links[column.key]} cashier={cashier}>{detailValue(record[column.key], column.format)}</RecordEntityLink> : detailValue(record[column.key], column.format)}
+                </td>)}
+              </tr>)}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function recordEntityHref(link, cashier) {
+  const root = cashier ? '/cashier' : '/admin';
+  const id = encodeURIComponent(String(link.id ?? ''));
+  switch (link.type) {
+    case 'order': return `${root}/orders/${id}`;
+    case 'bill': return `${root}/bills?bill=${id}`;
+    case 'kot': return `${cashier ? '/cashier/kots' : '/admin/kot'}?kot=${id}${link.label ? `&search=${encodeURIComponent(link.label)}` : ''}`;
+    case 'purchase': return `${root}/purchases?purchase=${id}`;
+    case 'expense': return `${root}/expenses?expense=${id}`;
+    case 'customer': return `${root}/customers/${id}`;
+    case 'inventory': return `${root}/inventory/${id}`;
+    case 'reservation': return `${root}/reservations?reservation=${id}`;
+    case 'employee': return `${root}/employees?employee=${id}`;
+    case 'table': return `${root}/table-management?table=${id}`;
+    case 'supplier': return `${root}/suppliers?supplier=${id}`;
+    case 'menu': return `${cashier ? '/cashier/menu-items' : '/admin/products'}?item=${id}`;
+    default: return null;
+  }
+}
+
+function RecordEntityLink({ link, cashier, children }) {
+  const href = recordEntityHref(link, cashier);
+  if (!href) return children;
+  return <Link href={href} className="inline-flex rounded-sm font-semibold text-blue-700 underline decoration-blue-300 underline-offset-2 transition-[color,transform] duration-150 ease-out hover:text-blue-900 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2">{children}</Link>;
 }
 
 export function ChartGrid({ children }) {

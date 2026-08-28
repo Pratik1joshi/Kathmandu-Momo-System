@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { ArrowRight, BadgeDollarSign, Banknote, CircleAlert, Landmark, Layers3, ReceiptText, Search, ShoppingBasket } from 'lucide-react';
-import { BarChart, ChartCard, ChartGrid, RankBars, TrendChart } from '@/components/admin/report-kit';
+import { BarChart, ChartCard, ChartGrid, KpiCards, RankBars, TrendChart } from '@/components/admin/report-kit';
 import DonutChart, { DEFAULT_COLORS } from '@/components/admin/donut-chart';
 import { financialTone } from '@/lib/financial-tone';
 import { CashFlowCard, ChannelMix, CountedCash, DigitalReceipts, MoneyPosition } from '@/components/admin/summary-kit.jsx';
@@ -71,17 +71,12 @@ export function PaymentFinance({ data }) {
   const groupRows = sales.byGroup || [];
   const categoryRows = (sales.byCategory || []).slice(0, 6);
   const reportKpis = sales.reportKpis || [];
+  const explanatoryKpis = reportKpis.map((row) => ({ ...row, hint: row.hint || row.note }));
   const finance = data.finance;
   return (
     <DashboardSection>
       <SectionHeading icon={BadgeDollarSign} tone="emerald" eyebrow="Money control" title="Sales, collections and revenue mix" description="One owner overview for the selected Nepal reporting period. Deeper drilldowns stay inside Reports." />
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        {reportKpis.map((row) => (
-          <div key={row.key} className="rounded-xl border border-gray-100 bg-gray-50 p-4">
-            <Metric label={row.label} value={row.value} format={row.format} tone={row.key === 'refunds' || row.key === 'cancelled' || row.key === 'discounts' ? 'negative' : row.key === 'net' || row.key === 'net_item_sales' ? 'positive' : 'default'} />
-          </div>
-        ))}
-      </div>
+      <KpiCards kpis={explanatoryKpis} groups={MONEY_KPI_GROUPS} />
 
       <PaymentSummary data={data} />
 
@@ -120,7 +115,7 @@ export function PaymentFinance({ data }) {
         <ChartCard title="By Day" isEmpty={!sales.byDay?.length} empty="No daily sales in this period.">
           <BarChart data={sales.byDay || []} color="blue" format="currency" height={220} />
         </ChartCard>
-        <DonutMix title="By Payment" rows={payRows} centerLabel="Collected" />
+        <DonutMix title="Money Received by Method" rows={payRows} centerLabel="Received" />
         <DonutMix title="By Group" rows={groupRows} centerLabel="Sales" />
         <DonutMix title="By Category" rows={categoryRows} centerLabel="Sales" />
       </div>
@@ -145,6 +140,27 @@ export function PaymentFinance({ data }) {
   );
 }
 
+const MONEY_KPI_GROUPS = [
+  { id: 'sold', title: '1. What customers ordered', caption: 'Start with menu prices, then subtract discounts.', keys: ['total_item_sales', 'discounts', 'net_item_sales'] },
+  { id: 'billed', title: '2. What the restaurant billed', caption: 'Add service, delivery and other charges; tax is shown separately; subtract refunds.', keys: ['service_extra', 'tax', 'refunds', 'net'] },
+  { id: 'settled', title: '3. How those bills were settled', caption: 'Cash and QR are received. Sold on credit is not cash; credit collections are already inside cash/QR.', keys: ['cash_received', 'qr_received', 'credit_sales', 'credit_collections'] },
+  { id: 'position', title: '4. What remains open', caption: 'Receivables are the live all-time balance; open orders are not billed yet.', keys: ['receivables', 'open_orders_value', 'cancelled', 'aov'] },
+];
+
+export function MoneyBridge({ sales, payments }) {
+  const extra = Number(sales.billedTotal || 0) - Number(sales.netItemSales || 0) - Number(sales.tax || 0);
+  const collected = Number(payments.cashCollected || 0) + Number(payments.onlineCollected || 0);
+  const credit = Number((sales.reportKpis || []).find((row) => row.key === 'credit_sales')?.value || 0);
+  return <div className="mt-5 rounded-xl border border-blue-200 bg-blue-50/60 p-4 sm:p-5">
+    <h3 className="text-sm font-semibold text-blue-950">How the figures connect</h3>
+    <div className="mt-3 grid gap-3 text-sm lg:grid-cols-2">
+      <p className="rounded-lg bg-white px-4 py-3 text-gray-700"><strong className="text-gray-950">Sales:</strong> {money(sales.itemSales)} − {money(sales.discounts)} discounts = <strong>{money(sales.netItemSales)}</strong> net items; then + {money(extra)} service/delivery/extras + {money(sales.tax)} tax − {money(sales.refunds)} refunds = <strong>{money(sales.netSales)}</strong> net revenue.</p>
+      <p className="rounded-lg bg-white px-4 py-3 text-gray-700"><strong className="text-gray-950">Settlement:</strong> {money(payments.cashCollected)} cash + {money(payments.onlineCollected)} digital = <strong>{money(collected)}</strong> actually received. Another <strong>{money(credit)}</strong> was sold on credit, so it is revenue but not cash received yet.</p>
+    </div>
+    <p className="mt-3 text-xs text-blue-800">“Still Owed to You” is the current balance across all unpaid bills, including older periods. “Open Orders” have not become bills or sales yet.</p>
+  </div>;
+}
+
 function PaymentSummary({ data }) {
   const breakdown = data.payments?.breakdown;
   if (!breakdown) return null;
@@ -153,9 +169,9 @@ function PaymentSummary({ data }) {
     ['Cash sales', summary.cash?.amount, summary.cash?.transactions, 'cash'],
     ['Online / bank sales', summary.online?.amount, summary.online?.transactions, 'online'],
     ['Split payments', summary.split?.amount, summary.split?.transactions, 'split'],
-    ['Due / unpaid bills', summary.due?.amount, summary.due?.transactions, 'due'],
-    ['Ledger payment (cash)', summary.ledgerCash, null, 'ledger'],
-    ['Ledger payment (online / bank)', summary.ledgerOnline, null, 'ledger'],
+    ['Still owed (not received)', summary.due?.amount, summary.due?.transactions, 'due'],
+    ['Of cash: credit collected', summary.ledgerCash, null, 'ledger'],
+    ['Of bank / QR: credit collected', summary.ledgerOnline, null, 'ledger'],
   ];
   return (
     <section className="mt-5 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
@@ -172,7 +188,7 @@ function PaymentSummary({ data }) {
         <tbody className="divide-y divide-gray-100">
           {rows.map(([label, amount, transactions, tone]) => <tr key={label} className="hover:bg-gray-50/70"><td className="px-4 py-3 font-medium text-gray-900"><PaymentIcon tone={tone} />{label}</td><td className="px-4 py-3 text-right font-semibold tabular-nums text-gray-900">{money(amount)}</td><td className="px-4 py-3 text-right tabular-nums text-gray-600">{transactions == null ? <span className="text-gray-300">—</span> : transactions}</td></tr>)}
         </tbody>
-        <tfoot className="border-t-2 border-gray-900 bg-gray-50"><tr><td className="px-4 py-3.5 font-semibold text-gray-950">Total sales &amp; ledger (collected + due)</td><td className="px-4 py-3.5 text-right text-base font-bold tabular-nums text-gray-950">{money(summary.total)}</td><td className="px-4 py-3.5 text-right font-bold tabular-nums text-gray-950">{summary.transactions || 0}</td></tr></tfoot>
+        <tfoot className="border-t-2 border-gray-900 bg-gray-50"><tr><td className="px-4 py-3.5 font-semibold text-gray-950">Total money received</td><td className="px-4 py-3.5 text-right text-base font-bold tabular-nums text-emerald-700">{money(summary.total)}</td><td className="px-4 py-3.5 text-right font-bold tabular-nums text-gray-950">{summary.transactions || 0}</td></tr></tfoot>
       </TableWrap>
 
     </section>

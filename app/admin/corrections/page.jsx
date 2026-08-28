@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import AdminLayout from '@/components/admin/admin-layout';
-import { RotateCcw, Ban, Undo2 } from 'lucide-react';
+import { RotateCcw, Ban, Undo2, AlertTriangle, Loader2, ReceiptText, X } from 'lucide-react';
 import { useToast } from '@/components/ui/toast';
 import { friendlyMessage, friendlyFromError } from '@/lib/friendly-message';
 import { apiJson } from '@/lib/authed-fetch';
@@ -18,6 +18,10 @@ export default function CorrectionsPage() {
   const [refundForm, setRefundForm] = useState({ bill_number: '', full: true, amount: '', method: 'cash', reason: '' });
   const [voidForm, setVoidForm] = useState({ bill_number: '', reason: '', restock: true });
   const [reverseForm, setReverseForm] = useState({ journal_id: '', reason: '' });
+  const [journalPreview, setJournalPreview] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState('');
+  const [confirmation, setConfirmation] = useState(null);
   const keyRef = useRef(newKey());
 
   const load = () => apiJson('/api/admin/corrections').then((d) => {
@@ -42,11 +46,36 @@ export default function CorrectionsPage() {
   }).catch(() => {});
   useEffect(() => { load(); }, []);
 
+  useEffect(() => {
+    const journalId = Number(reverseForm.journal_id);
+    if (!Number.isInteger(journalId) || journalId <= 0) {
+      setJournalPreview(null);
+      setPreviewError('');
+      setPreviewLoading(false);
+      return undefined;
+    }
+    let active = true;
+    setPreviewLoading(true);
+    setPreviewError('');
+    const timer = setTimeout(() => {
+      apiJson(`/api/admin/corrections?journal_id=${journalId}`)
+        .then((data) => { if (active) setJournalPreview(data); })
+        .catch((error) => {
+          if (!active) return;
+          setJournalPreview(null);
+          setPreviewError(error?.message || 'Could not load that journal.');
+        })
+        .finally(() => { if (active) setPreviewLoading(false); });
+    }, 300);
+    return () => { active = false; clearTimeout(timer); };
+  }, [reverseForm.journal_id]);
+
   const post = async (body, done) => {
     setBusy(true);
     try {
       await apiJson('/api/admin/corrections', { method: 'POST', body: JSON.stringify(body) });
       addToast(friendlyMessage('save_success', { description: 'Posted to the ledger.' }));
+      setConfirmation(null);
       done?.();
       load();
     } catch (error) { addToast(friendlyFromError(error, 'save_failed')); }
@@ -57,19 +86,45 @@ export default function CorrectionsPage() {
     if (!refundForm.bill_number.trim()) { addToast(friendlyMessage('validation', { description: 'Enter the bill number.' })); return; }
     if (!refundForm.full && !(Number(refundForm.amount) > 0)) { addToast(friendlyMessage('validation', { description: 'Enter a refund amount.' })); return; }
     if (!refundForm.reason.trim()) { addToast(friendlyMessage('validation', { description: 'A reason is required.' })); return; }
-    post(
-      { action: 'refund', bill_number: refundForm.bill_number.trim(), full: refundForm.full, amount: refundForm.full ? undefined : Number(refundForm.amount), method: refundForm.method, reason: refundForm.reason },
-      () => { keyRef.current = newKey(); setRefundForm((f) => ({ ...f, bill_number: '', amount: '', reason: '' })); }
-    );
+    setConfirmation({
+      title: 'Confirm customer refund',
+      description: refundForm.full
+        ? `Refund the complete remaining balance from bill ${refundForm.bill_number.trim()} by ${refundForm.method}.`
+        : `Refund ${money(refundForm.amount)} from bill ${refundForm.bill_number.trim()} by ${refundForm.method}.`,
+      confirmLabel: 'Yes, post refund',
+      tone: 'amber',
+      body: { action: 'refund', bill_number: refundForm.bill_number.trim(), full: refundForm.full, amount: refundForm.full ? undefined : Number(refundForm.amount), method: refundForm.method, reason: refundForm.reason },
+      done: () => { keyRef.current = newKey(); setRefundForm((f) => ({ ...f, bill_number: '', amount: '', reason: '' })); },
+    });
   };
   const doVoid = () => {
     if (!voidForm.bill_number.trim()) { addToast(friendlyMessage('validation', { description: 'Enter the bill number.' })); return; }
     if (!voidForm.reason.trim()) { addToast(friendlyMessage('validation', { description: 'A reason is required.' })); return; }
-    post({ action: 'void_bill', bill_number: voidForm.bill_number.trim(), reason: voidForm.reason, restock: voidForm.restock }, () => setVoidForm({ bill_number: '', reason: '', restock: true }));
+    setConfirmation({
+      title: 'Confirm complete bill void',
+      description: `Void bill ${voidForm.bill_number.trim()}. Its sale, payments and customer credit will be reversed${voidForm.restock ? ', and its items returned to stock' : ''}.`,
+      confirmLabel: 'Yes, void entire bill',
+      tone: 'rose',
+      body: { action: 'void_bill', bill_number: voidForm.bill_number.trim(), reason: voidForm.reason, restock: voidForm.restock },
+      done: () => setVoidForm({ bill_number: '', reason: '', restock: true }),
+    });
   };
   const doReverse = () => {
     if (!reverseForm.journal_id) { addToast(friendlyMessage('validation', { description: 'Enter the journal id.' })); return; }
-    post({ action: 'reverse', journal_id: Number(reverseForm.journal_id), reason: reverseForm.reason }, () => setReverseForm({ journal_id: '', reason: '' }));
+    if (!reverseForm.reason.trim()) { addToast(friendlyMessage('validation', { description: 'A reason is required.' })); return; }
+    if (previewLoading) { addToast(friendlyMessage('validation', { description: 'Wait for the journal details to load.' })); return; }
+    if (!journalPreview || previewError) { addToast(friendlyMessage('validation', { description: 'Load a valid journal before reversing it.' })); return; }
+    const linkedBill = journalPreview.bill;
+    setConfirmation({
+      title: linkedBill ? 'This will void the entire bill' : 'Confirm journal reversal',
+      description: linkedBill
+        ? `Journal #${reverseForm.journal_id} belongs to bill ${linkedBill.bill_number}. The bill, payments, customer credit and operational records will all be reversed together.`
+        : `Post the exact opposite of journal #${reverseForm.journal_id}. The original journal will remain in the audit history.`,
+      confirmLabel: linkedBill ? 'Yes, void bill and credit' : 'Yes, reverse journal',
+      tone: linkedBill ? 'rose' : 'amber',
+      body: { action: 'reverse', journal_id: Number(reverseForm.journal_id), reason: reverseForm.reason, restock: true },
+      done: () => { setReverseForm({ journal_id: '', reason: '' }); setJournalPreview(null); },
+    });
   };
 
   return (
@@ -80,7 +135,7 @@ export default function CorrectionsPage() {
       </header>
 
       <div className="space-y-6 bg-gray-50 p-4 sm:p-6 lg:p-8">
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+        <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-3">
           <Card icon={Undo2} title="Refund" hint="Return money for a served bill. Full or partial; over-refund is blocked. Stock stays consumed.">
             <Field label="Bill number"><input value={refundForm.bill_number} onChange={(e) => setRefundForm((f) => ({ ...f, bill_number: e.target.value }))} className={INPUT} placeholder="e.g. BILL-000123" /></Field>
             <label className="flex items-center gap-2 text-sm text-gray-700">
@@ -108,6 +163,7 @@ export default function CorrectionsPage() {
 
           <Card icon={RotateCcw} title="Reverse Journal" hint="Post the exact opposite of any journal by its id.">
             <Field label="Journal id"><input type="number" value={reverseForm.journal_id} onChange={(e) => setReverseForm((f) => ({ ...f, journal_id: e.target.value }))} className={INPUT} placeholder="from General Ledger → Journal" /></Field>
+            <JournalPreview data={journalPreview} loading={previewLoading} error={previewError} />
             <Field label="Reason"><input value={reverseForm.reason} onChange={(e) => setReverseForm((f) => ({ ...f, reason: e.target.value }))} className={INPUT} /></Field>
             <button disabled={busy} onClick={doReverse} className={BTN}>Reverse</button>
           </Card>
@@ -133,13 +189,19 @@ export default function CorrectionsPage() {
           </table>
         </div>
       </div>
+      {confirmation && <ConfirmationDialog
+        confirmation={confirmation}
+        busy={busy}
+        onCancel={() => !busy && setConfirmation(null)}
+        onConfirm={() => post(confirmation.body, confirmation.done)}
+      />}
     </AdminLayout>
   );
 }
 
 function Card({ icon: Icon, title, hint, children }) {
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-5">
+    <div className="min-w-0 rounded-2xl border border-gray-200 bg-white p-5">
       <div className="mb-3 flex items-center gap-2"><Icon className="h-5 w-5 text-gray-500" /><h3 className="text-sm font-semibold text-gray-900">{title}</h3></div>
       <p className="mb-4 text-xs text-gray-500">{hint}</p>
       <div className="space-y-3">{children}</div>
@@ -153,4 +215,58 @@ const INPUT = 'h-11 w-full rounded-lg border border-gray-300 px-3 text-sm text-g
 const BTN = 'mt-1 h-11 w-full rounded-lg bg-gray-900 px-4 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50';
 function newKey() {
   return typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `k-${Date.now()}-${Math.random()}`;
+}
+
+function JournalPreview({ data, loading, error }) {
+  if (loading) return <div className="flex h-20 items-center justify-center rounded-lg border border-gray-200 bg-gray-50 text-xs text-gray-500"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading journal…</div>;
+  if (error) return <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">{error}</div>;
+  if (!data?.journal) return null;
+  const { journal, bill } = data;
+  return (
+    <div className="w-full min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
+      <div className={`border-b px-3 py-2 ${bill ? 'border-rose-200 bg-rose-50' : 'border-gray-200 bg-white'}`}>
+        <div className="flex items-start gap-2">
+          {bill ? <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" /> : <ReceiptText className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />}
+          <div className="min-w-0">
+            <p className="truncate text-xs font-semibold text-gray-900">#{journal.id} · {journal.memo || 'Journal'}</p>
+            <p className="mt-0.5 text-[11px] text-gray-500">{bill ? `Linked to ${bill.bill_number} — reversal becomes a complete bill void.` : 'Standalone journal reversal.'}</p>
+            {journal.reversal_id && <p className="mt-1 text-[11px] font-semibold text-rose-700">Already reversed by journal #{journal.reversal_id}</p>}
+          </div>
+        </div>
+      </div>
+      <div className="max-h-72 w-full overflow-auto">
+        {bill && <div className="grid min-w-[520px] grid-cols-3 gap-3 border-b border-gray-200 px-3 py-2 text-[11px]">
+          <PreviewValue label="Bill" value={bill.bill_number} />
+          <PreviewValue label="Total" value={money(bill.grand_total)} />
+          <PreviewValue label="Status" value={`${bill.status || '—'} / ${bill.payment_status || '—'}`} />
+          <PreviewValue label="Order" value={bill.order?.order_number || '—'} />
+          <PreviewValue label="Order type" value={bill.order?.order_type || '—'} />
+          <PreviewValue label="Outstanding on bill" value={money(bill.outstanding_amount)} />
+          <PreviewValue label="Customer credit charged" value={money(bill.credit?.charged)} />
+          <PreviewValue label="Credit cleared" value={money(bill.credit?.cleared)} />
+          <PreviewValue label="Credit outstanding" value={money(Math.max(0, Number(bill.credit?.outstanding || 0)))} />
+        </div>}
+        {!!bill?.items?.length && <table className="w-full min-w-[520px] text-[11px]"><thead className="sticky top-0 bg-gray-100 text-gray-500"><tr><th className="px-3 py-1.5 text-left">Item</th><th className="px-3 py-1.5 text-right">Qty</th><th className="px-3 py-1.5 text-right">Price</th><th className="px-3 py-1.5 text-right">Total</th></tr></thead><tbody>{bill.items.map((item, index) => <tr key={`${item.name}-${index}`} className="border-t border-gray-200"><td className="px-3 py-1.5 text-gray-700">{item.name}</td><td className="px-3 py-1.5 text-right">{item.quantity}</td><td className="px-3 py-1.5 text-right">{money(item.unit_price)}</td><td className="px-3 py-1.5 text-right font-medium">{money(item.total_price)}</td></tr>)}</tbody></table>}
+        {!!bill?.payments?.length && <table className="w-full min-w-[520px] text-[11px]"><thead className="bg-gray-100 text-gray-500"><tr><th className="px-3 py-1.5 text-left">Payment method</th><th className="px-3 py-1.5 text-left">Settlement</th><th className="px-3 py-1.5 text-right">Amount</th></tr></thead><tbody>{bill.payments.map((payment, index) => <tr key={`${payment.payment_method}-${index}`} className="border-t border-gray-200"><td className="px-3 py-1.5 capitalize text-gray-700">{payment.payment_method || '—'}</td><td className="px-3 py-1.5 capitalize text-gray-600">{payment.settlement_status || 'received'}</td><td className="px-3 py-1.5 text-right font-medium">{money(payment.amount)}</td></tr>)}</tbody></table>}
+        <table className="w-full min-w-[520px] text-[11px]"><thead className="bg-gray-100 text-gray-500"><tr><th className="px-3 py-1.5 text-left">Account</th><th className="px-3 py-1.5 text-right">Debit</th><th className="px-3 py-1.5 text-right">Credit</th></tr></thead><tbody>{journal.lines.map((line) => <tr key={line.id} className="border-t border-gray-200"><td className="px-3 py-1.5 text-gray-700">{line.account_code} · {line.account_name}</td><td className="px-3 py-1.5 text-right">{money(line.debit)}</td><td className="px-3 py-1.5 text-right">{money(line.credit)}</td></tr>)}</tbody></table>
+      </div>
+    </div>
+  );
+}
+
+function PreviewValue({ label, value }) {
+  return <div><p className="text-gray-400">{label}</p><p className="mt-0.5 truncate font-semibold text-gray-800">{value}</p></div>;
+}
+
+function ConfirmationDialog({ confirmation, busy, onCancel, onConfirm }) {
+  const rose = confirmation.tone === 'rose';
+  return <div className="fixed inset-0 z-[100] flex items-center justify-center bg-gray-950/50 p-4" role="dialog" aria-modal="true" aria-labelledby="correction-confirm-title">
+    <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+      <div className="flex items-start justify-between gap-3"><div className={`rounded-xl p-2 ${rose ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}><AlertTriangle className="h-5 w-5" /></div><button type="button" disabled={busy} onClick={onCancel} aria-label="Close confirmation" className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"><X className="h-5 w-5" /></button></div>
+      <h2 id="correction-confirm-title" className="mt-4 text-lg font-bold text-gray-950">{confirmation.title}</h2>
+      <p className="mt-2 text-sm leading-6 text-gray-600">{confirmation.description}</p>
+      <p className="mt-3 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500">Reason: <span className="font-medium text-gray-700">{confirmation.body.reason}</span></p>
+      <div className="mt-5 flex gap-3"><button type="button" disabled={busy} onClick={onCancel} className="h-11 flex-1 rounded-lg border border-gray-300 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50">Cancel</button><button type="button" disabled={busy} onClick={onConfirm} className={`h-11 flex-1 rounded-lg text-sm font-semibold text-white disabled:opacity-50 ${rose ? 'bg-rose-700 hover:bg-rose-800' : 'bg-gray-900 hover:bg-gray-800'}`}>{busy ? 'Working…' : confirmation.confirmLabel}</button></div>
+    </div>
+  </div>;
 }

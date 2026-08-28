@@ -4,9 +4,10 @@ import { useState } from 'react';
 import {
   Activity, BarChart3, ChefHat, ClipboardCheck, History, PackageSearch, ShoppingBasket, Users,
 } from 'lucide-react';
-import AnalyticsHome, { AnalyticsKeyMetrics } from './analytics-home';
+import AnalyticsHome, { OwnerMoneyMetrics } from './analytics-home';
 import { AllChanges } from './order-operations-analytics';
 import OrderOperationsAnalytics from './order-operations-analytics';
+import { PaymentReconciliationPanel, VoidedPaymentControl } from './payment-reconciliation';
 
 import { MenuPerformance, PaymentFinance } from './overview-commercial';
 import {
@@ -43,7 +44,7 @@ export default function OverviewDashboard({
 
   return (
     <div>
-      <AnalyticsKeyMetrics data={data} />
+      <OwnerMoneyMetrics data={data} />
 
       <div className="mb-5 overflow-x-auto border-b border-gray-200" role="tablist" aria-label="Analytics views">
         <div className="flex min-w-max gap-1">
@@ -56,12 +57,12 @@ export default function OverviewDashboard({
       </div>
 
       {view === 'overview' && <AnalyticsHome data={data} />}
-      {view === 'sales' && <div className="space-y-5"><PaymentFinance data={data} /></div>}
+      {view === 'sales' && <div className="space-y-5"><PaymentReconciliationPanel data={data} /><PaymentFinance data={data} /></div>}
       {view === 'stock' && <div className="space-y-5"><InventorySupplier data={data} /></div>}
       {view === 'menu' && <div className="space-y-5"><MenuPerformance data={data} /><FloorAndReservations data={data} /></div>}
       {view === 'kitchen' && <div className="space-y-5"><LiveStatus data={data} /><OrderOperationsAnalytics data={data.orderOperations} live={data.live} /></div>}
       {view === 'people' && <div className="space-y-5"><PeoplePerformance data={data} /></div>}
-      {view === 'changes' && <AllChanges report={data.orderOperations || {}} />}
+      {view === 'changes' && <div className="space-y-5"><VoidedPaymentControl data={data} /><AllChanges report={data.orderOperations || {}} /></div>}
       {view === 'control' && <div className="space-y-5">
         <AttentionCenter rows={data.attention} />
         <Controls data={data} />

@@ -9,7 +9,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildReport, eachDay, previousRange } from '@/lib/reports.js';
+import { buildReport, dateKey, eachDay, previousRange } from '@/lib/reports.js';
 import { resolvePeriodRange, nepalRangeUtcBounds } from '@/lib/report-dates.js';
 import { cashFlowStatement } from '@/lib/accounting-reports.js';
 
@@ -51,6 +51,10 @@ test('a date range is inclusive of both endpoints', () => {
 
 test('a single-day range yields exactly one day, not zero', () => {
   assert.equal(eachDay(range('2026-08-24', '2026-08-24')).length, 1);
+});
+
+test('Postgres DATE values normalize to an ISO report date', () => {
+  assert.equal(dateKey(new Date(2026, 7, 25, 0, 0, 0)), '2026-08-25');
 });
 
 test('the previous period is the same length and ends the day before', () => {

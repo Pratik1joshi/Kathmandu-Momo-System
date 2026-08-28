@@ -11,7 +11,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import AdminLayout from '@/components/admin/admin-layout';
 import { Paperclip, Pencil, Plus, Trash2, Truck, Trash } from 'lucide-react';
 import { useToast } from '@/components/ui/toast';
@@ -92,12 +92,14 @@ function rangeFor(preset) {
 
 export default function ExpensesPage() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const isCashier = pathname?.startsWith('/cashier');
+  const focusedExpenseId = Number(searchParams.get('expense')) || null;
   const { addToast } = useToast();
   const { confirm } = useConfirm();
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [originFilter, setOriginFilter] = useState('all');
-  const [datePreset, setDatePreset] = useState('this_month');
+  const [datePreset, setDatePreset] = useState(focusedExpenseId ? 'all' : 'this_month');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
   const [modal, setModal] = useState(null); // { expense?, payroll? }
@@ -106,8 +108,8 @@ export default function ExpensesPage() {
   const { from, to } = datePreset === 'custom' ? { from: customFrom, to: customTo } : rangeFor(datePreset);
 
   const filters = useMemo(
-    () => ({ category: categoryFilter, origin: originFilter, from, to }),
-    [categoryFilter, originFilter, from, to]
+    () => ({ category: categoryFilter, origin: originFilter, from, to, id: focusedExpenseId }),
+    [categoryFilter, originFilter, from, to, focusedExpenseId]
   );
 
   const {
@@ -133,6 +135,12 @@ export default function ExpensesPage() {
       .then((data) => setManagedCats(data.categories || []))
       .catch(() => setManagedCats([]));
   }, []);
+
+  useEffect(() => {
+    if (!focusedExpenseId || !rows.length) return;
+    const expense = rows.find((row) => Number(row.id) === focusedExpenseId);
+    if (expense && !expense.source_type) setModal({ expense, payroll: expense.category === 'salaries' });
+  }, [focusedExpenseId, rows]);
 
   const manualCategoryOptions = useMemo(() => {
     const options = [...EXPENSE_CATEGORIES];
@@ -335,6 +343,7 @@ export default function ExpensesPage() {
           searchPlaceholder="Search description, supplier…"
           empty={loading ? 'Loading expenses…' : 'No expenses in this range. Change the dates, or log one.'}
           footNote="Rows marked Automatic belong to a purchase or a wastage entry — open that record to change them. CSV and Print cover every row in the range, not just this page."
+          rowClassName={(row) => Number(row.id) === focusedExpenseId ? 'bg-blue-50/70 ring-1 ring-inset ring-blue-200' : ''}
           toolbar={
             <>
               <select value={originFilter} onChange={(e) => setOriginFilter(e.target.value)} className={SELECT}>

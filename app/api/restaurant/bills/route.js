@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { BillRepository } from '@/lib/db/repositories/bills.js';
 import { AuthService } from '@/lib/auth/auth.js';
 import { nepalDateString } from '@/lib/report-dates.js';
+import Database from '@/lib/db/index.js';
+import { completeBillPayment } from '@/lib/bills-admin.js';
 
 const billRepo = new BillRepository();
 const authService = new AuthService();
@@ -123,10 +125,13 @@ export async function POST(request) {
         );
       }
       
-      const paymentId = await billRepo.addPayment(bill_id, {
-        payment_method,
+      const payment = await completeBillPayment(Database.getInstance(), {
+        billId: bill_id,
+        method: payment_method,
         amount,
-        processed_by: session.user_id
+        requestKey: body.idempotency_key || `restaurant-bill-payment-${bill_id}-${Date.now()}`,
+        actorId: session.user_id,
+        actorRole: session.role,
       });
       
       const bill = await billRepo.getById(bill_id);
@@ -134,7 +139,7 @@ export async function POST(request) {
       return NextResponse.json({
         success: true,
         message: 'Payment added successfully',
-        payment_id: paymentId,
+        payment,
         bill
       });
     }

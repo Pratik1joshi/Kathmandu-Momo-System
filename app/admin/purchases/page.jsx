@@ -7,7 +7,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import AdminLayout from '@/components/admin/admin-layout';
 import { Ban, Pencil, Truck, Upload, Users } from 'lucide-react';
 import { useToast } from '@/components/ui/toast';
@@ -25,6 +25,7 @@ import DateInput from '@/components/ui/date-input.jsx';
 
 export default function PurchasesPage() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const isCashierPanel = pathname?.startsWith('/cashier');
   const { can } = useCapabilities();
   const canCreate = can('purchases.create');
@@ -44,6 +45,11 @@ export default function PurchasesPage() {
 
   const [drawerId, setDrawerId] = useState(null);
   const [formPurchase, setFormPurchase] = useState(null); // {} for new
+
+  useEffect(() => {
+    const requestedPurchase = Number(searchParams.get('purchase'));
+    if (requestedPurchase > 0) setDrawerId(requestedPurchase);
+  }, [searchParams]);
 
   const filters = useMemo(
     () => ({ supplier_id: supplierFilter, status: statusFilter, from, to }),
